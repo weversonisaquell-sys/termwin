@@ -320,7 +320,7 @@ Long-press a tab to rename it.
         // Elevation decides drawing order: the main window has 12dp, so panels need more
         // to always stay IN FRONT of it (this was the "servers behind the window" bug).
         ov.elevation = dp(40).toFloat()
-        ov.outlineProvider = ViewOutlineProvider.NONE
+        ov.outlineProvider = null
         val card = LinearLayout(this)
         card.orientation = LinearLayout.VERTICAL
         card.background = rounded(0xFF202020.toInt(), dp(10), 0xFF3A3A3A.toInt())
