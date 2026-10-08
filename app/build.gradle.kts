@@ -3,10 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 android {
-    namespace = "com.abkkb.termwin"
+    namespace = "com.termwin.console"
     compileSdk = 34
     defaultConfig {
-        applicationId = "com.abkkb.termwin"
+        applicationId = "com.termwin.console"
         minSdk = 28          // Android 9+
         targetSdk = 34
         versionCode = 3

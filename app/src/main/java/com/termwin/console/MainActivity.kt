@@ -1,8 +1,11 @@
-package com.abkkb.termwin
+package com.termwin.console
 
 import android.Manifest
 import android.app.*
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -12,6 +15,7 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.net.Uri
+import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
@@ -19,10 +23,14 @@ import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.StatFs
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
 import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -31,7 +39,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewOutlineProvider
 import android.view.inputmethod.EditorInfo
 import android.webkit.MimeTypeMap
 import android.widget.*
@@ -154,7 +161,8 @@ class MainActivity : Activity() {
     private val PT_SUB = mapOf(
         "instalar" to "install", "remover" to "remove", "listar" to "list", "atualizar" to "upgrade",
         "versao" to "version", "sobre" to "about", "criar" to "create", "iniciar" to "start",
-        "parar" to "stop", "renomear" to "rename", "limpar" to "clear"
+        "parar" to "stop", "renomear" to "rename", "limpar" to "clear",
+        "pesquisar" to "search", "mostrar" to "show", "desinstalar" to "uninstall"
     )
     private fun cmd(s: String): String { val l = s.lowercase(); return if (pt) (PT_CMD[l] ?: l) else l }
     private fun sub(s: String?): String? { val l = s?.lowercase() ?: return null; return if (pt) (PT_SUB[l] ?: l) else l }
@@ -190,6 +198,22 @@ class MainActivity : Activity() {
   servidor criar docs arquivos 8081 /sdcard
   servidor iniciar meusite   também: servidor parar | remover meusite
   servidor renomear meusite novo
+  --- comandos estilo Termux (termux-* viram termwin-*) ---
+  termwin-info               dados do aparelho
+  termwin-setup-storage      pede acesso ao armazenamento
+  termwin-battery-status     bateria em JSON
+  termwin-toast oi           mostra um aviso na tela
+  termwin-vibrate -d 500     vibra (ms)
+  termwin-clipboard-get      lê a área de transferência
+  termwin-clipboard-set oi   copia o texto
+  termwin-open-url site.com  abre no navegador
+  termwin-notification --content oi
+  termwin-volume             volumes | termwin-volume music 5
+  termwin-torch on|off       lanterna
+  termwin-tts-speak oi       fala o texto
+  termwin-wake-lock          mantém o aparelho acordado | termwin-wake-unlock
+  termwin-download URL       baixa o arquivo para a pasta atual
+  pkg: update | search x | show x | list-all | list-installed | uninstall x
 Tipos de servidor: youtube, web, arquivos, json, comando, personalizado
 Qualquer outro comando roda no shell do Android (ls, pwd, cat, ping...).
 Toque e segure numa aba para renomear.
@@ -217,6 +241,22 @@ Toque e segure numa aba para renomear.
   server create docs files 8081 /sdcard
   server start mysite        also: server stop | remove mysite
   server rename mysite newname
+  --- Termux-style commands (termux-* became termwin-*) ---
+  termwin-info               device info
+  termwin-setup-storage      ask for storage access
+  termwin-battery-status     battery as JSON
+  termwin-toast hi           show a toast on screen
+  termwin-vibrate -d 500     vibrate (ms)
+  termwin-clipboard-get      read the clipboard
+  termwin-clipboard-set hi   copy the text
+  termwin-open-url site.com  open in the browser
+  termwin-notification --content hi
+  termwin-volume             volumes | termwin-volume music 5
+  termwin-torch on|off       flashlight
+  termwin-tts-speak hi       speak the text
+  termwin-wake-lock          keep the device awake | termwin-wake-unlock
+  termwin-download URL       download the file to the current folder
+  pkg: update | search x | show x | list-all | list-installed | uninstall x
 Server types: youtube, web, files, json, cmd, custom
 Any other command runs in the Android shell (ls, pwd, cat, ping...).
 Long-press a tab to rename it.
@@ -446,14 +486,17 @@ Long-press a tab to rename it.
     }
 
     // ---------- data folder (.winv / .winser) ----------
-    private fun dataDir(): File = getExternalFilesDir(null) ?: filesDir
+    // Layout:  <app folder>/logs/errors.log
+    //          <app folder>/files/terminal/*.winv , files/servidores/*.winser , files/dados.wintext
+    private fun dataDir(): File = (getExternalFilesDir(null) ?: filesDir).apply { mkdirs() }
+    private fun logsDir() = File(dataDir().parentFile ?: dataDir(), "logs").apply { mkdirs() }
     private fun termDir() = File(dataDir(), "terminal").apply { mkdirs() }
     private fun serDir() = File(dataDir(), "servidores").apply { mkdirs() }
     private fun safe(n: String) = n.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "file" }
 
     private fun logError(src: String, msg: String) {
         try {
-            val f = File(dataDir(), "errors.log")
+            val f = File(logsDir(), "errors.log")
             if (f.exists() && f.length() > 200_000) f.writeText(f.readText().takeLast(100_000))
             val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())
             f.appendText("[$ts] [$src] $msg\n")
@@ -524,6 +567,10 @@ Long-press a tab to rename it.
 
     /** Loads a .winv / .winser given as text. Returns true on success. */
     private fun importAny(text: String, fname: String, select: Boolean): Boolean {
+        if (text.trimStart().startsWith("WINTEXT")) {
+            val n = scanFolders()
+            sayCur(tr("$fname: $n new file(s) loaded\n", "$fname: $n arquivo(s) novo(s) carregado(s)\n")); return true
+        }
         val j = try { JSONObject(text) } catch (e: Exception) { null }
         if (j == null) {
             val m = tr("Invalid file: $fname", "Arquivo inválido: $fname")
@@ -541,7 +588,7 @@ Long-press a tab to rename it.
                 sayCur(tr("server '${s.name}' loaded\n", "servidor '${s.name}' carregado\n")); true
             }
             else -> {
-                val m = tr("Unknown file format: $fname (use .winv or .winser)", "Formato desconhecido: $fname (use .winv ou .winser)")
+                val m = tr("Unknown file format: $fname (use .winv, .winser or .wintext)", "Formato desconhecido: $fname (use .winv, .winser ou .wintext)")
                 sayCur(m + "\n"); logError("load", m); false
             }
         }
@@ -562,9 +609,26 @@ Long-press a tab to rename it.
     }
 
     // ---------- persistence ----------
+    /** dados.wintext: TermWin's own text index of every file in terminal/ ([Normal]) and servidores/ ([Servers]). */
+    private fun writeIndex() {
+        try {
+            val sb = StringBuilder()
+            sb.append("WINTEXT 1\n")
+            sb.append("# TermWin - dados.wintext (generated automatically)\n\n")
+            sb.append("[Normal]\n")
+            val tf = termDir().listFiles()?.filter { it.isFile && it.extension.equals("winv", true) }?.sortedBy { it.name } ?: emptyList()
+            if (tf.isEmpty()) sb.append("(none)\n") else tf.forEach { sb.append("terminal/").append(it.name).append('\n') }
+            sb.append("\n[Servers]\n")
+            val sf = serDir().listFiles()?.filter { it.isFile && it.extension.equals("winser", true) }?.sortedBy { it.name } ?: emptyList()
+            if (sf.isEmpty()) sb.append("(none)\n") else sf.forEach { sb.append("servidores/").append(it.name).append('\n') }
+            File(dataDir(), "dados.wintext").writeText(sb.toString())
+        } catch (e: Exception) { }
+    }
+
     private fun save() {
         tabs.forEach { writeWinv(it) }
         servers.forEach { writeWinser(it) }
+        writeIndex()
         val o = JSONObject()
         o.put("cur", cur)
         val ta = JSONArray()
@@ -580,6 +644,7 @@ Long-press a tab to rename it.
 
     private fun load() {
         pt = prefs.getBoolean("pt", false)
+        try { termDir(); serDir(); logsDir() } catch (e: Exception) { }
         try {
             val o = JSONObject(prefs.getString("d", "{}")!!)
             val ta = o.optJSONArray("tabs")
@@ -599,6 +664,7 @@ Long-press a tab to rename it.
             cur = o.optInt("cur", 0)
         } catch (e: Exception) { }
         try { scanFolders() } catch (e: Exception) { }
+        writeIndex()
         if (tabs.isEmpty()) tabs.add(newTabData("Terminal 1"))
         cur = cur.coerceIn(0, tabs.size - 1)
     }
@@ -747,33 +813,39 @@ Long-press a tab to rename it.
         fun fill() {
             p.body.removeAllViews()
             p.body.addView(tv(tr("Folder: ", "Pasta: ") + dataDir().path, 11f, 0xFF9AA5B1.toInt()))
-            p.body.addView(tv(tr("Files you put in terminal/ (.winv) or servidores/ (.winser) load automatically. Saved files not loaded now:", "Arquivos colocados em terminal/ (.winv) ou servidores/ (.winser) carregam sozinhos. Arquivos salvos que não estão carregados agora:"), 12f, Color.WHITE).apply { setPadding(0, dp(8), 0, dp(4)) })
-            var shown = 0
-            fun entry(label: String, load: () -> Unit) {
-                shown++
+            p.body.addView(tv(tr("All saved files. Files you put in terminal/ (.winv) or servidores/ (.winser) load automatically; the list is also saved in dados.wintext.", "Todos os arquivos salvos. Arquivos colocados em terminal/ (.winv) ou servidores/ (.winser) carregam sozinhos; a lista também fica em dados.wintext."), 12f, Color.WHITE).apply { setPadding(0, dp(8), 0, dp(4)) })
+            fun title(s: String) = p.body.addView(tv(s, 15f, ACCENT).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(12), 0, dp(2)) })
+            fun empty() = p.body.addView(tv(tr("(empty)", "(vazio)"), 13f, 0xFFAAAAAA.toInt()).apply { setPadding(dp(4), dp(4), 0, dp(4)) })
+            fun entry(label: String, loaded: Boolean, load: () -> Unit) {
                 val row = LinearLayout(this)
                 row.orientation = LinearLayout.HORIZONTAL
                 row.gravity = Gravity.CENTER_VERTICAL
                 row.background = rounded(0xFF2A2A2A.toInt(), dp(8))
                 row.setPadding(dp(12), dp(8), dp(8), dp(8))
                 row.addView(tv(label, 14f, Color.WHITE), LinearLayout.LayoutParams(0, WRAP, 1f))
-                row.addView(smallBtn(tr("Load", "Carregar")) { load() })
+                if (loaded) row.addView(tv(tr("loaded ✔", "carregado ✔"), 12f, GREEN))
+                else row.addView(smallBtn(tr("Load", "Carregar")) { load() })
                 p.body.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) })
             }
             fun peek(f: File): JSONObject? = try { JSONObject(f.readText()) } catch (e: Exception) { null }
-            termDir().listFiles()?.filter { it.isFile && it.extension.equals("winv", true) }?.sortedBy { it.name }?.forEach { f ->
+            title("Normal")
+            val tf = termDir().listFiles()?.filter { it.isFile && it.extension.equals("winv", true) }?.sortedBy { it.name } ?: emptyList()
+            if (tf.isEmpty()) empty()
+            tf.forEach { f ->
                 val nm = peek(f)?.optString("name")?.ifEmpty { null } ?: f.nameWithoutExtension
-                if (tabs.none { it.name.equals(nm, true) }) entry("terminal/${f.name}") {
+                entry("terminal/${f.name}", tabs.any { it.name.equals(nm, true) }) {
                     importAny(f.readText(), f.name, true); save(); refreshTabs(); showTab(); fill()
                 }
             }
-            serDir().listFiles()?.filter { it.isFile && it.extension.equals("winser", true) }?.sortedBy { it.name }?.forEach { f ->
+            title("Servers")
+            val sf = serDir().listFiles()?.filter { it.isFile && it.extension.equals("winser", true) }?.sortedBy { it.name } ?: emptyList()
+            if (sf.isEmpty()) empty()
+            sf.forEach { f ->
                 val nm = peek(f)?.optString("name")?.ifEmpty { null } ?: f.nameWithoutExtension
-                if (servers.none { it.name.equals(nm, true) }) entry("servidores/${f.name}") {
+                entry("servidores/${f.name}", servers.any { it.name.equals(nm, true) }) {
                     importAny(f.readText(), f.name, false); save(); fill()
                 }
             }
-            if (shown == 0) p.body.addView(tv(tr("Nothing waiting to be loaded.", "Nada esperando para carregar."), 13f, 0xFFAAAAAA.toInt()).apply { setPadding(0, dp(8), 0, dp(8)) })
         }
         loadRefresh = { fill() }
         p.onClose = { loadRefresh = null }
@@ -1042,7 +1114,7 @@ Long-press a tab to rename it.
                 }
                 val f = try { (if (tg.startsWith("/")) File(tg) else File(t.cwd, tg)).canonicalFile } catch (e: Exception) { null }
                 if (f != null && f.isDirectory) t.cwd = f.path
-                else err(t, tr("cd: folder not found", "cd: pasta não encontrada") +
+                else err(t, "cd: $target: " + tr("No such file or directory", "Arquivo ou diretório inexistente") +
                     if (!storageOk() && tg.startsWith("/storage")) tr(" (turn on storage in ⚙ Settings)", " (ligue o armazenamento em ⚙ Configurações)") else "")
             }
             "server" -> serverCmd(t, p)
@@ -1091,16 +1163,175 @@ Long-press a tab to rename it.
             }
             "history" -> append(t, history.mapIndexed { i, c -> "${i + 1}  $c" }.joinToString("\n") + "\n")
             "data" -> append(t, tr(
-                "Data folder: ${dataDir().path}\n  terminal/     one .winv file per terminal\n  servidores/   one .winser file per server\n  errors.log    saved errors\n",
-                "Pasta de dados: ${dataDir().path}\n  terminal/     um arquivo .winv por terminal\n  servidores/   um arquivo .winser por servidor\n  errors.log    erros salvos\n"))
+                "Data folder: ${dataDir().path}\n  terminal/       one .winv file per terminal\n  servidores/     one .winser file per server\n  dados.wintext   list of all the files\nLogs folder: ${logsDir().path}\n  errors.log      saved errors\n",
+                "Pasta de dados: ${dataDir().path}\n  terminal/       um arquivo .winv por terminal\n  servidores/     um arquivo .winser por servidor\n  dados.wintext   lista de todos os arquivos\nPasta de logs: ${logsDir().path}\n  errors.log      erros salvos\n"))
             "errors" -> {
-                val f = File(dataDir(), "errors.log")
+                val f = File(logsDir(), "errors.log")
                 if (sub(p.getOrNull(1)) == "clear") { f.delete(); append(t, tr("errors cleared\n", "erros apagados\n")) }
                 else append(t, if (f.exists() && f.length() > 0) f.readLines().takeLast(30).joinToString("\n") + "\n" else tr("no errors saved\n", "nenhum erro salvo\n"))
             }
-            else -> shell(t, line)
+            else -> if (!apiCmd(t, p)) shell(t, line)
         }
         save()
+    }
+
+
+    // ---------- termwin-* (Termux API commands, renamed) ----------
+    private var tts: TextToSpeech? = null
+    private var wake: PowerManager.WakeLock? = null
+    private var torchOn = false
+
+    private val API_CMDS = listOf(
+        "termwin-info", "termwin-setup-storage", "termwin-battery-status", "termwin-toast", "termwin-vibrate",
+        "termwin-clipboard-get", "termwin-clipboard-set", "termwin-open-url", "termwin-notification",
+        "termwin-volume", "termwin-torch", "termwin-tts-speak", "termwin-wake-lock", "termwin-wake-unlock",
+        "termwin-download"
+    )
+
+    /** Returns true when the command was handled here (false = let the Android shell try it). */
+    private fun apiCmd(t: TabData, p: List<String>): Boolean {
+        val name = p[0].lowercase()
+        if (!name.startsWith("termwin-") && !name.startsWith("termux-")) return false
+        val a = p.drop(1)
+        val text = a.joinToString(" ")
+        when (name) {
+            "termwin-info" -> append(t, "Device   : ${Build.MANUFACTURER} ${Build.MODEL}\nAndroid  : ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\nCPU      : ${Build.SUPPORTED_ABIS.joinToString()}\nTermWin  : $VERSION\n")
+            "termwin-setup-storage" ->
+                if (storageOk()) append(t, tr("storage access already granted\n", "acesso ao armazenamento já liberado\n"))
+                else askStorage()
+            "termwin-battery-status" -> {
+                val i = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                val lvl = i?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = i?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+                val plugged = i?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+                val st = i?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                val temp = (i?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10.0
+                val stName = when (st) {
+                    BatteryManager.BATTERY_STATUS_CHARGING -> "CHARGING"
+                    BatteryManager.BATTERY_STATUS_DISCHARGING -> "DISCHARGING"
+                    BatteryManager.BATTERY_STATUS_FULL -> "FULL"
+                    BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "NOT_CHARGING"
+                    else -> "UNKNOWN"
+                }
+                val o = JSONObject()
+                o.put("percentage", if (lvl >= 0 && scale > 0) lvl * 100 / scale else -1)
+                o.put("plugged", if (plugged == 0) "UNPLUGGED" else "PLUGGED")
+                o.put("status", stName)
+                o.put("temperature", temp)
+                append(t, o.toString(2) + "\n")
+            }
+            "termwin-toast" ->
+                if (text.isEmpty()) err(t, tr("usage: termwin-toast hello", "uso: termwin-toast oi")) else toast(text)
+            "termwin-vibrate" -> {
+                try {
+                    val di = a.indexOf("-d")
+                    val ms = (if (di >= 0) a.getOrNull(di + 1)?.toLongOrNull() else null) ?: 1000L
+                    val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                    v.vibrate(VibrationEffect.createOneShot(ms.coerceIn(1L, 5000L), VibrationEffect.DEFAULT_AMPLITUDE))
+                } catch (e: Exception) { err(t, "termwin-vibrate: ${e.message}") }
+            }
+            "termwin-clipboard-get" -> {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val c = cm.primaryClip
+                val s = if (c != null && c.itemCount > 0) c.getItemAt(0).coerceToText(this).toString() else ""
+                append(t, s + "\n")
+            }
+            "termwin-clipboard-set" -> {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("TermWin", text))
+                append(t, tr("copied\n", "copiado\n"))
+            }
+            "termwin-open-url" -> exec(t, "open $text")
+            "termwin-notification" -> {
+                val c = a.indexOf("--content")
+                notifyCmd(t, if (c >= 0) a.drop(c + 1).joinToString(" ") else text)
+            }
+            "termwin-volume" -> {
+                val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val streams = listOf(
+                    "call" to AudioManager.STREAM_VOICE_CALL, "system" to AudioManager.STREAM_SYSTEM,
+                    "ring" to AudioManager.STREAM_RING, "music" to AudioManager.STREAM_MUSIC,
+                    "alarm" to AudioManager.STREAM_ALARM, "notification" to AudioManager.STREAM_NOTIFICATION
+                )
+                val target = streams.firstOrNull { it.first == a.getOrNull(0)?.lowercase() }
+                val level = a.getOrNull(1)?.toIntOrNull()
+                if (target != null && level != null) {
+                    try { am.setStreamVolume(target.second, level.coerceIn(0, am.getStreamMaxVolume(target.second)), 0) }
+                    catch (e: Exception) { err(t, "termwin-volume: ${e.message}") }
+                }
+                val arr = JSONArray()
+                streams.forEach { s ->
+                    arr.put(JSONObject().put("stream", s.first).put("volume", am.getStreamVolume(s.second)).put("max_volume", am.getStreamMaxVolume(s.second)))
+                }
+                append(t, arr.toString(2) + "\n")
+            }
+            "termwin-torch" -> {
+                val want = when (a.getOrNull(0)?.lowercase()) {
+                    "on" -> true
+                    "off" -> false
+                    else -> !torchOn
+                }
+                try {
+                    val cm = getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+                    val id = cm.cameraIdList.firstOrNull {
+                        cm.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                    }
+                    if (id == null) err(t, tr("termwin-torch: no flashlight found", "termwin-torch: lanterna não encontrada"))
+                    else { cm.setTorchMode(id, want); torchOn = want; append(t, "torch " + (if (want) "on" else "off") + "\n") }
+                } catch (e: Exception) { err(t, "termwin-torch: ${e.message}") }
+            }
+            "termwin-tts-speak" ->
+                if (text.isEmpty()) err(t, tr("usage: termwin-tts-speak hello", "uso: termwin-tts-speak oi"))
+                else {
+                    var engine: TextToSpeech? = null
+                    engine = TextToSpeech(this) { status ->
+                        if (status == TextToSpeech.SUCCESS) engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "termwin")
+                        else ui.post { err(t, "termwin-tts-speak: " + tr("no speech engine", "sem motor de voz")) }
+                    }
+                    tts = engine
+                }
+            "termwin-wake-lock" -> {
+                if (wake?.isHeld == true) append(t, tr("already holding the wake lock\n", "wake lock já ativo\n"))
+                else try {
+                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    val w = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TermWin::wake")
+                    w.acquire()
+                    wake = w
+                    append(t, tr("wake lock on\n", "wake lock ligado\n"))
+                } catch (e: Exception) { err(t, "termwin-wake-lock: ${e.message}") }
+            }
+            "termwin-wake-unlock" -> {
+                try { wake?.let { if (it.isHeld) it.release() } } catch (e: Exception) { }
+                wake = null
+                append(t, tr("wake lock off\n", "wake lock desligado\n"))
+            }
+            "termwin-download" -> {
+                val u = a.firstOrNull { it.startsWith("http") }
+                if (u == null) err(t, tr("usage: termwin-download https://site/file.zip", "uso: termwin-download https://site/arquivo.zip"))
+                else {
+                    val fname = u.substringBefore('?').substringAfterLast('/').ifEmpty { "download" }
+                    busy(1)
+                    append(t, tr("downloading $u ...\n", "baixando $u ...\n"))
+                    thread {
+                        try {
+                            val out = File(t.cwd, fname)
+                            java.net.URL(u).openStream().use { inp -> out.outputStream().use { o -> inp.copyTo(o) } }
+                            ui.post { append(t, tr("saved: ", "salvo: ") + short(out.path) + " (${out.length() / 1024} KiB)\n") }
+                        } catch (e: Exception) {
+                            ui.post { err(t, "termwin-download: ${e.message}") }
+                        }
+                        ui.post { busy(-1) }
+                    }
+                }
+            }
+            else -> {
+                if (!name.startsWith("termux-")) return false
+                val alt = "termwin-" + name.removePrefix("termux-")
+                if (alt in API_CMDS) err(t, "$name: " + tr("command not found. In TermWin it is called: $alt", "comando não encontrado. No TermWin ele se chama: $alt"))
+                else err(t, "$name: " + tr("not available in TermWin", "não disponível no TermWin"))
+            }
+        }
+        return true
     }
 
     private fun tree(f: File, pre: String, depth: Int, sb: StringBuilder) {
@@ -1127,16 +1358,29 @@ Long-press a tab to rename it.
                 n in pkgs -> append(t, tr("$n is already installed.\n", "$n já está instalado.\n"))
                 else -> { pkgs.add(n); append(t, tr("Installing $n ...\n$n installed ✔\n", "Instalando $n ...\n$n instalado ✔\n")) }
             }
-            "remove" -> when {
+            "remove", "uninstall" -> when {
                 n == null -> err(t, tr("usage: pkg remove cowsay", "uso: pkg remover cowsay"))
                 pkgs.remove(n) -> append(t, tr("$n removed.\n", "$n removido.\n"))
                 else -> err(t, tr("$n is not installed.", "$n não está instalado."))
             }
-            "list" -> {
+            "list-installed" -> append(t, if (pkgs.isEmpty()) tr("no packages installed\n", "nenhum pacote instalado\n") else pkgs.sorted().joinToString("\n") + "\n")
+            "search" -> {
+                val q = (p.getOrNull(2) ?: "").lowercase()
+                val r = CATALOG.filter { q in it || q in pkgDesc(it).lowercase() }
+                if (r.isEmpty()) err(t, tr("no packages found for '$q'", "nenhum pacote encontrado para '$q'"))
+                else r.forEach { k -> append(t, k.padEnd(10) + pkgDesc(k) + "\n") }
+            }
+            "show" -> when {
+                n == null -> err(t, tr("usage: pkg show cowsay", "uso: pkg mostrar cowsay"))
+                n !in CATALOG -> err(t, tr("package '$n' not found. See: pkg list", "pacote '$n' não encontrado. Veja: pkg listar"))
+                else -> append(t, "Package: $n\n" + tr("Description: ", "Descrição: ") + pkgDesc(n) + "\n" +
+                    tr("Status: ", "Situação: ") + (if (n in pkgs) tr("installed", "instalado") else tr("not installed", "não instalado")) + "\n")
+            }
+            "list", "list-all" -> {
                 append(t, tr("TermWin internal packages:\n", "Pacotes internos do TermWin:\n"))
                 CATALOG.forEach { k -> append(t, (if (k in pkgs) "[x] " else "[ ] ") + k.padEnd(10) + pkgDesc(k) + "\n") }
             }
-            "upgrade" -> upgrade(t)
+            "upgrade", "update", "full-upgrade" -> upgrade(t)
             else -> err(t, tr("usage: pkg install | remove | list | upgrade", "uso: pkg instalar | remover | listar | atualizar"))
         }
     }
