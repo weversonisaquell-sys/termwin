@@ -57,6 +57,7 @@ const val VERSION = "1.2"
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
     var file: String = ""
+    var prev: String = ""
 }
 
 class Srv(var name: String, var type: String, var port: Int, var cmd: String) {
@@ -105,6 +106,9 @@ class MainActivity : Activity() {
     private var bg = false
     private var busyN = 0
     private var notifId = 100
+    private var hIdx = -1
+    private val aliases = mutableMapOf<String, String>()
+    private val envVars = mutableMapOf<String, String>()
     private var pt = false
     private var serversRefresh: (() -> Unit)? = null
     private var settingsSync: (() -> Unit)? = null
@@ -198,6 +202,13 @@ class MainActivity : Activity() {
   servidor criar docs arquivos 8081 /sdcard
   servidor iniciar meusite   também: servidor parar | remover meusite
   servidor renomear meusite novo
+  nano arquivo.txt           editor de texto (também: edit, vi)
+  alias ll='ls -la'          cria atalho | unalias ll
+  export NOME=valor          variável de ambiente | env | unset NOME
+  cd -                       volta para a pasta anterior (cd ~/pasta também)
+  wget URL | curl URL        baixa arquivo | mostra o conteúdo da página
+  exit                       fecha a aba
+  botões ⇥ ↑ ↓               completar nome, histórico anterior/próximo
   --- comandos estilo Termux (termux-* viram termwin-*) ---
   termwin-info               dados do aparelho
   termwin-setup-storage      pede acesso ao armazenamento
@@ -241,6 +252,13 @@ Toque e segure numa aba para renomear.
   server create docs files 8081 /sdcard
   server start mysite        also: server stop | remove mysite
   server rename mysite newname
+  nano file.txt              text editor (also: edit, vi)
+  alias ll='ls -la'          create a shortcut | unalias ll
+  export NAME=value          environment variable | env | unset NAME
+  cd -                       go back to the previous folder (cd ~/folder too)
+  wget URL | curl URL        download a file | show the page content
+  exit                       close the tab
+  buttons ⇥ ↑ ↓              complete name, previous/next history
   --- Termux-style commands (termux-* became termwin-*) ---
   termwin-info               device info
   termwin-setup-storage      ask for storage access
@@ -405,6 +423,21 @@ Long-press a tab to rename it.
         root.setBackgroundColor(0xFF0B0F14.toInt())
         buildHome()
         setContentView(root)
+        handleIncoming(intent)
+    }
+
+    override fun onNewIntent(i: Intent?) {
+        super.onNewIntent(i)
+        handleIncoming(i)
+    }
+
+    /** A .winv / .winser / .wintext tapped in a file manager opens here. */
+    private fun handleIncoming(i: Intent?) {
+        val it2 = i ?: return
+        if (it2.action != Intent.ACTION_VIEW) return
+        val uri = it2.data ?: return
+        it2.data = null
+        ui.post { restore(); importUri(uri) }
     }
 
     private fun buildHome() {
@@ -472,12 +505,18 @@ Long-press a tab to rename it.
         super.onActivityResult(req, res, data)
         if (req != 77 || res != RESULT_OK) return
         val uri = data?.data ?: return
+        importUri(uri)
+    }
+
+    private fun importUri(uri: Uri) {
         try {
-            val name = contentResolver.query(uri, null, null, null, null)?.use { c ->
-                val ix = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (c.moveToFirst() && ix >= 0) c.getString(ix) else null
-            } ?: uri.lastPathSegment ?: "file"
-            val text = contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
+            val name = try {
+                contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val ix = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (c.moveToFirst() && ix >= 0) c.getString(ix) else null
+                }
+            } catch (e: Exception) { null } ?: uri.lastPathSegment ?: "file"
+            val text = contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }.trimStart('\uFEFF')
             if (importAny(text, name, true)) { save(); refreshTabs(); showTab(); loadRefresh?.invoke() }
         } catch (e: Exception) {
             val m = tr("Could not read the file: ${e.message}", "Não foi possível ler o arquivo: ${e.message}")
@@ -638,6 +677,8 @@ Long-press a tab to rename it.
         servers.forEach { sa.put(JSONObject().put("n", it.name).put("t", it.type).put("p", it.port).put("c", it.cmd).put("f", it.file)) }
         o.put("servers", sa)
         o.put("pk", JSONArray(pkgs.toList()))
+        o.put("alias", JSONObject(aliases as Map<*, *>))
+        o.put("env", JSONObject(envVars as Map<*, *>))
         o.put("known", JSONArray(known.toList()))
         prefs.edit().putString("d", o.toString()).apply()
     }
@@ -659,6 +700,8 @@ Long-press a tab to rename it.
             }
             val pk = o.optJSONArray("pk")
             if (pk != null) { pkgs.clear(); for (i in 0 until pk.length()) pkgs.add(pk.getString(i).let { if (it == "arvore") "tree" else it }) }
+            o.optJSONObject("alias")?.let { j -> j.keys().forEach { k -> aliases[k] = j.getString(k) } }
+            o.optJSONObject("env")?.let { j -> j.keys().forEach { k -> envVars[k] = j.getString(k) } }
             val kn = o.optJSONArray("known")
             if (kn != null) for (i in 0 until kn.length()) known.add(kn.getString(i))
             cur = o.optInt("cur", 0)
@@ -1034,6 +1077,9 @@ Long-press a tab to rename it.
         et.imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
         et.setOnEditorActionListener { _, _, _ -> submit(et); true }
         inp.addView(et, LinearLayout.LayoutParams(0, dp(44), 1f))
+        inp.addView(capBtn("⇥", false, 44) { tabComplete(et) }.apply { layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)) })
+        inp.addView(capBtn("↑", false, 44) { histMove(et, -1) }.apply { layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)) })
+        inp.addView(capBtn("↓", false, 44) { histMove(et, 1) }.apply { layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)) })
         inp.addView(capBtn("⏎", false, 44) { submit(et) }.apply { layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)) })
         inp.addView(capBtn("^C", false, 44) {
             tabs[cur].proc?.destroy()
@@ -1066,6 +1112,7 @@ Long-press a tab to rename it.
         val t = tabs[cur]
         val c = et.text.toString().trim()
         et.setText("")
+        hIdx = -1
         append(t, "${short(t.cwd)} \$ $c\n")
         if (c.isNotEmpty()) history.add(c)
         exec(t, c)
@@ -1099,8 +1146,16 @@ Long-press a tab to rename it.
         append(t, sb.toString())
     }
 
-    private fun exec(t: TabData, line: String) {
-        if (line.isEmpty()) return
+    private fun expandAlias(l: String): String {
+        val tl = l.trimStart()
+        val first = tl.substringBefore(' ')
+        val a = aliases[first] ?: return l
+        return a + tl.removePrefix(first)
+    }
+
+    private fun exec(t: TabData, rawLine: String) {
+        if (rawLine.isEmpty()) return
+        val line = expandAlias(rawLine)
         val p = line.split(" ").filter { it.isNotEmpty() }
         when (cmd(p[0])) {
             "help" -> append(t, help())
@@ -1110,12 +1165,51 @@ Long-press a tab to rename it.
                 val tg = when (target) {
                     "storage", "sdcard", "~/storage" -> Environment.getExternalStorageDirectory().path
                     "~" -> filesDir.path
-                    else -> target
+                    "-" -> t.prev.ifEmpty { t.cwd }
+                    else -> if (target.startsWith("~/")) filesDir.path + target.drop(1) else target
                 }
                 val f = try { (if (tg.startsWith("/")) File(tg) else File(t.cwd, tg)).canonicalFile } catch (e: Exception) { null }
-                if (f != null && f.isDirectory) t.cwd = f.path
+                if (f != null && f.isDirectory) { t.prev = t.cwd; t.cwd = f.path }
                 else err(t, "cd: $target: " + tr("No such file or directory", "Arquivo ou diretório inexistente") +
                     if (!storageOk() && tg.startsWith("/storage")) tr(" (turn on storage in ⚙ Settings)", " (ligue o armazenamento em ⚙ Configurações)") else "")
+            }
+            "exit", "logout" -> { val i = tabs.indexOf(t); if (tabs.size <= 1) closeWindow() else closeTab(i) }
+            "nano", "edit", "vi" -> editFile(t, p.getOrNull(1))
+            "alias" -> {
+                val rest = line.trim().removePrefix("alias").trim()
+                if (rest.isEmpty()) append(t, aliases.entries.joinToString("") { "alias ${it.key}='${it.value}'\n" })
+                else if ('=' in rest) {
+                    val k = rest.substringBefore('=').trim()
+                    val v = rest.substringAfter('=').trim().removeSurrounding("'").removeSurrounding("\"")
+                    if (k.isEmpty()) err(t, tr("usage: alias ll='ls -la'", "uso: alias ll='ls -la'")) else { aliases[k] = v }
+                } else append(t, aliases[rest]?.let { "alias $rest='$it'\n" } ?: "")
+            }
+            "unalias" -> { val k = p.getOrNull(1) ?: ""; if (aliases.remove(k) == null) err(t, "unalias: $k: " + tr("not found", "não encontrado")) }
+            "export" -> {
+                val rest = line.trim().removePrefix("export").trim()
+                if (rest.isEmpty()) append(t, envVars.entries.joinToString("") { "export ${it.key}=${it.value}\n" })
+                else if ('=' in rest) {
+                    val k = rest.substringBefore('=').trim()
+                    val v = rest.substringAfter('=').trim().removeSurrounding("\"").removeSurrounding("'")
+                    if (k.isEmpty()) err(t, tr("usage: export NAME=value", "uso: export NOME=valor")) else { envVars[k] = v }
+                } else err(t, tr("usage: export NAME=value", "uso: export NOME=valor"))
+            }
+            "unset" -> p.drop(1).forEach { envVars.remove(it) }
+            "env" -> append(t, (mapOf("HOME" to filesDir.path, "TMPDIR" to cacheDir.path) + envVars).entries.joinToString("") { "${it.key}=${it.value}\n" })
+            "wget" -> apiCmd(t, listOf("termwin-download") + p.drop(1))
+            "curl" -> {
+                val u = p.drop(1).firstOrNull { it.startsWith("http") }
+                if (u == null) err(t, tr("usage: curl https://site.com", "uso: curl https://site.com"))
+                else {
+                    busy(1)
+                    thread {
+                        try {
+                            val bodyText = java.net.URL(u).readText().take(20000)
+                            ui.post { append(t, bodyText + "\n") }
+                        } catch (e: Exception) { ui.post { err(t, "curl: ${e.message}") } }
+                        ui.post { busy(-1) }
+                    }
+                }
             }
             "server" -> serverCmd(t, p)
             "pkg" -> pkgCmd(t, p)
@@ -1334,6 +1428,61 @@ Long-press a tab to rename it.
         return true
     }
 
+    /** Built-in text editor (nano/edit/vi): opens a panel with the file's text. */
+    private fun editFile(t: TabData, name: String?) {
+        if (name == null) { err(t, tr("usage: nano file.txt", "uso: nano arquivo.txt")); return }
+        val f = if (name.startsWith("/")) File(name) else File(t.cwd, name)
+        if (f.isDirectory) { err(t, "nano: $name: " + tr("is a folder", "é uma pasta")); return }
+        if (f.length() > 300_000) { err(t, "nano: $name: " + tr("file too big", "arquivo muito grande")); return }
+        val init = try { if (f.exists()) f.readText() else "" } catch (e: Exception) { err(t, "nano: ${e.message}"); return }
+        val p = panel("nano ${f.name}", 0.85f)
+        val et = field(tr("empty file", "arquivo vazio"), init, true)
+        et.typeface = Typeface.MONOSPACE
+        et.minLines = 10
+        p.body.addView(et)
+        p.button(tr("Cancel", "Cancelar")) { p.close() }
+        p.button(tr("Save", "Salvar"), true) {
+            try {
+                f.parentFile?.mkdirs()
+                f.writeText(et.text.toString())
+                append(t, tr("saved ", "salvo ") + short(f.path) + "\n")
+                p.close()
+            } catch (e: Exception) { err(t, "nano: ${e.message}") }
+        }
+    }
+
+    private fun histMove(et: EditText, d: Int) {
+        if (history.isEmpty()) return
+        if (d < 0) hIdx = if (hIdx < 0) history.size - 1 else (hIdx - 1).coerceAtLeast(0)
+        else if (hIdx >= 0) hIdx++
+        else return
+        if (hIdx >= history.size) { hIdx = -1; et.setText("") } else et.setText(history[hIdx])
+        et.setSelection(et.text.length)
+    }
+
+    private fun tabComplete(et: EditText) {
+        val t = tabs[cur]
+        val txt = et.text.toString()
+        val tok = txt.substringAfterLast(' ')
+        val base = tok.substringAfterLast('/')
+        val dir = when {
+            !tok.contains('/') -> File(t.cwd)
+            tok.startsWith("/") -> File(tok.substringBeforeLast('/').ifEmpty { "/" })
+            else -> File(t.cwd, tok.substringBeforeLast('/'))
+        }
+        val m = (dir.listFiles() ?: return).filter { it.name.startsWith(base) }.sortedBy { it.name }
+        if (m.isEmpty()) return
+        if (m.size == 1) {
+            et.setText(txt.dropLast(base.length) + m[0].name + (if (m[0].isDirectory) "/" else ""))
+        } else {
+            var common = m[0].name
+            m.forEach { x -> while (!x.name.startsWith(common)) common = common.dropLast(1) }
+            if (common.length > base.length) et.setText(txt.dropLast(base.length) + common)
+            else append(t, m.joinToString("  ") { it.name + (if (it.isDirectory) "/" else "") } + "\n")
+        }
+        et.setSelection(et.text.length)
+    }
+
     private fun tree(f: File, pre: String, depth: Int, sb: StringBuilder) {
         if (depth == 0) return
         val items = (f.listFiles() ?: return).sortedBy { it.name }
@@ -1393,7 +1542,11 @@ Long-press a tab to rename it.
             var info = ""
             val tail = StringBuilder()
             try {
-                val pr = ProcessBuilder("sh", "-c", line).directory(File(t.cwd)).redirectErrorStream(true).start()
+                val pb = ProcessBuilder("sh", "-c", line).directory(File(t.cwd)).redirectErrorStream(true)
+                pb.environment()["HOME"] = filesDir.path
+                pb.environment()["TMPDIR"] = cacheDir.path
+                envVars.forEach { (k, v) -> pb.environment()[k] = v }
+                val pr = pb.start()
                 t.proc = pr
                 pr.inputStream.bufferedReader().use { r ->
                     val buf = CharArray(1024)
