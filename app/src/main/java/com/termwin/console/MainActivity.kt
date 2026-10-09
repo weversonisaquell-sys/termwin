@@ -52,7 +52,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "1.4"
+const val VERSION = "1.5"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -1457,6 +1457,43 @@ Long-press a tab to rename it.
         catch (e: Exception) { err(t, tr("could not open the browser", "não foi possível abrir o navegador")) }
     }
 
+    /** Opens the page inside a Windows-style window (WebView) instead of the phone's browser. */
+    @android.annotation.SuppressLint("SetJavaScriptEnabled")
+    private fun openWebWindow(title: String, url: String) {
+        val dm = resources.displayMetrics
+        val ov = FrameLayout(this)
+        ov.setBackgroundColor(0x99000000.toInt())
+        ov.isClickable = true
+        ov.elevation = dp(40).toFloat()
+        ov.outlineProvider = null
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.background = rounded(0xFF202020.toInt(), dp(10), 0xFF3A3A3A.toInt())
+        card.clipToOutline = true
+        val wv = android.webkit.WebView(this)
+        lateinit var p: Panel
+        val tb = LinearLayout(this)
+        tb.setBackgroundColor(TITLE)
+        tb.addView(tv("   ▣   $title — $url", 13f, Color.WHITE).apply { gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }, LinearLayout.LayoutParams(0, dp(40), 1f))
+        tb.addView(capBtn("⟳", false, 46) { wv.reload() })
+        tb.addView(capBtn("✕", true, 46) { p.close() })
+        card.addView(tb, LinearLayout.LayoutParams(MATCH, dp(40)))
+        wv.setBackgroundColor(Color.BLACK)
+        wv.settings.javaScriptEnabled = true
+        wv.settings.domStorageEnabled = true
+        wv.settings.mediaPlaybackRequiresUserGesture = false
+        wv.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        wv.webViewClient = android.webkit.WebViewClient()
+        wv.webChromeClient = android.webkit.WebChromeClient()
+        card.addView(wv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        ov.addView(card, FrameLayout.LayoutParams((dm.widthPixels * 0.94).toInt(), (dm.heightPixels * 0.92).toInt(), Gravity.CENTER))
+        root.addView(ov, FrameLayout.LayoutParams(MATCH, MATCH))
+        p = Panel(ov, LinearLayout(this), LinearLayout(this))
+        p.onClose = { try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
+        panels.add(p)
+        wv.loadUrl(url)
+    }
+
     private fun tplHelp(label: String, name: String, s: Srv): String {
         val st = if (s.running) "ON" else "OFF"
         val en = listOf("help" to "this help", "play $name" to "turn the server on and open the page",
@@ -1562,7 +1599,7 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
                 if (!s.running) startServer(s)
                 val u = "http://localhost:${s.port}"
                 append(t, "▶ $label: $u\n")
-                ui.postDelayed({ openUrl(t, u) }, 700)
+                ui.postDelayed({ openWebWindow(label, u) }, 500)
             }
             l == "play" || l.startsWith("play ") -> err(t, tr("usage: play $name", "uso: play $name"))
             l == "turn off" || l == "turnoff" || l == "desligar" ->
