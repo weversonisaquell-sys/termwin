@@ -52,12 +52,14 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "1.2"
+const val VERSION = "1.3"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
     var file: String = ""
     var prev: String = ""
+    var tpl: String = ""
+    var srvName: String = ""
 }
 
 class Srv(var name: String, var type: String, var port: Int, var cmd: String) {
@@ -137,7 +139,8 @@ class MainActivity : Activity() {
     private val TYPE_KEYS = listOf("youtube", "web", "files", "json", "cmd", "custom")
     private val TYPE_PT = mapOf("arquivos" to "files", "api" to "json", "comando" to "cmd", "personalizado" to "custom")
     private fun cmdType(s: String): String? = if (s in TYPE_KEYS) s else if (pt) TYPE_PT[s] else null
-    private fun anyType(s: String): String? = if (s in TYPE_KEYS) s else TYPE_PT[s]
+    private val TPL_TYPES = listOf("tpl-youtube", "tpl-windows10", "tpl-ai")
+    private fun anyType(s: String): String? = if (s in TYPE_KEYS || s in TPL_TYPES) s else TYPE_PT[s]
 
     private fun typeLabel(k: String) = when (k) {
         "youtube" -> "YouTube"
@@ -146,6 +149,9 @@ class MainActivity : Activity() {
         "json" -> tr("JSON API", "API JSON")
         "cmd" -> tr("Command", "Comando")
         "custom" -> tr("Custom (HTML)", "Personalizado (HTML)")
+        "tpl-youtube" -> tr("YouTube template", "Modelo YouTube")
+        "tpl-windows10" -> tr("Windows 10 template", "Modelo Windows 10")
+        "tpl-ai" -> tr("AI template", "Modelo IA")
         else -> k
     }
 
@@ -202,6 +208,8 @@ class MainActivity : Activity() {
   servidor criar docs arquivos 8081 /sdcard
   servidor iniciar meusite   também: servidor parar | remover meusite
   servidor renomear meusite novo
+  botão 🎨 Modelos           modelos de servidor (YouTube, Windows 10, IA): play, port, turn off
+  botão 📝 Dados             edita o arquivo dados.wintext
   nano arquivo.txt           editor de texto (também: edit, vi)
   alias ll='ls -la'          cria atalho | unalias ll
   export NOME=valor          variável de ambiente | env | unset NOME
@@ -252,6 +260,8 @@ Toque e segure numa aba para renomear.
   server create docs files 8081 /sdcard
   server start mysite        also: server stop | remove mysite
   server rename mysite newname
+  🎨 Templates button        server templates (YouTube, Windows 10, AI): play, port, turn off
+  📝 Data button             edit the dados.wintext file
   nano file.txt              text editor (also: edit, vi)
   alias ll='ls -la'          create a shortcut | unalias ll
   export NAME=value          environment variable | env | unset NAME
@@ -453,6 +463,7 @@ Long-press a tab to rename it.
         btns.addView(pill(tr("⊞  Open window", "⊞  Abrir janela"), true) { openWindow() })
         btns.addView(pill(tr("⚙  Settings", "⚙  Configurações"), false) { showSettings() }, gap())
         btns.addView(pill(tr("ⓘ  Credits", "ⓘ  Créditos"), false) { showCredits() }, gap())
+        btns.addView(pill(tr("📝  Data", "📝  Dados"), false) { showDados() }, gap())
         home.addView(btns, LinearLayout.LayoutParams(WRAP, WRAP))
         root.addView(home, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -660,7 +671,12 @@ Long-press a tab to rename it.
             sb.append("\n[Servers]\n")
             val sf = serDir().listFiles()?.filter { it.isFile && it.extension.equals("winser", true) }?.sortedBy { it.name } ?: emptyList()
             if (sf.isEmpty()) sb.append("(none)\n") else sf.forEach { sb.append("servidores/").append(it.name).append('\n') }
-            File(dataDir(), "dados.wintext").writeText(sb.toString())
+            val f = File(dataDir(), "dados.wintext")
+            val old = try { if (f.exists()) f.readText() else "" } catch (e: Exception) { "" }
+            val ni = old.indexOf("[Notes]")
+            sb.append("\n")
+            sb.append(if (ni >= 0) old.substring(ni).trimEnd() + "\n" else "[Notes]\n" + tr("(write anything here - this part is kept)", "(escreva o que quiser aqui - esta parte fica salva)") + "\n")
+            f.writeText(sb.toString())
         } catch (e: Exception) { }
     }
 
@@ -671,7 +687,7 @@ Long-press a tab to rename it.
         val o = JSONObject()
         o.put("cur", cur)
         val ta = JSONArray()
-        tabs.forEach { ta.put(JSONObject().put("n", it.name).put("c", it.cwd).put("l", it.log.toString().takeLast(20000)).put("f", it.file)) }
+        tabs.forEach { ta.put(JSONObject().put("n", it.name).put("c", it.cwd).put("l", it.log.toString().takeLast(20000)).put("f", it.file).put("tp", it.tpl).put("sn", it.srvName)) }
         o.put("tabs", ta)
         val sa = JSONArray()
         servers.forEach { sa.put(JSONObject().put("n", it.name).put("t", it.type).put("p", it.port).put("c", it.cmd).put("f", it.file)) }
@@ -691,7 +707,7 @@ Long-press a tab to rename it.
             val ta = o.optJSONArray("tabs")
             if (ta != null) for (i in 0 until ta.length()) {
                 val j = ta.getJSONObject(i)
-                tabs.add(TabData(j.getString("n"), j.getString("c"), StringBuilder(j.optString("l"))).also { it.file = j.optString("f") })
+                tabs.add(TabData(j.getString("n"), j.getString("c"), StringBuilder(j.optString("l"))).also { it.file = j.optString("f"); it.tpl = j.optString("tp"); it.srvName = j.optString("sn") })
             }
             val sa = o.optJSONArray("servers")
             if (sa != null) for (i in 0 until sa.length()) {
@@ -835,6 +851,7 @@ Long-press a tab to rename it.
             "• Android commands + built-in ones (info, memory, ip, battery…)\n" +
             "• pkg / termwin upgrade and packages: neofetch, cowsay, tree\n" +
             "• Local servers (.winser files): YouTube, Web, Files, JSON API, Command and Custom\n" +
+            "• Templates: YouTube, Windows 10 and AI (ai//question//app)\n" +
             "• Runs in the background and notifies you when done\n" +
             "• Load .winv / .winser files from anywhere\n" +
             "• One-tap storage access",
@@ -966,8 +983,10 @@ Long-press a tab to rename it.
         rb(tr("Servers", "Servidores"), 88) { showServers() }
         rb(tr("＋ Server", "＋ Servidor"), 88, true) { createServerDialog() }
         rb(tr("📂 Load", "📂 Carregar"), 92, true) { showLoad() }
+        rb(tr("🎨 Templates", "🎨 Modelos"), 104, true) { showTemplates() }
         rb("⚙", 40) { showSettings() }
         rb("ⓘ", 40) { showCredits() }
+        rb("📝", 40) { showDados() }
         w.addView(row, LinearLayout.LayoutParams(MATCH, dp(38)))
 
         body = FrameLayout(this)
@@ -1156,6 +1175,7 @@ Long-press a tab to rename it.
     private fun exec(t: TabData, rawLine: String) {
         if (rawLine.isEmpty()) return
         val line = expandAlias(rawLine)
+        if (t.tpl.isNotEmpty()) { tplExec(t, line); save(); return }
         val p = line.split(" ").filter { it.isNotEmpty() }
         when (cmd(p[0])) {
             "help" -> append(t, help())
@@ -1428,6 +1448,195 @@ Long-press a tab to rename it.
         return true
     }
 
+    // ---------- server templates (YouTube / Windows 10) ----------
+    private fun openUrl(t: TabData, u: String) {
+        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) }
+        catch (e: Exception) { err(t, tr("could not open the browser", "não foi possível abrir o navegador")) }
+    }
+
+    private fun tplHelp(label: String, name: String, s: Srv): String {
+        val st = if (s.running) "ON" else "OFF"
+        val en = listOf("help" to "this help", "play $name" to "turn the server on and open the page",
+            "port 4089" to "set the port (then open localhost:4089)", "turn off" to "turn the server off",
+            "status" to "show state and port", "clear" to "clear the screen", "exit" to "close this tab")
+        val br = listOf("help" to "esta ajuda", "play $name" to "liga o servidor e abre a página",
+            "port 4089" to "define a porta (depois abra localhost:4089)", "turn off" to "desliga o servidor",
+            "status" to "mostra estado e porta", "clear" to "limpa a tela", "exit" to "fecha esta aba")
+        val rows = (if (pt) br else en).joinToString("") { "  " + it.first.padEnd(18) + it.second + "\n" }
+        val ai = if (name != "ai") "" else if (pt) "  ia//pergunta//app   gera resposta ou código (app é opcional)\n  ia//faça um jogo//GDScript   exemplo (também: ai// e aí//)\n  ia key SUA_CHAVE   guarda a chave da API (ia key limpar apaga)\n"
+            else "  ai//question//app   answer or code (app is optional)\n  ai//make a game//GDScript   example (also: ia// and aí//)\n  ai key YOUR_KEY   store the API key (ai key clear deletes it)\n"
+        return tr("$label server — $st, port ${s.port}\n", "Servidor $label — $st, porta ${s.port}\n") + rows + ai
+    }
+
+    // ---------- AI template ----------
+    private fun aiKey() = prefs.getString("aikey", "") ?: ""
+
+    /** Blocking call to the Anthropic Messages API. Run it off the UI thread. */
+    private fun askAi(q: String, spec: String): String {
+        val key = aiKey()
+        if (key.isEmpty()) return tr("No API key yet. Type: ai key YOUR_KEY  (get one at console.anthropic.com)", "Sem chave da API ainda. Digite: ia key SUA_CHAVE  (crie em console.anthropic.com)")
+        return try {
+            val sys = "You are the AI inside a mobile terminal app. Answer in the user's language. " +
+                "If the user wants code, reply with working code in the requested language (Python, GDScript/GD, Kotlin, JS, Lua, C, etc.) in one fenced block and at most a few short lines of explanation. " +
+                "If a target app/engine is given, write the code for exactly that app. Keep it compact; no long introductions."
+            val msg = if (spec.isBlank()) q else "$q\n\nTarget app/language: $spec"
+            val body = JSONObject().put("model", "claude-sonnet-5-5").put("max_tokens", 4000).put("system", sys)
+                .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", msg)))
+            val c = java.net.URL("https://api.anthropic.com/v1/messages").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "POST"; c.connectTimeout = 15000; c.readTimeout = 120000; c.doOutput = true
+            c.setRequestProperty("x-api-key", key); c.setRequestProperty("anthropic-version", "2023-06-01")
+            c.setRequestProperty("content-type", "application/json")
+            c.outputStream.use { it.write(body.toString().toByteArray()) }
+            val code = c.responseCode
+            val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            val j = JSONObject(txt)
+            if (code !in 200..299) {
+                val m = j.optJSONObject("error")?.optString("message") ?: txt.take(200)
+                logError("ai", "HTTP $code: $m")
+                "[$code] $m"
+            } else {
+                val arr = j.getJSONArray("content")
+                (0 until arr.length()).map { arr.getJSONObject(it) }.filter { it.optString("type") == "text" }.joinToString("\n") { it.getString("text") }.trim()
+            }
+        } catch (e: Exception) {
+            logError("ai", e.toString())
+            tr("Could not reach the AI: ${e.message} (check your internet)", "Não consegui falar com a IA: ${e.message} (veja a internet)")
+        }
+    }
+
+    private fun aiPageHtml(): String = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>AI</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:15px system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
+header{padding:14px 16px;font-weight:700;background:#161b22;border-bottom:1px solid #30363d}header span{color:#7ee787}
+#log{flex:1;overflow:auto;padding:14px}.m{max-width:760px;margin:0 auto 12px;padding:10px 14px;border-radius:14px;white-space:pre-wrap;word-break:break-word}
+.u{background:#1f6feb;margin-left:auto;width:fit-content}.a{background:#161b22;border:1px solid #30363d}
+form{display:flex;gap:8px;padding:10px;background:#161b22;border-top:1px solid #30363d;flex-wrap:wrap}
+input{flex:1;min-width:140px;padding:12px;border-radius:12px;border:1px solid #30363d;background:#0d1117;color:#fff;font-size:15px}
+#sp{flex:0 0 150px;min-width:110px}button{padding:12px 18px;border:0;border-radius:12px;background:#7ee787;color:#000;font-weight:700}</style>
+<header><span>●</span> AI — TermWin</header><div id=log><div class="m a">Ask anything. Optional field: app / language (GDScript, Python, Roblox Lua…).</div></div>
+<form id=f><input id=q placeholder="Question / Pergunta" autocomplete=off><input id=sp placeholder="App (optional)"><button>Send</button></form>
+<script>const L=document.getElementById('log');function add(c,t){const d=document.createElement('div');d.className='m '+c;d.textContent=t;L.appendChild(d);L.scrollTop=L.scrollHeight;return d}
+document.getElementById('f').onsubmit=async e=>{e.preventDefault();const q=document.getElementById('q').value.trim();if(!q)return;const sp=document.getElementById('sp').value.trim();document.getElementById('q').value='';add('u',q);const w=add('a','…');
+try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURIComponent(sp));w.textContent=(await r.json()).answer}catch(x){w.textContent='Error: '+x}}</script>"""
+
+
+    private fun tplExec(t: TabData, line: String) {
+        val s = findSrv(t.srvName)
+        val name = when (t.tpl) { "youtube" -> "youtube"; "ai" -> "ai"; else -> "windows 10" }
+        val label = when (t.tpl) { "youtube" -> "YouTube"; "ai" -> "AI"; else -> "Windows 10" }
+        val l = line.trim().lowercase().split(" ").filter { it.isNotEmpty() }.joinToString(" ")
+        if (l.isEmpty()) return
+        if (l == "clear" || l == "limpar") { t.log.setLength(0); outView?.text = ""; return }
+        if (l == "exit") { val i = tabs.indexOf(t); if (tabs.size <= 1) closeWindow() else closeTab(i); return }
+        if (t.tpl == "ai") {
+            val raw = line.trim()
+            val low = raw.lowercase()
+            val m = Regex("^(ai|ia|aí)\\s*//", RegexOption.IGNORE_CASE).find(raw)
+            if (m != null) {
+                val parts = raw.substring(m.range.last + 1).split("//")
+                val q = parts[0].trim(); val spec = parts.drop(1).joinToString(" ").trim()
+                if (q.isEmpty()) { err(t, tr("usage: ai//question//app", "uso: ia//pergunta//app")); return }
+                append(t, tr("thinking…\n", "pensando…\n"))
+                thread { val a = askAi(q, spec); ui.post { append(t, a + "\n") } }
+                return
+            }
+            val km = Regex("^(ai|ia|aí)\\s+(key|chave)\\s*(.*)$", RegexOption.IGNORE_CASE).find(raw)
+            if (km != null) {
+                val v = km.groupValues[3].trim()
+                if (v.isEmpty()) append(t, if (aiKey().isEmpty()) tr("no key saved\n", "nenhuma chave salva\n") else tr("key saved (…${aiKey().takeLast(4)})\n", "chave salva (…${aiKey().takeLast(4)})\n"))
+                else if (v == "clear" || v == "limpar") { prefs.edit().remove("aikey").apply(); append(t, tr("key deleted\n", "chave apagada\n")) }
+                else { prefs.edit().putString("aikey", v).apply(); append(t, tr("key saved\n", "chave salva\n")) }
+                return
+            }
+            if (low == "play ia") { tplExec(t, "play ai"); return }
+        }
+        if (s == null) {
+            err(t, tr("the server of this template was removed. Close this tab and open the template again.", "o servidor deste modelo foi removido. Feche esta aba e abra o modelo de novo."))
+            return
+        }
+        when {
+            l == "help" || l == "ajuda" -> append(t, tplHelp(label, name, s))
+            l == "play $name" -> {
+                if (!s.running) startServer(s)
+                val u = "http://localhost:${s.port}"
+                append(t, "▶ $label: $u\n")
+                ui.postDelayed({ openUrl(t, u) }, 700)
+            }
+            l == "play" || l.startsWith("play ") -> err(t, tr("usage: play $name", "uso: play $name"))
+            l == "turn off" || l == "turnoff" || l == "desligar" ->
+                if (s.running) stopServer(s) else append(t, tr("the server is already off\n", "o servidor já está desligado\n"))
+            l == "port" -> append(t, tr("port: ${s.port}\n", "porta: ${s.port}\n"))
+            l.startsWith("port ") -> {
+                val n = l.removePrefix("port ").trim().toIntOrNull()
+                if (n == null || n < 1024 || n > 65535) err(t, tr("usage: port 4089 (between 1024 and 65535)", "uso: port 4089 (entre 1024 e 65535)"))
+                else if (servers.any { it !== s && it.type != "cmd" && it.port == n }) err(t, tr("port $n is already used by another server", "a porta $n já é usada por outro servidor"))
+                else {
+                    val was = s.running
+                    if (was) stopServer(s)
+                    s.port = n
+                    append(t, if (was) tr("port set to $n — http://localhost:$n\n", "porta definida para $n — http://localhost:$n\n")
+                        else tr("port set to $n. Type: play $name\n", "porta definida para $n. Digite: play $name\n"))
+                    if (was) ui.postDelayed({ startServer(s) }, 500)
+                    serversRefresh?.invoke()
+                }
+            }
+            l == "status" -> append(t, tr("server: ${s.name}\nstate: ", "servidor: ${s.name}\nestado: ") + (if (s.running) "ON" else "OFF") + "\nport: ${s.port}\nurl: http://localhost:${s.port}\n")
+            else -> err(t, "$l: " + tr("unknown command. Type help", "comando desconhecido. Digite help"))
+        }
+    }
+
+    private fun openTemplate(key: String) {
+        val label = when (key) { "youtube" -> "YouTube"; "ai" -> "AI"; else -> "Windows 10" }
+        val s = Srv(uniqueSrvName(label), "tpl-$key", freePort(), "")
+        servers.add(s)
+        val t = TabData(uniqueTabName(label), filesDir.path,
+            StringBuilder(tr("$label template — type 'help' to see the commands.\n", "Modelo $label — digite 'help' para ver os comandos.\n")))
+        t.tpl = key
+        t.srvName = s.name
+        tabs.add(t)
+        cur = tabs.size - 1
+        refreshTabs(); showTab(); save()
+    }
+
+    private fun showTemplates() {
+        val p = panel(tr("Server templates", "Modelos de servidor"), 0.7f)
+        p.body.addView(tv(tr("Pick a template. It opens a new tab — type help there.", "Escolha um modelo. Ele abre uma aba nova — digite help lá."), 12f, Color.WHITE))
+        fun card(icon: String, title: String, desc: String, key: String) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.background = rounded(0xFF2A2A2A.toInt(), dp(8))
+            row.setPadding(dp(12), dp(10), dp(8), dp(10))
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            col.addView(tv("$icon  $title", 15f, Color.WHITE))
+            col.addView(tv(desc, 11f, 0xFF9AA5B1.toInt()))
+            row.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
+            row.addView(smallBtn(tr("Use", "Usar")) { p.close(); openTemplate(key) })
+            p.body.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
+        }
+        card("▶", "YouTube Mobile", tr("video feed, Shorts, player — command: play youtube", "feed de vídeos, Shorts, player — comando: play youtube"), "youtube")
+        card("✦", tr("AI Assistant", "IA Assistente"), tr("ask or generate code in any language — command: ai//question//app (play ai opens the chat page)", "responde ou gera código em qualquer linguagem — comando: ia//pergunta//app (play ai abre o chat)"), "ai")
+        card("⊞", "Windows 10 Mobile", tr("lock screen, live tiles, apps — command: play windows 10", "tela de bloqueio, blocos dinâmicos, apps — comando: play windows 10"), "windows10")
+        p.button(tr("Close", "Fechar"), true) { p.close() }
+    }
+
+    // ---------- dados.wintext editor ----------
+    private fun showDados() {
+        writeIndex()
+        val f = File(dataDir(), "dados.wintext")
+        val p = panel("dados.wintext", 0.85f)
+        p.body.addView(tv(tr("Edit the file. The [Normal] and [Servers] lists update by themselves; write your own text under [Notes].", "Edite o arquivo. As listas [Normal] e [Servers] se atualizam sozinhas; escreva o seu texto em [Notes]."), 12f, 0xFF9AA5B1.toInt()))
+        val et = field("dados.wintext", try { f.readText() } catch (e: Exception) { "" }, true)
+        et.typeface = Typeface.MONOSPACE
+        et.minLines = 12
+        p.body.addView(et)
+        p.button(tr("Close", "Fechar")) { p.close() }
+        p.button(tr("Save", "Salvar"), true) {
+            try { f.writeText(et.text.toString()); writeIndex(); toast(tr("saved", "salvo")); p.close() }
+            catch (e: Exception) { toast("dados.wintext: ${e.message}") }
+        }
+    }
+
     /** Built-in text editor (nano/edit/vi): opens a panel with the file's text. */
     private fun editFile(t: TabData, name: String?) {
         if (name == null) { err(t, tr("usage: nano file.txt", "uso: nano arquivo.txt")); return }
@@ -1666,6 +1875,11 @@ Long-press a tab to rename it.
         o.write(data)
     }
 
+    private fun sendAsset(o: OutputStream, name: String) {
+        val data = try { assets.open(name).use { it.readBytes() } } catch (e: Exception) { "template not found".toByteArray() }
+        send(o, "text/html; charset=utf-8", data)
+    }
+
     private fun serve(c: Socket, s: Srv) {
         try {
             c.soTimeout = 3000
@@ -1678,6 +1892,13 @@ Long-press a tab to rename it.
             when (s.type) {
                 "files" -> serveFiles(o, s, path)
                 "json" -> send(o, "application/json; charset=utf-8", s.cmd.ifBlank { "{\"ok\":true}" }.toByteArray())
+                "tpl-youtube" -> sendAsset(o, "template_youtube.html")
+                "tpl-windows10" -> sendAsset(o, "template_windows10.html")
+                "tpl-ai" -> if (path == "/ask") {
+                    val qs = first.split(" ").getOrNull(1)?.substringAfter("?", "") ?: ""
+                    fun qp(k: String) = qs.split("&").firstOrNull { it.startsWith("$k=") }?.substringAfter("=")?.let { Uri.decode(it.replace("+", " ")) } ?: ""
+                    send(o, "application/json; charset=utf-8", JSONObject().put("answer", askAi(qp("q"), qp("spec"))).toString().toByteArray())
+                } else send(o, "text/html; charset=utf-8", aiPageHtml().toByteArray())
                 "custom" -> send(o, "text/html; charset=utf-8", s.cmd.ifBlank { "<h1>${s.name.replace("<", "&lt;")}</h1>" }.toByteArray())
                 else -> send(o, "text/html; charset=utf-8", page(s).toByteArray())
             }

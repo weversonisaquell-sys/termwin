@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f0f">
+<title>YouTube</title>
+<style>
+:root{--bg:#0f0f0f;--card:#272727;--txt:#f1f1f1;--sub:#aaa;--red:#ff0033;--chip:#272727}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--txt);font-family:Roboto,Arial,Helvetica,sans-serif}
+body{padding-bottom:64px}
+header{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-items:center;gap:10px;padding:10px 12px}
+.logo{display:flex;align-items:center;gap:5px;font-weight:700;letter-spacing:-.5px;font-size:19px}
+.logo i{width:30px;height:21px;background:var(--red);border-radius:6px;display:inline-block;position:relative}
+.logo i:after{content:"";position:absolute;left:12px;top:5px;border-left:8px solid #fff;border-top:5.5px solid transparent;border-bottom:5.5px solid transparent}
+.sp{flex:1}
+.ic{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-size:18px;background:transparent;border:0;color:var(--txt)}
+.av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7f5af0,#2cb67d);display:grid;place-items:center;font-size:13px;font-weight:700}
+.search{display:flex;gap:8px;padding:0 12px 8px}
+.search input{flex:1;height:38px;border-radius:20px;border:1px solid #303030;background:#121212;color:var(--txt);padding:0 16px;font-size:15px;outline:none}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:4px 12px 10px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:7px 13px;border-radius:9px;background:var(--chip);font-size:14px;border:0;color:var(--txt)}
+.chip.on{background:#f1f1f1;color:#0f0f0f}
+.card{margin-bottom:18px}
+.th{position:relative;aspect-ratio:16/9;display:grid;place-items:center;font-size:44px}
+.dur{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.8);padding:2px 5px;border-radius:4px;font-size:12px;font-weight:600}
+.meta{display:flex;gap:10px;padding:10px 12px 0}
+.meta .a{width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:700}
+.t{font-size:15px;line-height:1.3;font-weight:500;margin:0 0 3px}
+.s{font-size:12.5px;color:var(--sub)}
+.shorts{padding:0 0 6px}
+.shorts h3{margin:6px 12px 10px;font-size:18px;display:flex;align-items:center;gap:8px}
+.shorts h3 b{background:var(--red);color:#fff;border-radius:6px;padding:0 6px;font-size:13px}
+.row{display:flex;gap:10px;overflow-x:auto;padding:0 12px 16px;scrollbar-width:none}
+.row::-webkit-scrollbar{display:none}
+.sh{flex:none;width:150px;aspect-ratio:9/16;border-radius:12px;position:relative;display:grid;place-items:center;font-size:42px}
+.sh span{position:absolute;left:8px;right:8px;bottom:8px;font-size:13px;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.7)}
+nav{position:fixed;left:0;right:0;bottom:0;height:56px;background:#0f0f0f;border-top:1px solid #222;display:flex;justify-content:space-around;align-items:center;z-index:6;padding-bottom:env(safe-area-inset-bottom)}
+nav button{background:none;border:0;color:var(--txt);display:flex;flex-direction:column;align-items:center;font-size:10px;gap:2px}
+nav button span{font-size:20px}
+nav .plus span{width:38px;height:38px;border:1.5px solid #fff;border-radius:50%;display:grid;place-items:center;font-size:22px}
+#pl{position:fixed;inset:0;background:var(--bg);z-index:10;transform:translateY(100%);transition:transform .28s ease;overflow-y:auto}
+#pl.on{transform:none}
+.vid{aspect-ratio:16/9;display:grid;place-items:center;font-size:64px;position:relative}
+.bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.3)}
+.bar i{display:block;height:100%;width:0;background:var(--red)}
+.pp{position:absolute;width:64px;height:64px;border-radius:50%;background:rgba(0,0,0,.55);border:0;color:#fff;font-size:26px}
+.back{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.5);border:0;color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px}
+.acts{display:flex;gap:8px;overflow-x:auto;padding:8px 12px;scrollbar-width:none}
+.acts button{flex:none;border:0;border-radius:18px;padding:8px 14px;background:var(--card);color:var(--txt);font-size:13px}
+.empty{padding:40px;text-align:center;color:var(--sub)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><i></i>YouTube</div><div class="sp"></div>
+  <button class="ic" aria-label="Transmitir">📡</button><button class="ic" aria-label="Notificações">🔔</button><div class="av">U</div>
+</header>
+<div class="search"><input id="q" placeholder="Pesquisar" autocomplete="off"></div>
+<div class="chips" id="chips"></div>
+<main id="feed"></main>
+<nav>
+  <button><span>🏠</span>Início</button><button><span>🎬</span>Shorts</button>
+  <button class="plus"><span>＋</span></button><button><span>📺</span>Inscrições</button><button><span>👤</span>Você</button>
+</nav>
+<section id="pl">
+  <div class="vid" id="pv"><button class="back" id="bk">←</button><span id="pe"></span><button class="pp" id="pp">⏸</button><div class="bar"><i id="pb"></i></div></div>
+  <div class="meta"><div><p class="t" id="pt" style="font-size:18px"></p><div class="s" id="ps"></div></div></div>
+  <div class="acts"><button>👍 12 mil</button><button>👎</button><button>↗ Compartilhar</button><button>⬇ Download</button><button>✂ Clipe</button><button>💾 Salvar</button></div>
+  <div class="empty">Comentários desativados neste modelo ✨</div>
+</section>
+<script>
+var cats=['Tudo','Música','Jogos','Ao vivo','Mixes','Tecnologia','Filmes','Culinária','Esportes','Aprendizado'];
+var vids=[
+{t:'Como criar um servidor local no celular',c:'Dev Mobile',v:'1,2 mi',d:'12:48',e:'💻',g:['#7f5af0','#2cb67d'],k:'Tecnologia'},
+{t:'Lo-fi para programar e relaxar • 24h',c:'Lofi Station',v:'8,4 mi',d:'AO VIVO',e:'🎧',g:['#ff6b6b','#feca57'],k:'Música'},
+{t:'Top 10 jogos mobile de 2026',c:'Game Hub',v:'540 mil',d:'9:21',e:'🎮',g:['#00c6ff','#0072ff'],k:'Jogos'},
+{t:'Receita fácil de pão de queijo',c:'Cozinha da Vó',v:'3,1 mi',d:'7:05',e:'🧀',g:['#f7971e','#ffd200'],k:'Culinária'},
+{t:'Android vs. iPhone: o teste final',c:'Tech Review',v:'2,7 mi',d:'15:33',e:'📱',g:['#232526','#414345'],k:'Tecnologia'},
+{t:'Melhores gols da rodada',c:'Esporte Total',v:'980 mil',d:'6:12',e:'⚽',g:['#11998e','#38ef7d'],k:'Esportes'},
+{t:'Trailer oficial — A Última Fronteira',c:'Cine Mundo',v:'12 mi',d:'2:41',e:'🚀',g:['#8e2de2','#4a00e0'],k:'Filmes'},
+{t:'Aprenda Kotlin em 30 minutos',c:'Código Fácil',v:'760 mil',d:'30:02',e:'📘',g:['#ee0979','#ff6a00'],k:'Aprendizado'}];
+var shorts=[['😂','Pegadinha do dia'],['🐶','Cachorro esperto'],['🍕','Pizza em 1 min'],['🎸','Solo incrível'],['🏀','Cesta impossível']];
+var cur='Tudo',q='';
+function $(i){return document.getElementById(i)}
+function chips(){$('chips').innerHTML=cats.map(function(c){return '<button class="chip'+(c==cur?' on':'')+'" data-c="'+c+'">'+c+'</button>'}).join('')}
+function feed(){
+  var l=vids.filter(function(v){return (cur=='Tudo'||v.k==cur)&&v.t.toLowerCase().indexOf(q)>=0});
+  var cards=l.map(function(v){return '<div class="card" data-i="'+vids.indexOf(v)+'"><div class="th" style="background:linear-gradient(135deg,'+v.g[0]+','+v.g[1]+')">'+v.e+'<span class="dur" style="'+(v.d=='AO VIVO'?'background:#e00':'')+'">'+v.d+'</span></div><div class="meta"><div class="a" style="background:'+v.g[0]+'">'+v.c[0]+'</div><div><p class="t">'+v.t+'</p><div class="s">'+v.c+' • '+v.v+' de visualizações • há 2 dias</div></div></div></div>'});
+  if(cur=='Tudo'&&!q&&cards.length>2)cards.splice(2,0,shortsHtml());
+  $('feed').innerHTML=cards.length?cards.join(''):'<div class="empty">Nenhum vídeo encontrado 🔎</div>';
+}
+function shortsHtml(){return '<div class="shorts"><h3><b>▶</b> Shorts</h3><div class="row">'+shorts.map(function(s,i){var g=vids[i%vids.length].g;return '<div class="sh" style="background:linear-gradient(160deg,'+g[0]+','+g[1]+')">'+s[0]+'<span>'+s[1]+'</span></div>'}).join('')+'</div></div>'}
+var timer=null,pos=0,playing=true;
+function openV(i){var v=vids[i];$('pe').textContent=v.e;$('pv').style.background='linear-gradient(135deg,'+v.g[0]+','+v.g[1]+')';$('pt').textContent=v.t;$('ps').textContent=v.c+' • '+v.v+' de visualizações';pos=0;playing=true;$('pp').textContent='⏸';$('pl').className='on';clearInterval(timer);timer=setInterval(function(){if(playing){pos=Math.min(100,pos+.4);$('pb').style.width=pos+'%'}},100)}
+$('chips').onclick=function(e){var c=e.target.getAttribute('data-c');if(c){cur=c;chips();feed()}};
+$('feed').onclick=function(e){var n=e.target;while(n&&n!==this&&!n.getAttribute('data-i'))n=n.parentNode;if(n&&n.getAttribute&&n.getAttribute('data-i'))openV(+n.getAttribute('data-i'))};
+$('q').oninput=function(){q=this.value.toLowerCase();feed()};
+$('bk').onclick=function(){$('pl').className='';clearInterval(timer)};
+$('pp').onclick=function(){playing=!playing;this.textContent=playing?'⏸':'▶'};
+chips();feed();
+</script>
+</body>
+</html>
