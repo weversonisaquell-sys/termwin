@@ -52,7 +52,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "1.6"
+const val VERSION = "1.7"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -1469,7 +1469,7 @@ Long-press a tab to rename it.
 
     /** Opens the page inside a Windows-style window (WebView) instead of the phone's browser. */
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
-    private fun openWebWindow(title: String, url: String, yt: Boolean = false) {
+    private fun openWebWindow(title: String, url: String, yt: Boolean = false, ai: Boolean = false) {
         val dm = resources.displayMetrics
         val ov = FrameLayout(this)
         ov.setBackgroundColor(0x99000000.toInt())
@@ -1486,6 +1486,7 @@ Long-press a tab to rename it.
         tb.setBackgroundColor(TITLE)
         tb.addView(tv("   ▣   $title — $url", 13f, Color.WHITE).apply { gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }, LinearLayout.LayoutParams(0, dp(40), 1f))
         if (yt) tb.addView(capBtn("＋", false, 46) { startPublish() })
+        if (ai) tb.addView(capBtn("🔑", false, 46) { showProviderKey() })
         tb.addView(capBtn("⟳", false, 46) { wv.reload() })
         tb.addView(capBtn("✕", true, 46) { p.close() })
         card.addView(tb, LinearLayout.LayoutParams(MATCH, dp(40)))
@@ -1668,7 +1669,7 @@ Long-press a tab to rename it.
                 append(t, "▶ $label: $u\n")
                 if (t.tpl == "youtube") lanIp()?.let { append(t, tr("other devices on the same Wi-Fi: http://$it:${s.port}\n", "outros aparelhos no mesmo Wi-Fi: http://$it:${s.port}\n")) }
                 val full = if (t.tpl == "ai") "$u#t=$ownerToken" else u
-                ui.postDelayed({ openWebWindow(label, full, t.tpl == "youtube") }, 500)
+                ui.postDelayed({ openWebWindow(label, full, t.tpl == "youtube", t.tpl == "ai") }, 500)
             }
             (l == "publish" || l == "publicar") && t.tpl == "youtube" -> startPublish()
             l == "play" || l.startsWith("play ") -> err(t, tr("usage: play $name", "uso: play $name"))
@@ -1915,7 +1916,7 @@ Long-press a tab to rename it.
                 val e = em.text.toString().trim()
                 if (!Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(e)) { toast(tr("Invalid e-mail", "E-mail inválido")); return@button }
                 val n = nm.text.toString().trim().ifEmpty { e.substringBefore('@') }
-                prefs.edit().putString("profile", JSONObject().put("email", e).put("name", n).put("channel", n).toString()).apply()
+                prefs.edit().putString("profile", JSONObject().put("email", e).put("name", n).put("channel", n).put("created", System.currentTimeMillis()).toString()).apply()
                 writeIndex(); p.close(); toast(tr("signed in as $n", "logado como $n"))
             }
         }
@@ -1976,6 +1977,8 @@ Long-press a tab to rename it.
     // ---------- publish a video ----------
     inner class TwBridge {
         @android.webkit.JavascriptInterface fun publish() { runOnUiThread { startPublish() } }
+        @android.webkit.JavascriptInterface fun profile() { runOnUiThread { showProfile() } }
+        @android.webkit.JavascriptInterface fun aiKey() { runOnUiThread { showProviderKey() } }
     }
     private var pubWv: android.webkit.WebView? = null
 
@@ -2024,17 +2027,30 @@ Long-press a tab to rename it.
 
     private fun jsonOut(o: OutputStream, j: Any) = send(o, "application/json; charset=utf-8", j.toString().toByteArray())
 
-    private fun ytRoute(o: OutputStream, path: String, range: String?) {
+    private fun pubVid(e: JSONObject) = JSONObject().put("id", e.optString("id")).put("title", e.optString("title")).put("channel", e.optString("channel"))
+        .put("dur", e.optLong("dur")).put("ts", e.optLong("ts")).put("views", e.optInt("views"))
+
+    private fun ytRoute(o: OutputStream, path: String, range: String?, query: String) {
+        fun qp(k: String) = query.split("&").firstOrNull { it.startsWith("$k=") }?.substringAfter("=")?.let { Uri.decode(it.replace("+", " ")) } ?: ""
         fun find(id: String): JSONObject? { val a = vidsRead(); for (i in 0 until a.length()) if (a.getJSONObject(i).optString("id") == id) return a.getJSONObject(i); return null }
         when {
             path == "/api/videos" -> {
                 val a = vidsRead(); val out = JSONArray()
-                for (i in a.length() - 1 downTo 0) { val e = a.getJSONObject(i)
-                    out.put(JSONObject().put("id", e.optString("id")).put("title", e.optString("title")).put("channel", e.optString("channel"))
-                        .put("dur", e.optLong("dur")).put("ts", e.optLong("ts")).put("views", e.optInt("views"))) }
+                for (i in a.length() - 1 downTo 0) out.put(pubVid(a.getJSONObject(i)))
                 jsonOut(o, out)
             }
             path == "/api/me" -> jsonOut(o, JSONObject().put("name", profile()?.optString("channel") ?: ""))
+            path == "/api/channel" -> {
+                val name = qp("name")
+                val a = vidsRead(); val list = JSONArray(); var views = 0L; var first = Long.MAX_VALUE
+                for (i in a.length() - 1 downTo 0) { val e = a.getJSONObject(i)
+                    if (e.optString("channel").equals(name, true)) { list.put(pubVid(e)); views += e.optInt("views"); first = minOf(first, e.optLong("ts")) } }
+                val me = profile()
+                val own = me != null && me.optString("channel").equals(name, true)
+                val since = if (own) me!!.optLong("created", if (first == Long.MAX_VALUE) System.currentTimeMillis() else first) else if (first == Long.MAX_VALUE) 0L else first
+                jsonOut(o, JSONObject().put("exists", own || list.length() > 0).put("name", name).put("own", own)
+                    .put("handle", "@" + name.lowercase().replace(Regex("[^a-z0-9]"), "")).put("videos", list).put("views", views).put("since", since))
+            }
             path.startsWith("/api/view/") -> synchronized(vlock) {
                 val id = path.removePrefix("/api/view/"); val a = vidsRead()
                 for (i in 0 until a.length()) { val e = a.getJSONObject(i); if (e.optString("id") == id) e.put("views", e.optInt("views") + 1) }
@@ -2049,6 +2065,25 @@ Long-press a tab to rename it.
                 if (f != null && f.isFile) serveFile(o, f, null) else send(o, "text/plain; charset=utf-8", "404".toByteArray(), "404 Not Found")
             }
             else -> sendAsset(o, "template_youtube.html")
+        }
+    }
+
+    private fun showProviderKey() {
+        val p = panel(tr("AI provider API", "API do provedor da IA"), 0.62f)
+        p.body.addView(tv(tr("Paste the API key from your AI provider (for example console.anthropic.com). It is stored encrypted in API.winapi. Without it the AI answers offline with simple code only.",
+            "Cole aqui a chave de API do seu provedor de IA (por exemplo console.anthropic.com). Ela fica criptografada no API.winapi. Sem ela, a IA responde offline só com códigos simples."), 12f, 0xFF9AA5B1.toInt()))
+        val saved = aiKey()
+        p.body.addView(tv(if (saved.isEmpty()) tr("Status: no key", "Status: sem chave") else tr("Status: key saved (…${saved.takeLast(4)})", "Status: chave salva (…${saved.takeLast(4)})"),
+            13f, if (saved.isEmpty()) 0xFFFFB454.toInt() else GREEN).apply { setPadding(0, dp(10), 0, 0) })
+        val kv = field(tr("API key", "Chave da API"))
+        kv.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        p.body.addView(kv)
+        p.button(tr("Close", "Fechar")) { p.close() }
+        if (saved.isNotEmpty()) p.button(tr("Remove", "Remover")) { apiRemove("_provider"); prefs.edit().remove("aikey").apply(); toast(tr("key removed", "chave removida")); p.close() }
+        p.button(tr("Save", "Salvar"), true) {
+            val k = kv.text.toString().trim()
+            if (k.isEmpty()) { toast(tr("Paste the key", "Cole a chave")); return@button }
+            apiPut("_provider", k); prefs.edit().remove("aikey").apply(); toast(tr("API saved ✔", "API salva ✔")); p.close()
         }
     }
 
@@ -2325,7 +2360,7 @@ Long-press a tab to rename it.
             when (s.type) {
                 "files" -> serveFiles(o, s, path)
                 "json" -> send(o, "application/json; charset=utf-8", s.cmd.ifBlank { "{\"ok\":true}" }.toByteArray())
-                "tpl-youtube" -> ytRoute(o, path, range)
+                "tpl-youtube" -> ytRoute(o, path, range, (first.split(" ").getOrNull(1) ?: "").substringAfter("?", ""))
                 "tpl-windows10" -> sendAsset(o, "template_windows10.html")
                 "tpl-ai" -> if (path == "/ask") {
                     val qs = first.split(" ").getOrNull(1)?.substringAfter("?", "") ?: ""

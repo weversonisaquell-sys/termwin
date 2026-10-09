@@ -39,7 +39,7 @@ header .sp{flex:1}.pill{font-size:12px;color:var(--sub);border:1px solid var(--l
 #go:disabled{opacity:.4}
 .note{text-align:center;color:var(--sub);font-size:11px;margin-top:8px}
 </style></head><body>
-<header><div class=mark>✦</div><b>Nova</b><span class=pill>TermWin</span><span class=sp></span><input id=key placeholder="API key twk_…"></header>
+<header><div class=mark>✦</div><b>Nova</b><span class=pill>TermWin</span><span class=sp></span><button id=apib class=pill style="background:none;color:var(--acc2);border-color:var(--acc2)">🔑 API</button><input id=key placeholder="API key twk_…"></header>
 <div id=scroll><div id=col>
 <div id=hello><div class=mark>✦</div><h1>Como posso ajudar hoje?</h1><p>Pergunte algo ou peça um código — em qualquer linguagem.</p>
 <div class=ex><button>Crie um jogo de pulo em GDScript</button><button>Selection sort em Python</button><button>Explique o que é uma API</button></div></div>
@@ -51,6 +51,7 @@ header .sp{flex:1}.pill{font-size:12px;color:var(--sub);border:1px solid var(--l
 var col=document.getElementById('col'),sc=document.getElementById('scroll'),q=document.getElementById('q'),sp=document.getElementById('sp'),go=document.getElementById('go'),kb=document.getElementById('key');
 var tok='';try{tok=(location.hash.match(/t=([\w-]+)/)||[])[1]||localStorage.getItem('twk')||''}catch(e){}
 if(!tok){kb.style.display='block'}
+document.getElementById('apib').onclick=function(){if(window.TW&&TW.aiKey)TW.aiKey();else alert('Abra pelo app TermWin para colocar sua API.')};
 kb.onchange=function(){tok=kb.value.trim();try{localStorage.setItem('twk',tok)}catch(e){}};
 function esc(t){return t.replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
 function render(t){var parts=t.split('```'),h='';
