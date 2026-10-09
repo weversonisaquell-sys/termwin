@@ -52,7 +52,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "1.3"
+const val VERSION = "1.4"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -464,6 +464,7 @@ Long-press a tab to rename it.
         btns.addView(pill(tr("⚙  Settings", "⚙  Configurações"), false) { showSettings() }, gap())
         btns.addView(pill(tr("ⓘ  Credits", "ⓘ  Créditos"), false) { showCredits() }, gap())
         btns.addView(pill(tr("📝  Data", "📝  Dados"), false) { showDados() }, gap())
+        btns.addView(pill("🔑  API Keys", false) { showApiKeys() }, gap())
         home.addView(btns, LinearLayout.LayoutParams(WRAP, WRAP))
         root.addView(home, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -514,6 +515,7 @@ Long-press a tab to rename it.
     @Suppress("DEPRECATION")
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
+        if (req == 78) { val cb = pendingAuth; pendingAuth = null; if (res == RESULT_OK) cb?.invoke() else toast(tr("Not authenticated", "Não autenticado")); return }
         if (req != 77 || res != RESULT_OK) return
         val uri = data?.data ?: return
         importUri(uri)
@@ -987,6 +989,7 @@ Long-press a tab to rename it.
         rb("⚙", 40) { showSettings() }
         rb("ⓘ", 40) { showCredits() }
         rb("📝", 40) { showDados() }
+        rb("🔑", 40) { showApiKeys() }
         w.addView(row, LinearLayout.LayoutParams(MATCH, dp(38)))
 
         body = FrameLayout(this)
@@ -1469,7 +1472,7 @@ Long-press a tab to rename it.
     }
 
     // ---------- AI template ----------
-    private fun aiKey() = prefs.getString("aikey", "") ?: ""
+    private fun aiKey(): String = apiGet("ia") ?: prefs.getString("aikey", "") ?: ""
 
     /** Blocking call to the Anthropic Messages API. Run it off the UI thread. */
     private fun askAi(q: String, spec: String): String {
@@ -1543,8 +1546,8 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
             if (km != null) {
                 val v = km.groupValues[3].trim()
                 if (v.isEmpty()) append(t, if (aiKey().isEmpty()) tr("no key saved\n", "nenhuma chave salva\n") else tr("key saved (…${aiKey().takeLast(4)})\n", "chave salva (…${aiKey().takeLast(4)})\n"))
-                else if (v == "clear" || v == "limpar") { prefs.edit().remove("aikey").apply(); append(t, tr("key deleted\n", "chave apagada\n")) }
-                else { prefs.edit().putString("aikey", v).apply(); append(t, tr("key saved\n", "chave salva\n")) }
+                else if (v == "clear" || v == "limpar") { prefs.edit().remove("aikey").apply(); apiRemove("ia"); append(t, tr("key deleted\n", "chave apagada\n")) }
+                else { apiPut("ia", v); prefs.edit().remove("aikey").apply(); append(t, tr("key saved (encrypted in API.winapi)\n", "chave salva\n")) }
                 return
             }
             if (low == "play ia") { tplExec(t, "play ai"); return }
@@ -1618,6 +1621,136 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
         card("✦", tr("AI Assistant", "IA Assistente"), tr("ask or generate code in any language — command: ai//question//app (play ai opens the chat page)", "responde ou gera código em qualquer linguagem — comando: ia//pergunta//app (play ai abre o chat)"), "ai")
         card("⊞", "Windows 10 Mobile", tr("lock screen, live tiles, apps — command: play windows 10", "tela de bloqueio, blocos dinâmicos, apps — comando: play windows 10"), "windows10")
         p.button(tr("Close", "Fechar"), true) { p.close() }
+    }
+
+
+    // ---------- API keys: files/API.winapi (AES-GCM, key held in the Android Keystore) ----------
+    private var pendingAuth: (() -> Unit)? = null
+    private fun apiFile() = File(dataDir(), "API.winapi")
+
+    private fun apiAesKey(): javax.crypto.SecretKey {
+        val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getKey("termwin_api", null) as? javax.crypto.SecretKey)?.let { return it }
+        val g = javax.crypto.KeyGenerator.getInstance(android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        g.init(android.security.keystore.KeyGenParameterSpec.Builder("termwin_api",
+            android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256).build())
+        return g.generateKey()
+    }
+
+    private fun apiRead(): JSONArray = try { JSONObject(apiFile().readText()).getJSONArray("keys") } catch (e: Exception) { JSONArray() }
+    private fun apiWrite(a: JSONArray) {
+        try { apiFile().writeText(JSONObject().put("format", "winapi").put("version", 1).put("keys", a).toString(2)) }
+        catch (e: Exception) { logError("api", "write: ${e.message}") }
+    }
+
+    fun apiPut(name: String, key: String) {
+        try {
+            val c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            c.init(javax.crypto.Cipher.ENCRYPT_MODE, apiAesKey())
+            val enc = c.doFinal(key.toByteArray())
+            val e = JSONObject().put("name", name)
+                .put("iv", android.util.Base64.encodeToString(c.iv, android.util.Base64.NO_WRAP))
+                .put("data", android.util.Base64.encodeToString(enc, android.util.Base64.NO_WRAP))
+                .put("hint", "…" + key.takeLast(4))
+            val old = apiRead(); val out = JSONArray()
+            for (i in 0 until old.length()) if (!old.getJSONObject(i).optString("name").equals(name, true)) out.put(old.getJSONObject(i))
+            out.put(e); apiWrite(out)
+        } catch (e: Exception) { logError("api", "put: ${e.message}"); toast("API.winapi: ${e.message}") }
+    }
+
+    private fun apiGet(name: String): String? = try {
+        val a = apiRead(); var r: String? = null
+        for (i in 0 until a.length()) {
+            val e = a.getJSONObject(i)
+            if (e.optString("name").equals(name, true)) {
+                val c = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+                c.init(javax.crypto.Cipher.DECRYPT_MODE, apiAesKey(), javax.crypto.spec.GCMParameterSpec(128, android.util.Base64.decode(e.getString("iv"), 0)))
+                r = String(c.doFinal(android.util.Base64.decode(e.getString("data"), 0)))
+            }
+        }
+        r
+    } catch (e: Exception) { null }
+
+    private fun apiRemove(name: String) {
+        val old = apiRead(); val out = JSONArray()
+        for (i in 0 until old.length()) if (!old.getJSONObject(i).optString("name").equals(name, true)) out.put(old.getJSONObject(i))
+        apiWrite(out)
+    }
+
+    /** Runs [ok] only after face / fingerprint / PIN / pattern / password. */
+    @Suppress("DEPRECATION")
+    private fun requireAuth(why: String, ok: () -> Unit) {
+        val km = getSystemService(KeyguardManager::class.java)
+        if (!km.isDeviceSecure) { toast(tr("Set a screen lock (PIN, fingerprint or face) in Android first", "Configure um bloqueio de tela (PIN, digital ou rosto) no Android primeiro")); return }
+        if (Build.VERSION.SDK_INT >= 30) {
+            val bp = android.hardware.biometrics.BiometricPrompt.Builder(this)
+                .setTitle("TermWin").setSubtitle(why)
+                .setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK or android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                .build()
+            bp.authenticate(android.os.CancellationSignal(), mainExecutor, object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(r: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) { ok() }
+                override fun onAuthenticationError(code: Int, msg: CharSequence?) { toast(msg?.toString() ?: tr("Not authenticated", "Não autenticado")) }
+            })
+        } else {
+            val i = km.createConfirmDeviceCredentialIntent("TermWin", why)
+            if (i == null) { toast(tr("No screen lock", "Sem bloqueio de tela")); return }
+            pendingAuth = ok
+            startActivityForResult(i, 78)
+        }
+    }
+
+    private fun copySecret(v: String) {
+        val cm = getSystemService(ClipboardManager::class.java)
+        val clip = ClipData.newPlainText("api", v)
+        if (Build.VERSION.SDK_INT >= 33) clip.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+        cm.setPrimaryClip(clip)
+        toast(tr("Copied — clipboard clears in 30s", "Copiado — a área de transferência limpa em 30s"))
+        ui.postDelayed({ try { cm.setPrimaryClip(ClipData.newPlainText("", "")) } catch (e: Exception) { } }, 30000)
+    }
+
+    private fun showApiKeys() {
+        val p = panel("API Keys — API.winapi", 0.8f)
+        val list = LinearLayout(this); list.orientation = LinearLayout.VERTICAL
+        fun fill() {
+            list.removeAllViews()
+            val a = apiRead()
+            if (a.length() == 0) list.addView(tv(tr("(no keys yet)", "(nenhuma chave ainda)"), 13f, 0xFFAAAAAA.toInt()).apply { setPadding(0, dp(8), 0, dp(8)) })
+            for (i in 0 until a.length()) {
+                val e = a.getJSONObject(i); val n = e.optString("name")
+                val row = LinearLayout(this)
+                row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL
+                row.background = rounded(0xFF2A2A2A.toInt(), dp(8)); row.setPadding(dp(12), dp(8), dp(8), dp(8))
+                val col = LinearLayout(this); col.orientation = LinearLayout.VERTICAL
+                col.addView(tv("🔑  $n", 15f, Color.WHITE))
+                col.addView(tv("••••••••••••  " + e.optString("hint"), 12f, 0xFF9AA5B1.toInt()).apply { typeface = Typeface.MONOSPACE })
+                row.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
+                row.addView(smallBtn(tr("Copy", "Copiar")) {
+                    requireAuth(tr("Confirm it is you to copy \"$n\"", "Confirme que é você para copiar \"$n\"")) {
+                        val v = apiGet(n); if (v == null) toast(tr("Could not decrypt", "Não foi possível descriptografar")) else copySecret(v)
+                    }
+                })
+                row.addView(smallBtn(tr("Delete", "Apagar"), true) {
+                    requireAuth(tr("Confirm to delete \"$n\"", "Confirme para apagar \"$n\"")) { apiRemove(n); fill() }
+                })
+                list.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
+            }
+        }
+        p.body.addView(tv(tr("Keys are encrypted and never shown. Copying needs your face, fingerprint or screen lock.", "As chaves ficam criptografadas e nunca aparecem. Para copiar precisa do seu rosto, digital ou senha."), 12f, 0xFF9AA5B1.toInt()))
+        p.body.addView(list)
+        val nm = field(tr("Name (e.g. ia, openai)", "Nome (ex.: ia, openai)"))
+        val kv = field(tr("API key", "Chave da API"))
+        kv.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        p.body.addView(nm); p.body.addView(kv)
+        fill()
+        p.button(tr("Close", "Fechar")) { p.close() }
+        p.button(tr("Add / update", "Adicionar / atualizar"), true) {
+            val n = nm.text.toString().trim(); val k = kv.text.toString().trim()
+            if (n.isEmpty() || k.isEmpty()) { toast(tr("Fill name and key", "Preencha nome e chave")); return@button }
+            apiPut(n, k); nm.setText(""); kv.setText(""); fill()
+        }
     }
 
     // ---------- dados.wintext editor ----------
