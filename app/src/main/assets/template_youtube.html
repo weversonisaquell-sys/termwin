@@ -51,56 +51,57 @@ nav .plus span{width:38px;height:38px;border:1.5px solid #fff;border-radius:50%;
 .acts{display:flex;gap:8px;overflow-x:auto;padding:8px 12px;scrollbar-width:none}
 .acts button{flex:none;border:0;border-radius:18px;padding:8px 14px;background:var(--card);color:var(--txt);font-size:13px}
 .empty{padding:40px;text-align:center;color:var(--sub)}
+.th img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.th{background:#222}
+.vid video{width:100%;height:100%;background:#000}
+.vid{display:block;font-size:inherit}
 </style>
 </head>
 <body>
 <header>
   <div class="logo"><i></i>YouTube</div><div class="sp"></div>
-  <button class="ic" aria-label="Transmitir">📡</button><button class="ic" aria-label="Notificações">🔔</button><div class="av">U</div>
+  <button class="ic" id="up" aria-label="Publicar">＋</button><div class="av" id="av">?</div>
 </header>
 <div class="search"><input id="q" placeholder="Pesquisar" autocomplete="off"></div>
 <div class="chips" id="chips"></div>
 <main id="feed"></main>
 <nav>
-  <button><span>🏠</span>Início</button><button><span>🎬</span>Shorts</button>
-  <button class="plus"><span>＋</span></button><button><span>📺</span>Inscrições</button><button><span>👤</span>Você</button>
+  <button id="nh"><span>🏠</span>Início</button>
+  <button class="plus" id="np"><span>＋</span></button>
+  <button id="nr"><span>⟳</span>Atualizar</button>
 </nav>
 <section id="pl">
-  <div class="vid" id="pv"><button class="back" id="bk">←</button><span id="pe"></span><button class="pp" id="pp">⏸</button><div class="bar"><i id="pb"></i></div></div>
+  <div class="vid" id="pv"><button class="back" id="bk">←</button><video id="vd" controls playsinline></video></div>
   <div class="meta"><div><p class="t" id="pt" style="font-size:18px"></p><div class="s" id="ps"></div></div></div>
-  <div class="acts"><button>👍 12 mil</button><button>👎</button><button>↗ Compartilhar</button><button>⬇ Download</button><button>✂ Clipe</button><button>💾 Salvar</button></div>
-  <div class="empty">Comentários desativados neste modelo ✨</div>
+  <div class="acts"><button id="sh">↗ Compartilhar link</button></div>
 </section>
 <script>
-var cats=['Tudo','Música','Jogos','Ao vivo','Mixes','Tecnologia','Filmes','Culinária','Esportes','Aprendizado'];
-var vids=[
-{t:'Como criar um servidor local no celular',c:'Dev Mobile',v:'1,2 mi',d:'12:48',e:'💻',g:['#7f5af0','#2cb67d'],k:'Tecnologia'},
-{t:'Lo-fi para programar e relaxar • 24h',c:'Lofi Station',v:'8,4 mi',d:'AO VIVO',e:'🎧',g:['#ff6b6b','#feca57'],k:'Música'},
-{t:'Top 10 jogos mobile de 2026',c:'Game Hub',v:'540 mil',d:'9:21',e:'🎮',g:['#00c6ff','#0072ff'],k:'Jogos'},
-{t:'Receita fácil de pão de queijo',c:'Cozinha da Vó',v:'3,1 mi',d:'7:05',e:'🧀',g:['#f7971e','#ffd200'],k:'Culinária'},
-{t:'Android vs. iPhone: o teste final',c:'Tech Review',v:'2,7 mi',d:'15:33',e:'📱',g:['#232526','#414345'],k:'Tecnologia'},
-{t:'Melhores gols da rodada',c:'Esporte Total',v:'980 mil',d:'6:12',e:'⚽',g:['#11998e','#38ef7d'],k:'Esportes'},
-{t:'Trailer oficial — A Última Fronteira',c:'Cine Mundo',v:'12 mi',d:'2:41',e:'🚀',g:['#8e2de2','#4a00e0'],k:'Filmes'},
-{t:'Aprenda Kotlin em 30 minutos',c:'Código Fácil',v:'760 mil',d:'30:02',e:'📘',g:['#ee0979','#ff6a00'],k:'Aprendizado'}];
-var shorts=[['😂','Pegadinha do dia'],['🐶','Cachorro esperto'],['🍕','Pizza em 1 min'],['🎸','Solo incrível'],['🏀','Cesta impossível']];
-var cur='Tudo',q='';
+var vids=[],cur='Tudo',q='';
 function $(i){return document.getElementById(i)}
-function chips(){$('chips').innerHTML=cats.map(function(c){return '<button class="chip'+(c==cur?' on':'')+'" data-c="'+c+'">'+c+'</button>'}).join('')}
+function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function fmt(ms){var s=Math.round(ms/1000),m=Math.floor(s/60);return m+':'+('0'+(s%60)).slice(-2)}
+function ago(t){var d=(Date.now()-t)/1000;if(d<60)return 'agora há pouco';if(d<3600)return 'há '+Math.floor(d/60)+' min';if(d<86400)return 'há '+Math.floor(d/3600)+' h';return 'há '+Math.floor(d/86400)+' dias'}
+function col(n){var h=0;for(var i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))%360;return 'hsl('+h+',55%,45%)'}
+function chips(){var cs=['Tudo'];vids.forEach(function(v){if(cs.indexOf(v.channel)<0)cs.push(v.channel)});
+  $('chips').innerHTML=cs.map(function(c){return '<button class="chip'+(c==cur?' on':'')+'" data-c="'+esc(c)+'">'+esc(c)+'</button>'}).join('')}
 function feed(){
-  var l=vids.filter(function(v){return (cur=='Tudo'||v.k==cur)&&v.t.toLowerCase().indexOf(q)>=0});
-  var cards=l.map(function(v){return '<div class="card" data-i="'+vids.indexOf(v)+'"><div class="th" style="background:linear-gradient(135deg,'+v.g[0]+','+v.g[1]+')">'+v.e+'<span class="dur" style="'+(v.d=='AO VIVO'?'background:#e00':'')+'">'+v.d+'</span></div><div class="meta"><div class="a" style="background:'+v.g[0]+'">'+v.c[0]+'</div><div><p class="t">'+v.t+'</p><div class="s">'+v.c+' • '+v.v+' de visualizações • há 2 dias</div></div></div></div>'});
-  if(cur=='Tudo'&&!q&&cards.length>2)cards.splice(2,0,shortsHtml());
-  $('feed').innerHTML=cards.length?cards.join(''):'<div class="empty">Nenhum vídeo encontrado 🔎</div>';
+  var l=vids.filter(function(v){return (cur=='Tudo'||v.channel==cur)&&(v.title+' '+v.channel).toLowerCase().indexOf(q)>=0});
+  $('feed').innerHTML=l.length?l.map(function(v){return '<div class="card" data-id="'+esc(v.id)+'"><div class="th"><img src="/t/'+encodeURIComponent(v.id)+'" alt=""><span class="dur">'+fmt(v.dur)+'</span></div><div class="meta"><div class="a" style="background:'+col(v.channel)+'">'+esc(v.channel.charAt(0).toUpperCase())+'</div><div><p class="t">'+esc(v.title)+'</p><div class="s">'+esc(v.channel)+' • '+v.views+' visualizações • '+ago(v.ts)+'</div></div></div></div>'}).join(''):
+  '<div class="empty">'+(vids.length?'Nenhum vídeo encontrado 🔎':'Ainda não há vídeos.<br>Toque em ＋ para publicar o primeiro 🎬')+'</div>';
 }
-function shortsHtml(){return '<div class="shorts"><h3><b>▶</b> Shorts</h3><div class="row">'+shorts.map(function(s,i){var g=vids[i%vids.length].g;return '<div class="sh" style="background:linear-gradient(160deg,'+g[0]+','+g[1]+')">'+s[0]+'<span>'+s[1]+'</span></div>'}).join('')+'</div></div>'}
-var timer=null,pos=0,playing=true;
-function openV(i){var v=vids[i];$('pe').textContent=v.e;$('pv').style.background='linear-gradient(135deg,'+v.g[0]+','+v.g[1]+')';$('pt').textContent=v.t;$('ps').textContent=v.c+' • '+v.v+' de visualizações';pos=0;playing=true;$('pp').textContent='⏸';$('pl').className='on';clearInterval(timer);timer=setInterval(function(){if(playing){pos=Math.min(100,pos+.4);$('pb').style.width=pos+'%'}},100)}
+function load(){fetch('/api/videos').then(function(r){return r.json()}).then(function(a){vids=a;if(cur!='Tudo'&&!a.some(function(v){return v.channel==cur}))cur='Tudo';chips();feed()}).catch(function(){$('feed').innerHTML='<div class="empty">Não consegui carregar os vídeos</div>'})}
+function openV(id){var v=vids.filter(function(x){return x.id==id})[0];if(!v)return;
+  $('pt').textContent=v.title;$('ps').textContent=v.channel+' • '+(v.views+1)+' visualizações • '+ago(v.ts);
+  var d=$('vd');d.src='/v/'+encodeURIComponent(id);d.play&&d.play();$('pl').className='on';fetch('/api/view/'+encodeURIComponent(id));v.views++;feed();
+  $('sh').onclick=function(){var u=location.origin+'/#'+id;if(navigator.clipboard)navigator.clipboard.writeText(u);this.textContent='✔ Link copiado'}}
+function closeV(){var d=$('vd');d.pause();d.removeAttribute('src');d.load();$('pl').className=''}
+function pub(){if(window.TW&&TW.publish)TW.publish();else alert('Para publicar, use o app TermWin neste aparelho.')}
 $('chips').onclick=function(e){var c=e.target.getAttribute('data-c');if(c){cur=c;chips();feed()}};
-$('feed').onclick=function(e){var n=e.target;while(n&&n!==this&&!n.getAttribute('data-i'))n=n.parentNode;if(n&&n.getAttribute&&n.getAttribute('data-i'))openV(+n.getAttribute('data-i'))};
+$('feed').onclick=function(e){var n=e.target;while(n&&n!==this&&!n.getAttribute('data-id'))n=n.parentNode;if(n&&n.getAttribute&&n.getAttribute('data-id'))openV(n.getAttribute('data-id'))};
 $('q').oninput=function(){q=this.value.toLowerCase();feed()};
-$('bk').onclick=function(){$('pl').className='';clearInterval(timer)};
-$('pp').onclick=function(){playing=!playing;this.textContent=playing?'⏸':'▶'};
-chips();feed();
+$('bk').onclick=closeV;$('up').onclick=pub;$('np').onclick=pub;$('nr').onclick=load;$('nh').onclick=function(){closeV();cur='Tudo';chips();feed();window.scrollTo(0,0)};
+fetch('/api/me').then(function(r){return r.json()}).then(function(m){if(m.name)$('av').textContent=m.name.charAt(0).toUpperCase()}).catch(function(){});
+load();
 </script>
 </body>
 </html>

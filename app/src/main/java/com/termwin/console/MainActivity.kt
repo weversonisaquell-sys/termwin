@@ -52,7 +52,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "1.5"
+const val VERSION = "1.6"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -465,6 +465,7 @@ Long-press a tab to rename it.
         btns.addView(pill(tr("ⓘ  Credits", "ⓘ  Créditos"), false) { showCredits() }, gap())
         btns.addView(pill(tr("📝  Data", "📝  Dados"), false) { showDados() }, gap())
         btns.addView(pill("🔑  API Keys", false) { showApiKeys() }, gap())
+        btns.addView(pill(tr("👤  Profile", "👤  Perfil"), false) { showProfile() }, gap())
         home.addView(btns, LinearLayout.LayoutParams(WRAP, WRAP))
         root.addView(home, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -516,6 +517,7 @@ Long-press a tab to rename it.
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
         if (req == 78) { val cb = pendingAuth; pendingAuth = null; if (res == RESULT_OK) cb?.invoke() else toast(tr("Not authenticated", "Não autenticado")); return }
+        if (req == 79) { if (res == RESULT_OK) data?.data?.let { showPublish(it) }; return }
         if (req != 77 || res != RESULT_OK) return
         val uri = data?.data ?: return
         importUri(uri)
@@ -676,6 +678,12 @@ Long-press a tab to rename it.
             val f = File(dataDir(), "dados.wintext")
             val old = try { if (f.exists()) f.readText() else "" } catch (e: Exception) { "" }
             val ni = old.indexOf("[Notes]")
+            sb.append("\n[Profile]\n")
+            val pr = profile()
+            if (pr == null) sb.append("(not signed in)\n") else sb.append("name=").append(pr.optString("name")).append("\nemail=").append(pr.optString("email")).append("\nchannel=").append(pr.optString("channel")).append('\n')
+            sb.append("\n[Videos]\n")
+            val va = vidsRead()
+            if (va.length() == 0) sb.append("(none)\n") else for (i in 0 until va.length()) { val e = va.getJSONObject(i); sb.append("videos/").append(e.optString("file")).append(" | ").append(e.optString("title")).append(" | ").append(e.optString("channel")).append('\n') }
             sb.append("\n")
             sb.append(if (ni >= 0) old.substring(ni).trimEnd() + "\n" else "[Notes]\n" + tr("(write anything here - this part is kept)", "(escreva o que quiser aqui - esta parte fica salva)") + "\n")
             f.writeText(sb.toString())
@@ -725,6 +733,7 @@ Long-press a tab to rename it.
             cur = o.optInt("cur", 0)
         } catch (e: Exception) { }
         try { scanFolders() } catch (e: Exception) { }
+        try { seedVideos() } catch (e: Exception) { }
         writeIndex()
         if (tabs.isEmpty()) tabs.add(newTabData("Terminal 1"))
         cur = cur.coerceIn(0, tabs.size - 1)
@@ -990,6 +999,7 @@ Long-press a tab to rename it.
         rb("ⓘ", 40) { showCredits() }
         rb("📝", 40) { showDados() }
         rb("🔑", 40) { showApiKeys() }
+        rb("👤", 40) { showProfile() }
         w.addView(row, LinearLayout.LayoutParams(MATCH, dp(38)))
 
         body = FrameLayout(this)
@@ -1459,7 +1469,7 @@ Long-press a tab to rename it.
 
     /** Opens the page inside a Windows-style window (WebView) instead of the phone's browser. */
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
-    private fun openWebWindow(title: String, url: String) {
+    private fun openWebWindow(title: String, url: String, yt: Boolean = false) {
         val dm = resources.displayMetrics
         val ov = FrameLayout(this)
         ov.setBackgroundColor(0x99000000.toInt())
@@ -1475,6 +1485,7 @@ Long-press a tab to rename it.
         val tb = LinearLayout(this)
         tb.setBackgroundColor(TITLE)
         tb.addView(tv("   ▣   $title — $url", 13f, Color.WHITE).apply { gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }, LinearLayout.LayoutParams(0, dp(40), 1f))
+        if (yt) tb.addView(capBtn("＋", false, 46) { startPublish() })
         tb.addView(capBtn("⟳", false, 46) { wv.reload() })
         tb.addView(capBtn("✕", true, 46) { p.close() })
         card.addView(tb, LinearLayout.LayoutParams(MATCH, dp(40)))
@@ -1483,13 +1494,15 @@ Long-press a tab to rename it.
         wv.settings.domStorageEnabled = true
         wv.settings.mediaPlaybackRequiresUserGesture = false
         wv.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        wv.addJavascriptInterface(TwBridge(), "TW")
+        if (yt) pubWv = wv
         wv.webViewClient = android.webkit.WebViewClient()
         wv.webChromeClient = android.webkit.WebChromeClient()
         card.addView(wv, LinearLayout.LayoutParams(MATCH, 0, 1f))
         ov.addView(card, FrameLayout.LayoutParams((dm.widthPixels * 0.94).toInt(), (dm.heightPixels * 0.92).toInt(), Gravity.CENTER))
         root.addView(ov, FrameLayout.LayoutParams(MATCH, MATCH))
         p = Panel(ov, LinearLayout(this), LinearLayout(this))
-        p.onClose = { try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
+        p.onClose = { if (pubWv === wv) pubWv = null; try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
         panels.add(p)
         wv.loadUrl(url)
     }
@@ -1503,18 +1516,87 @@ Long-press a tab to rename it.
             "port 4089" to "define a porta (depois abra localhost:4089)", "turn off" to "desliga o servidor",
             "status" to "mostra estado e porta", "clear" to "limpa a tela", "exit" to "fecha esta aba")
         val rows = (if (pt) br else en).joinToString("") { "  " + it.first.padEnd(18) + it.second + "\n" }
-        val ai = if (name != "ai") "" else if (pt) "  ia//pergunta//app   gera resposta ou código (app é opcional)\n  ia//faça um jogo//GDScript   exemplo (também: ai// e aí//)\n  ia key SUA_CHAVE   guarda a chave da API (ia key limpar apaga)\n"
-            else "  ai//question//app   answer or code (app is optional)\n  ai//make a game//GDScript   example (also: ia// and aí//)\n  ai key YOUR_KEY   store the API key (ai key clear deletes it)\n"
+        val yt = if (name != "youtube") "" else if (pt) "  publicar          escolhe um vídeo do aparelho e publica (também o botão ＋)\n  (entre antes com o botão 👤 Perfil)\n" else "  publish           pick a video from your phone and publish it (or the ＋ button)\n  (sign in first with the 👤 Profile button)\n"
+        val ai = if (name != "ai") yt else if (pt) "  ia//pergunta//app   gera resposta ou código (app é opcional)\n  ia//faça um jogo//GDScript   exemplo (também: ai// e aí//)\n  ia key SUA_CHAVE   chave de provedor (opcional, p/ respostas completas; limpar apaga)\n"
+            else "  ai//question//app   answer or code (app is optional)\n  ai//make a game//GDScript   example (also: ia// and aí//)\n  ai key YOUR_KEY   provider key (optional, for full answers; clear deletes it)\n"
         return tr("$label server — $st, port ${s.port}\n", "Servidor $label — $st, porta ${s.port}\n") + rows + ai
     }
 
+
+    // ---------- offline mini-AI (used when there is no provider key) ----------
+    private val OFFLINE: Map<String, Map<String, String>> = mapOf(
+        "hello" to mapOf(
+            "py" to "print(\"Hello, world!\")",
+            "gd" to "extends Node\n\nfunc _ready():\n    print(\"Hello, world!\")",
+            "lua" to "print(\"Hello, world!\")",
+            "js" to "console.log(\"Hello, world!\");"),
+        "fib" to mapOf(
+            "py" to "def fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        print(a)\n        a, b = b, a + b\n\nfib(10)",
+            "gd" to "func fib(n):\n    var a = 0\n    var b = 1\n    for i in n:\n        print(a)\n        var t = a + b\n        a = b\n        b = t",
+            "lua" to "local function fib(n)\n  local a, b = 0, 1\n  for i = 1, n do\n    print(a)\n    a, b = b, a + b\n  end\nend\nfib(10)",
+            "js" to "function fib(n) {\n  let a = 0, b = 1;\n  for (let i = 0; i < n; i++) {\n    console.log(a);\n    [a, b] = [b, a + b];\n  }\n}\nfib(10);"),
+        "sort" to mapOf(
+            "py" to "def selection_sort(a):\n    for i in range(len(a)):\n        m = i\n        for j in range(i + 1, len(a)):\n            if a[j] < a[m]:\n                m = j\n        a[i], a[m] = a[m], a[i]\n    return a\n\nprint(selection_sort([5, 2, 9, 1, 7]))",
+            "gd" to "func selection_sort(a: Array) -> Array:\n    for i in a.size():\n        var m = i\n        for j in range(i + 1, a.size()):\n            if a[j] < a[m]:\n                m = j\n        var t = a[i]\n        a[i] = a[m]\n        a[m] = t\n    return a",
+            "lua" to "local function selectionSort(a)\n  for i = 1, #a do\n    local m = i\n    for j = i + 1, #a do\n      if a[j] < a[m] then m = j end\n    end\n    a[i], a[m] = a[m], a[i]\n  end\n  return a\nend",
+            "js" to "function selectionSort(a) {\n  for (let i = 0; i < a.length; i++) {\n    let m = i;\n    for (let j = i + 1; j < a.length; j++) if (a[j] < a[m]) m = j;\n    [a[i], a[m]] = [a[m], a[i]];\n  }\n  return a;\n}"),
+        "prime" to mapOf(
+            "py" to "def is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n ** 0.5) + 1):\n        if n % i == 0:\n            return False\n    return True",
+            "gd" to "func is_prime(n: int) -> bool:\n    if n < 2:\n        return false\n    for i in range(2, int(sqrt(n)) + 1):\n        if n % i == 0:\n            return false\n    return true",
+            "lua" to "local function isPrime(n)\n  if n < 2 then return false end\n  for i = 2, math.floor(math.sqrt(n)) do\n    if n % i == 0 then return false end\n  end\n  return true\nend",
+            "js" to "function isPrime(n) {\n  if (n < 2) return false;\n  for (let i = 2; i * i <= n; i++) if (n % i === 0) return false;\n  return true;\n}"),
+        "jump" to mapOf(
+            "py" to "# pygame: gravity + jump\nvy += 0.6            # gravity every frame\ny += vy\nif y >= ground:\n    y = ground\n    vy = 0\n    on_ground = True\nif keys[pygame.K_SPACE] and on_ground:\n    vy = -12\n    on_ground = False",
+            "gd" to "extends CharacterBody2D\n\nconst SPEED = 300.0\nconst JUMP = -450.0\nvar gravity = ProjectSettings.get_setting(\"physics/2d/default_gravity\")\n\nfunc _physics_process(delta):\n    if not is_on_floor():\n        velocity.y += gravity * delta\n    if Input.is_action_just_pressed(\"ui_accept\") and is_on_floor():\n        velocity.y = JUMP\n    velocity.x = Input.get_axis(\"ui_left\", \"ui_right\") * SPEED\n    move_and_slide()",
+            "lua" to "local UIS = game:GetService(\"UserInputService\")\nlocal hum = game.Players.LocalPlayer.Character:WaitForChild(\"Humanoid\")\nUIS.JumpRequest:Connect(function()\n  hum:ChangeState(Enum.HumanoidStateType.Jumping)\nend)",
+            "js" to "let y = 0, vy = 0;\naddEventListener('keydown', e => { if (e.code === 'Space' && y === 0) vy = 12; });\nsetInterval(() => { y = Math.max(0, y + vy); vy = y > 0 ? vy - 0.6 : 0; }, 16);"),
+        "move" to mapOf(
+            "py" to "# pygame: move with the arrow keys\nkeys = pygame.key.get_pressed()\nif keys[pygame.K_LEFT]:  x -= 5\nif keys[pygame.K_RIGHT]: x += 5\nif keys[pygame.K_UP]:    y -= 5\nif keys[pygame.K_DOWN]:  y += 5",
+            "gd" to "extends CharacterBody2D\n\nconst SPEED = 300.0\n\nfunc _physics_process(delta):\n    var dir = Input.get_vector(\"ui_left\", \"ui_right\", \"ui_up\", \"ui_down\")\n    velocity = dir * SPEED\n    move_and_slide()",
+            "lua" to "local part = script.Parent\nwhile true do\n  part.Position = part.Position + Vector3.new(0, 0, 0.2)\n  task.wait(0.03)\nend",
+            "js" to "let x = 0, y = 0;\naddEventListener('keydown', e => {\n  if (e.key === 'ArrowLeft') x -= 5;\n  if (e.key === 'ArrowRight') x += 5;\n  if (e.key === 'ArrowUp') y -= 5;\n  if (e.key === 'ArrowDown') y += 5;\n});"),
+        "count" to mapOf(
+            "py" to "for i in range(1, 11):\n    print(i)",
+            "gd" to "func _ready():\n    for i in range(1, 11):\n        print(i)",
+            "lua" to "for i = 1, 10 do\n  print(i)\nend",
+            "js" to "for (let i = 1; i <= 10; i++) console.log(i);")
+    )
+
+    private fun offlineAi(q: String, spec: String): String {
+        val s = (q + " " + spec).lowercase()
+        fun has(r: String) = Regex(r).containsMatchIn(s)
+        val lang = when {
+            has("gdscript|\\bgd\\b|godot") -> "gd"
+            has("lua|roblox") -> "lua"
+            has("javascript|\\bjs\\b|html") -> "js"
+            else -> "py"
+        }
+        val topic = when {
+            has("fibonacci") -> "fib"
+            has("ordenar|sort|selection") -> "sort"
+            has("primo|prime") -> "prime"
+            has("pul(o|ar)|jump") -> "jump"
+            has("mover|andar|move|player|jogador|personagem|walk") -> "move"
+            has("contador|counter|contar|count") -> "count"
+            has("hello|ol[áa]|oi mundo|world") -> "hello"
+            else -> null
+        }
+        val head = tr("(offline mode — add a provider key with: ai key YOUR_KEY for full answers)\n", "(modo offline — para respostas completas adicione uma chave de provedor: ia key SUA_CHAVE)\n")
+        if (topic == null) return head + tr(
+            "I only know a few snippets offline: hello world, fibonacci, sort, prime, jump, move, counter (Python, GDScript, Lua, JS).",
+            "Offline eu só sei alguns trechos: hello world, fibonacci, ordenar, primo, pulo, mover, contador (Python, GDScript, Lua, JS).")
+        val name = mapOf("py" to "python", "gd" to "gdscript", "lua" to "lua", "js" to "javascript")[lang]
+        return head + "```$name\n" + OFFLINE[topic]!![lang] + "\n```"
+    }
+
     // ---------- AI template ----------
-    private fun aiKey(): String = apiGet("ia") ?: prefs.getString("aikey", "") ?: ""
+    private fun aiKey(): String = apiGet("_provider") ?: prefs.getString("aikey", "") ?: ""
+    private val ownerToken = java.util.UUID.randomUUID().toString()
 
     /** Blocking call to the Anthropic Messages API. Run it off the UI thread. */
     private fun askAi(q: String, spec: String): String {
         val key = aiKey()
-        if (key.isEmpty()) return tr("No API key yet. Type: ai key YOUR_KEY  (get one at console.anthropic.com)", "Sem chave da API ainda. Digite: ia key SUA_CHAVE  (crie em console.anthropic.com)")
+        if (key.isEmpty()) return offlineAi(q, spec)
         return try {
             val sys = "You are the AI inside a mobile terminal app. Answer in the user's language. " +
                 "If the user wants code, reply with working code in the requested language (Python, GDScript/GD, Kotlin, JS, Lua, C, etc.) in one fenced block and at most a few short lines of explanation. " +
@@ -1544,21 +1626,6 @@ Long-press a tab to rename it.
         }
     }
 
-    private fun aiPageHtml(): String = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>AI</title>
-<style>*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:15px system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
-header{padding:14px 16px;font-weight:700;background:#161b22;border-bottom:1px solid #30363d}header span{color:#7ee787}
-#log{flex:1;overflow:auto;padding:14px}.m{max-width:760px;margin:0 auto 12px;padding:10px 14px;border-radius:14px;white-space:pre-wrap;word-break:break-word}
-.u{background:#1f6feb;margin-left:auto;width:fit-content}.a{background:#161b22;border:1px solid #30363d}
-form{display:flex;gap:8px;padding:10px;background:#161b22;border-top:1px solid #30363d;flex-wrap:wrap}
-input{flex:1;min-width:140px;padding:12px;border-radius:12px;border:1px solid #30363d;background:#0d1117;color:#fff;font-size:15px}
-#sp{flex:0 0 150px;min-width:110px}button{padding:12px 18px;border:0;border-radius:12px;background:#7ee787;color:#000;font-weight:700}</style>
-<header><span>●</span> AI — TermWin</header><div id=log><div class="m a">Ask anything. Optional field: app / language (GDScript, Python, Roblox Lua…).</div></div>
-<form id=f><input id=q placeholder="Question / Pergunta" autocomplete=off><input id=sp placeholder="App (optional)"><button>Send</button></form>
-<script>const L=document.getElementById('log');function add(c,t){const d=document.createElement('div');d.className='m '+c;d.textContent=t;L.appendChild(d);L.scrollTop=L.scrollHeight;return d}
-document.getElementById('f').onsubmit=async e=>{e.preventDefault();const q=document.getElementById('q').value.trim();if(!q)return;const sp=document.getElementById('sp').value.trim();document.getElementById('q').value='';add('u',q);const w=add('a','…');
-try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURIComponent(sp));w.textContent=(await r.json()).answer}catch(x){w.textContent='Error: '+x}}</script>"""
-
-
     private fun tplExec(t: TabData, line: String) {
         val s = findSrv(t.srvName)
         val name = when (t.tpl) { "youtube" -> "youtube"; "ai" -> "ai"; else -> "windows 10" }
@@ -1583,8 +1650,8 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
             if (km != null) {
                 val v = km.groupValues[3].trim()
                 if (v.isEmpty()) append(t, if (aiKey().isEmpty()) tr("no key saved\n", "nenhuma chave salva\n") else tr("key saved (…${aiKey().takeLast(4)})\n", "chave salva (…${aiKey().takeLast(4)})\n"))
-                else if (v == "clear" || v == "limpar") { prefs.edit().remove("aikey").apply(); apiRemove("ia"); append(t, tr("key deleted\n", "chave apagada\n")) }
-                else { apiPut("ia", v); prefs.edit().remove("aikey").apply(); append(t, tr("key saved (encrypted in API.winapi)\n", "chave salva\n")) }
+                else if (v == "clear" || v == "limpar") { prefs.edit().remove("aikey").apply(); apiRemove("_provider"); append(t, tr("key deleted\n", "chave apagada\n")) }
+                else { apiPut("_provider", v); prefs.edit().remove("aikey").apply(); append(t, tr("key saved (encrypted in API.winapi)\n", "chave salva\n")) }
                 return
             }
             if (low == "play ia") { tplExec(t, "play ai"); return }
@@ -1599,8 +1666,11 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
                 if (!s.running) startServer(s)
                 val u = "http://localhost:${s.port}"
                 append(t, "▶ $label: $u\n")
-                ui.postDelayed({ openWebWindow(label, u) }, 500)
+                if (t.tpl == "youtube") lanIp()?.let { append(t, tr("other devices on the same Wi-Fi: http://$it:${s.port}\n", "outros aparelhos no mesmo Wi-Fi: http://$it:${s.port}\n")) }
+                val full = if (t.tpl == "ai") "$u#t=$ownerToken" else u
+                ui.postDelayed({ openWebWindow(label, full, t.tpl == "youtube") }, 500)
             }
+            (l == "publish" || l == "publicar") && t.tpl == "youtube" -> startPublish()
             l == "play" || l.startsWith("play ") -> err(t, tr("usage: play $name", "uso: play $name"))
             l == "turn off" || l == "turnoff" || l == "desligar" ->
                 if (s.running) stopServer(s) else append(t, tr("the server is already off\n", "o servidor já está desligado\n"))
@@ -1748,21 +1818,57 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
         ui.postDelayed({ try { cm.setPrimaryClip(ClipData.newPlainText("", "")) } catch (e: Exception) { } }, 30000)
     }
 
-    private fun showApiKeys() {
+    private fun apiVisible(): List<JSONObject> { val a = apiRead(); return (0 until a.length()).map { a.getJSONObject(it) }.filter { !it.optString("name").startsWith("_") } }
+
+    private fun genApiKey(): String {
+        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val r = java.security.SecureRandom()
+        return "twk_" + (1..40).map { chars[r.nextInt(chars.length)] }.joinToString("")
+    }
+
+    private fun apiVerify(k: String): Boolean = k.isNotEmpty() && apiVisible().any { apiGet(it.optString("name")) == k }
+
+    private fun showApiKeys() { if (apiVisible().isEmpty()) showApiCreate(true) else showApiMain() }
+
+    private fun showApiCreate(first: Boolean) {
+        val p = panel(tr("New API key", "Nova chave de API"), 0.6f)
+        p.body.addView(tv(tr("Just type a name — TermWin generates the key for you.", "Só digite um nome — o TermWin gera a chave para você."), 12f, 0xFF9AA5B1.toInt()))
+        val nm = field(tr("Name (e.g. my-app)", "Nome (ex.: meu-app)"))
+        p.body.addView(nm)
+        p.button(tr("Cancel", "Cancelar")) { p.close(); if (!first) showApiMain() }
+        p.button(tr("Create", "Criar"), true) {
+            val n = nm.text.toString().trim()
+            if (n.isEmpty() || n.startsWith("_")) { toast(tr("Type a name", "Digite um nome")); return@button }
+            if (apiVisible().any { it.optString("name").equals(n, true) }) { toast(tr("That name already exists", "Esse nome já existe")); return@button }
+            val k = genApiKey()
+            apiPut(n, k)
+            p.body.removeAllViews(); p.footer.removeAllViews()
+            p.body.addView(tv("🔑  $n", 16f, Color.WHITE))
+            p.body.addView(tv(tr("Copy it now. Later it will only be shown hidden, and copying will need your face / fingerprint / PIN.", "Copie agora. Depois ela só aparece escondida, e para copiar vai pedir seu rosto / digital / senha."), 12f, 0xFF9AA5B1.toInt()).apply { setPadding(0, dp(6), 0, dp(8)) })
+            p.body.addView(tv(k, 14f, 0xFF3DDC84.toInt()).apply {
+                typeface = Typeface.MONOSPACE; setTextIsSelectable(true)
+                background = rounded(0xFF2D2D2D.toInt(), dp(6), 0xFF454545.toInt()); setPadding(dp(12), dp(10), dp(12), dp(10))
+            })
+            p.button(tr("Copy", "Copiar")) { copySecret(k) }
+            p.button(tr("Done", "Concluir"), true) { p.close(); showApiMain() }
+        }
+    }
+
+    private fun showApiMain() {
         val p = panel("API Keys — API.winapi", 0.8f)
         val list = LinearLayout(this); list.orientation = LinearLayout.VERTICAL
         fun fill() {
             list.removeAllViews()
-            val a = apiRead()
-            if (a.length() == 0) list.addView(tv(tr("(no keys yet)", "(nenhuma chave ainda)"), 13f, 0xFFAAAAAA.toInt()).apply { setPadding(0, dp(8), 0, dp(8)) })
-            for (i in 0 until a.length()) {
-                val e = a.getJSONObject(i); val n = e.optString("name")
+            val a = apiVisible()
+            if (a.isEmpty()) list.addView(tv(tr("(no keys)", "(nenhuma chave)"), 13f, 0xFFAAAAAA.toInt()).apply { setPadding(0, dp(8), 0, dp(8)) })
+            for (e in a) {
+                val n = e.optString("name")
                 val row = LinearLayout(this)
                 row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL
                 row.background = rounded(0xFF2A2A2A.toInt(), dp(8)); row.setPadding(dp(12), dp(8), dp(8), dp(8))
                 val col = LinearLayout(this); col.orientation = LinearLayout.VERTICAL
                 col.addView(tv("🔑  $n", 15f, Color.WHITE))
-                col.addView(tv("••••••••••••  " + e.optString("hint"), 12f, 0xFF9AA5B1.toInt()).apply { typeface = Typeface.MONOSPACE })
+                col.addView(tv("twk_••••••••••••••••  " + e.optString("hint"), 12f, 0xFF9AA5B1.toInt()).apply { typeface = Typeface.MONOSPACE })
                 row.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
                 row.addView(smallBtn(tr("Copy", "Copiar")) {
                     requireAuth(tr("Confirm it is you to copy \"$n\"", "Confirme que é você para copiar \"$n\"")) {
@@ -1775,18 +1881,174 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
                 list.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) })
             }
         }
-        p.body.addView(tv(tr("Keys are encrypted and never shown. Copying needs your face, fingerprint or screen lock.", "As chaves ficam criptografadas e nunca aparecem. Para copiar precisa do seu rosto, digital ou senha."), 12f, 0xFF9AA5B1.toInt()))
+        p.body.addView(tv(tr("Keys are encrypted and hidden. Copying needs your face, fingerprint or screen lock. Use a key in other apps: http://localhost:PORT/ask?q=hello&key=twk_…", "As chaves ficam criptografadas e escondidas. Para copiar precisa do seu rosto, digital ou senha. Use em outros apps: http://localhost:PORTA/ask?q=oi&key=twk_…"), 12f, 0xFF9AA5B1.toInt()))
         p.body.addView(list)
-        val nm = field(tr("Name (e.g. ia, openai)", "Nome (ex.: ia, openai)"))
-        val kv = field(tr("API key", "Chave da API"))
-        kv.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        p.body.addView(nm); p.body.addView(kv)
         fill()
         p.button(tr("Close", "Fechar")) { p.close() }
-        p.button(tr("Add / update", "Adicionar / atualizar"), true) {
-            val n = nm.text.toString().trim(); val k = kv.text.toString().trim()
-            if (n.isEmpty() || k.isEmpty()) { toast(tr("Fill name and key", "Preencha nome e chave")); return@button }
-            apiPut(n, k); nm.setText(""); kv.setText(""); fill()
+        p.button(tr("+ New key", "+ Nova chave"), true) { p.close(); showApiCreate(false) }
+    }
+
+    // ---------- profile (local sign-in, saved in the app data file) ----------
+    private fun profile(): JSONObject? = try {
+        JSONObject(prefs.getString("profile", "") ?: "").takeIf { it.optString("email").isNotEmpty() }
+    } catch (e: Exception) { null }
+
+    private fun showProfile() {
+        val pr = profile()
+        val p = panel(tr("Profile", "Perfil"), 0.55f)
+        if (pr != null) {
+            p.body.addView(tv(pr.optString("channel"), 20f, Color.WHITE).apply { setPadding(0, dp(8), 0, 0) })
+            p.body.addView(tv(pr.optString("email"), 13f, 0xFF9AA5B1.toInt()))
+            val mine = vidsRead().let { a -> (0 until a.length()).count { a.getJSONObject(it).optString("email") == pr.optString("email") } }
+            p.body.addView(tv(tr("$mine video(s) published", "$mine vídeo(s) publicado(s)"), 13f, Color.WHITE).apply { setPadding(0, dp(10), 0, 0) })
+            p.body.addView(tv(tr("Saved in dados.wintext. Your channel name is used on the videos you publish.", "Salvo no dados.wintext. O nome do seu canal aparece nos vídeos que você publicar."), 11f, 0xFF9AA5B1.toInt()).apply { setPadding(0, dp(10), 0, 0) })
+            p.button(tr("Sign out", "Sair")) { prefs.edit().remove("profile").apply(); writeIndex(); p.close(); toast(tr("signed out", "você saiu")) }
+            p.button(tr("Close", "Fechar"), true) { p.close() }
+        } else {
+            p.body.addView(tv(tr("Sign in with your e-mail. It stays on this device.", "Entre com seu e-mail. Ele fica salvo neste aparelho."), 12f, 0xFF9AA5B1.toInt()))
+            val nm = field(tr("Name / channel (optional)", "Nome / canal (opcional)"))
+            val em = field("e-mail")
+            em.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            p.body.addView(nm); p.body.addView(em)
+            p.button(tr("Cancel", "Cancelar")) { p.close() }
+            p.button(tr("Sign in", "Entrar"), true) {
+                val e = em.text.toString().trim()
+                if (!Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(e)) { toast(tr("Invalid e-mail", "E-mail inválido")); return@button }
+                val n = nm.text.toString().trim().ifEmpty { e.substringBefore('@') }
+                prefs.edit().putString("profile", JSONObject().put("email", e).put("name", n).put("channel", n).toString()).apply()
+                writeIndex(); p.close(); toast(tr("signed in as $n", "logado como $n"))
+            }
+        }
+    }
+
+    // ---------- videos (real files published by the user) ----------
+    private val vlock = Any()
+    private fun vidDir() = File(dataDir(), "videos").apply { mkdirs() }
+    private fun vidsRead(): JSONArray = synchronized(vlock) {
+        try { JSONArray(File(vidDir(), "videos.json").readText()) } catch (e: Exception) { JSONArray() }
+    }
+    private fun vidsWrite(a: JSONArray) {
+        synchronized(vlock) {
+            try { File(vidDir(), "videos.json").writeText(a.toString(1)) } catch (e: Exception) { logError("video", e.message ?: "write") }
+        }
+        writeIndex()
+    }
+
+    /** Saves a frame as JPEG and returns the duration in ms. */
+    private fun makeThumb(f: File, out: File): Long {
+        val r = android.media.MediaMetadataRetriever()
+        return try {
+            r.setDataSource(f.path)
+            val dur = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val bmp = r.getFrameAtTime(1_000_000L, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: r.getFrameAtTime(0)
+            if (bmp != null) out.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
+            dur
+        } catch (e: Exception) { 0L } finally { try { r.release() } catch (e: Exception) { } }
+    }
+
+    private fun addVideo(id: String, title: String, file: String, thumb: String, dur: Long, channel: String, email: String) {
+        synchronized(vlock) {
+            val a = vidsRead()
+            a.put(JSONObject().put("id", id).put("title", title).put("file", file).put("thumb", thumb).put("dur", dur)
+                .put("channel", channel).put("email", email).put("ts", System.currentTimeMillis()).put("views", 0))
+            vidsWrite(a)
+        }
+    }
+
+    /** First run: the app ships with one real sample video so the feed is never empty. */
+    private fun seedVideos() {
+        if (prefs.getBoolean("seeded", false)) return
+        prefs.edit().putBoolean("seeded", true).apply()
+        try {
+            val f = File(vidDir(), "sample.mp4")
+            assets.open("sample.mp4").use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+            val th = File(vidDir(), "sample.jpg")
+            val d = makeThumb(f, th)
+            addVideo("sample", "Bem-vindo ao TermWin", f.name, th.name, d, "TermWin", "")
+        } catch (e: Exception) { logError("video", "seed: ${e.message}") }
+    }
+
+    private fun lanIp(): String? = try {
+        java.util.Collections.list(NetworkInterface.getNetworkInterfaces()).flatMap { java.util.Collections.list(it.inetAddresses) }
+            .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address && it.isSiteLocalAddress }?.hostAddress
+    } catch (e: Exception) { null }
+
+    // ---------- publish a video ----------
+    inner class TwBridge {
+        @android.webkit.JavascriptInterface fun publish() { runOnUiThread { startPublish() } }
+    }
+    private var pubWv: android.webkit.WebView? = null
+
+    private fun startPublish() {
+        if (profile() == null) { toast(tr("Sign in with your e-mail first (👤 Profile)", "Entre com seu e-mail antes (👤 Perfil)")); showProfile(); return }
+        @Suppress("DEPRECATION")
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("video/*"), 79)
+    }
+
+    private fun showPublish(uri: Uri) {
+        val pr = profile() ?: return
+        val fname = try {
+            contentResolver.query(uri, null, null, null, null)?.use { c ->
+                val ix = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (c.moveToFirst() && ix >= 0) c.getString(ix) else null
+            }
+        } catch (e: Exception) { null } ?: "video.mp4"
+        val p = panel(tr("Publish video", "Publicar vídeo"), 0.6f)
+        p.body.addView(tv("🎬  $fname", 14f, Color.WHITE).apply { setPadding(0, dp(8), 0, 0) })
+        val title = field(tr("Title", "Título"), fname.substringBeforeLast('.'))
+        p.body.addView(title)
+        p.body.addView(tv(tr("Channel: ", "Canal: ") + pr.optString("channel"), 12f, 0xFF9AA5B1.toInt()).apply { setPadding(0, dp(10), 0, 0) })
+        p.button(tr("Cancel", "Cancelar")) { p.close() }
+        p.button(tr("Publish", "Publicar"), true) {
+            val tt = title.text.toString().trim()
+            if (tt.isEmpty()) { toast(tr("Type a title", "Digite o título")); return@button }
+            p.close()
+            toast(tr("Publishing…", "Publicando…"))
+            thread {
+                try {
+                    val id = System.currentTimeMillis().toString(36)
+                    val ext = fname.substringAfterLast('.', "mp4").lowercase().filter { it.isLetterOrDigit() }.ifEmpty { "mp4" }
+                    val f = File(vidDir(), "$id.$ext")
+                    contentResolver.openInputStream(uri)!!.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+                    val th = File(vidDir(), "$id.jpg")
+                    val d = makeThumb(f, th)
+                    addVideo(id, tt, f.name, th.name, d, pr.optString("channel"), pr.optString("email"))
+                    ui.post { toast(tr("Published ✔", "Publicado ✔")); pubWv?.evaluateJavascript("if(window.load)load()", null) }
+                } catch (e: Exception) {
+                    logError("video", "publish: ${e.message}")
+                    ui.post { toast(tr("Could not publish: ${e.message}", "Não consegui publicar: ${e.message}")) }
+                }
+            }
+        }
+    }
+
+    private fun jsonOut(o: OutputStream, j: Any) = send(o, "application/json; charset=utf-8", j.toString().toByteArray())
+
+    private fun ytRoute(o: OutputStream, path: String, range: String?) {
+        fun find(id: String): JSONObject? { val a = vidsRead(); for (i in 0 until a.length()) if (a.getJSONObject(i).optString("id") == id) return a.getJSONObject(i); return null }
+        when {
+            path == "/api/videos" -> {
+                val a = vidsRead(); val out = JSONArray()
+                for (i in a.length() - 1 downTo 0) { val e = a.getJSONObject(i)
+                    out.put(JSONObject().put("id", e.optString("id")).put("title", e.optString("title")).put("channel", e.optString("channel"))
+                        .put("dur", e.optLong("dur")).put("ts", e.optLong("ts")).put("views", e.optInt("views"))) }
+                jsonOut(o, out)
+            }
+            path == "/api/me" -> jsonOut(o, JSONObject().put("name", profile()?.optString("channel") ?: ""))
+            path.startsWith("/api/view/") -> synchronized(vlock) {
+                val id = path.removePrefix("/api/view/"); val a = vidsRead()
+                for (i in 0 until a.length()) { val e = a.getJSONObject(i); if (e.optString("id") == id) e.put("views", e.optInt("views") + 1) }
+                vidsWrite(a); jsonOut(o, JSONObject().put("ok", true))
+            }
+            path.startsWith("/v/") -> {
+                val e = find(path.removePrefix("/v/")); val f = e?.let { File(vidDir(), it.optString("file")) }
+                if (f != null && f.isFile) serveFile(o, f, range) else send(o, "text/plain; charset=utf-8", "404".toByteArray(), "404 Not Found")
+            }
+            path.startsWith("/t/") -> {
+                val e = find(path.removePrefix("/t/")); val f = e?.let { File(vidDir(), it.optString("thumb")) }
+                if (f != null && f.isFile) serveFile(o, f, null) else send(o, "text/plain; charset=utf-8", "404".toByteArray(), "404 Not Found")
+            }
+            else -> sendAsset(o, "template_youtube.html")
         }
     }
 
@@ -2015,7 +2277,7 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
         } else {
             thread {
                 try {
-                    val ss = ServerSocket(s.port, 50, InetAddress.getByName("127.0.0.1"))
+                    val ss = ServerSocket(s.port, 50, InetAddress.getByName(if (s.type == "tpl-youtube") "0.0.0.0" else "127.0.0.1"))
                     s.sock = ss
                     ui.post { sayCur(tr("Server '${s.name}' online: http://localhost:${s.port}\n", "Servidor '${s.name}' no ar: http://localhost:${s.port}\n")); serversRefresh?.invoke() }
                     while (s.running) {
@@ -2055,20 +2317,24 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
             c.soTimeout = 3000
             val r = c.getInputStream().bufferedReader()
             val first = r.readLine() ?: return
+            var range: String? = null
             var l = r.readLine()
-            while (l != null && l.isNotEmpty()) l = r.readLine()
+            while (l != null && l.isNotEmpty()) { if (l.startsWith("Range:", true)) range = l.substringAfter(":").trim(); l = r.readLine() }
             val path = Uri.decode((first.split(" ").getOrNull(1) ?: "/").substringBefore("?"))
             val o = c.getOutputStream()
             when (s.type) {
                 "files" -> serveFiles(o, s, path)
                 "json" -> send(o, "application/json; charset=utf-8", s.cmd.ifBlank { "{\"ok\":true}" }.toByteArray())
-                "tpl-youtube" -> sendAsset(o, "template_youtube.html")
+                "tpl-youtube" -> ytRoute(o, path, range)
                 "tpl-windows10" -> sendAsset(o, "template_windows10.html")
                 "tpl-ai" -> if (path == "/ask") {
                     val qs = first.split(" ").getOrNull(1)?.substringAfter("?", "") ?: ""
                     fun qp(k: String) = qs.split("&").firstOrNull { it.startsWith("$k=") }?.substringAfter("=")?.let { Uri.decode(it.replace("+", " ")) } ?: ""
-                    send(o, "application/json; charset=utf-8", JSONObject().put("answer", askAi(qp("q"), qp("spec"))).toString().toByteArray())
-                } else send(o, "text/html; charset=utf-8", aiPageHtml().toByteArray())
+                    val k = qp("key")
+                    val ok = k == ownerToken || apiVisible().isEmpty() || apiVerify(k)
+                    val ans = if (ok) askAi(qp("q"), qp("spec")) else "401: invalid or missing API key (create one in 🔑 API Keys)"
+                    send(o, "application/json; charset=utf-8", JSONObject().put("answer", ans).toString().toByteArray())
+                } else sendAsset(o, "template_ai.html")
                 "custom" -> send(o, "text/html; charset=utf-8", s.cmd.ifBlank { "<h1>${s.name.replace("<", "&lt;")}</h1>" }.toByteArray())
                 else -> send(o, "text/html; charset=utf-8", page(s).toByteArray())
             }
@@ -2096,11 +2362,29 @@ try{const r=await fetch('/ask?q='+encodeURIComponent(q)+'&spec='+encodeURICompon
         } else serveFile(o, f)
     }
 
-    private fun serveFile(o: OutputStream, f: File) {
+    private fun serveFile(o: OutputStream, f: File, range: String? = null) {
         var mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "application/octet-stream"
         if (mime.startsWith("text/")) mime += "; charset=utf-8"
-        o.write("HTTP/1.1 200 OK\r\nContent-Type: $mime\r\nContent-Length: ${f.length()}\r\nConnection: close\r\n\r\n".toByteArray())
-        f.inputStream().use { it.copyTo(o) }
+        val len = f.length()
+        var start = 0L; var end = len - 1; var partial = false
+        val m = range?.let { Regex("bytes=(\\d*)-(\\d*)").find(it) }
+        if (m != null) {
+            val a = m.groupValues[1]; val b = m.groupValues[2]
+            if (a.isEmpty() && b.isNotEmpty()) start = (len - b.toLong()).coerceAtLeast(0)
+            else if (a.isNotEmpty()) { start = a.toLong(); if (b.isNotEmpty()) end = minOf(b.toLong(), len - 1) }
+            if (start > end || start >= len) {
+                o.write("HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */$len\r\nConnection: close\r\n\r\n".toByteArray()); return
+            }
+            partial = true
+        }
+        val n = end - start + 1
+        o.write(((if (partial) "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes $start-$end/$len\r\n" else "HTTP/1.1 200 OK\r\n") +
+            "Content-Type: $mime\r\nContent-Length: $n\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n").toByteArray())
+        java.io.RandomAccessFile(f, "r").use { raf ->
+            raf.seek(start)
+            val buf = ByteArray(65536); var left = n
+            while (left > 0) { val r = raf.read(buf, 0, minOf(buf.size.toLong(), left).toInt()); if (r <= 0) break; o.write(buf, 0, r); left -= r }
+        }
     }
 
     private fun page(s: Srv): String {
