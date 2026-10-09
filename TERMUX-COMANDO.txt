@@ -1,0 +1,16 @@
+COMANDO PARA TERMUX — ENVIAR PROJETO E DISPARAR GITHUB ACTIONS
+
+Pré-requisitos:
+- O repositório já deve estar clonado em ~/TermWin.
+- O Git remoto (origin) deve estar configurado e você precisa ter permissão de push.
+- Coloque TermWin_Windows_Nativo.zip em ~/storage/downloads/.
+
+Execute no Termux:
+
+cd ~/TermWin && T="$HOME/tw_tmp" && rm -rf "$T" && mkdir -p "$T" && unzip -q "$HOME/storage/downloads/TermWin_Windows_Nativo.zip" -d "$T" && test -f "$T/windows/TermWin.Windows.csproj" && test -f "$T/.github/workflows/build-windows.yml" && find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} + && cp -r "$T"/. . && rm -rf "$T" && git add -A && (git diff --cached --quiet || git commit -m "Add native Windows EXE build workflow") && git push origin HEAD
+
+O push dispara o workflow Build TermWin Windows EXE se a branch for main/master ou se executar manualmente em Actions. Para outras branches, abra Actions e use Run workflow.
+
+ONDE BAIXAR O EXE:
+GitHub > repositório > Actions > Build TermWin Windows EXE > execução mais recente > Artifacts > TermWin-Windows-x64.
+O artefato é um ZIP que contém TermWin.exe e a pasta Assets necessária ao aplicativo.

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Windows 10 Mobile</title>
+<style>
+:root{--ac:#0078d7;--bg:#000;--fg:#fff;--panel:#1f1f1f}
+body.light{--bg:#f2f2f2;--fg:#111;--panel:#e3e3e3}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:"Segoe UI",Roboto,Arial,sans-serif;color:var(--fg)}
+#ph{position:relative;height:100%;max-width:480px;margin:0 auto;background:var(--bg);overflow:hidden}
+#sb{position:absolute;top:0;left:0;right:0;height:24px;display:flex;justify-content:space-between;align-items:center;padding:0 10px;font-size:12px;z-index:30;pointer-events:none}
+#nb{position:absolute;bottom:0;left:0;right:0;height:50px;background:#000;display:flex;justify-content:space-around;align-items:center;z-index:30;color:#fff;font-size:22px}
+#nb button{background:none;border:0;color:#fff;width:70px;height:50px;font-size:22px}
+.win{width:20px;height:20px;display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:auto}
+.win i{background:#fff;display:block}
+#lock{position:absolute;inset:0;z-index:25;background:linear-gradient(160deg,#0b3d91,#6a1b9a 55%,#ff6f61);color:#fff;transition:transform .45s ease;display:flex;flex-direction:column;justify-content:flex-end;padding:0 24px 90px}
+#lock.up{transform:translateY(-100%)}
+#lk{font-size:78px;font-weight:200;line-height:1}
+#ld{font-size:20px;margin-top:6px}
+#lh{margin-top:26px;opacity:.8;font-size:14px}
+#start{position:absolute;inset:0;padding:34px 8px 58px;overflow-y:auto}
+#start h2{font-weight:300;font-size:30px;margin:6px 8px 12px;display:flex;justify-content:space-between;align-items:center}
+#start h2 button{background:none;border:2px solid var(--fg);color:var(--fg);border-radius:50%;width:34px;height:34px;font-size:16px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:calc((100vw - 16px) / 4 - 4px);gap:4px}
+@media(min-width:480px){.grid{grid-auto-rows:calc(464px / 4 - 4px)}}
+.tile{position:relative;overflow:hidden;background:var(--ac);color:#fff;padding:7px 8px;font-size:12px;display:flex;flex-direction:column;justify-content:flex-end;transition:transform .12s}
+.tile:active{transform:scale(.95)}
+.tile .ic{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);font-size:30px}
+.s2{grid-column:span 2;grid-row:span 2}.w2{grid-column:span 2}
+.s2 .ic{font-size:54px}
+.live{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:10px;font-size:13px;background:rgba(0,0,0,.28);animation:fl 7s infinite}
+.live b{font-size:30px;font-weight:300}
+@keyframes fl{0%,40%{transform:translateY(100%)}50%,90%{transform:translateY(0)}100%{transform:translateY(100%)}}
+#apps{position:absolute;inset:0;padding:34px 12px 58px;overflow-y:auto;background:var(--bg);transform:translateX(100%);transition:transform .3s ease}
+#apps.on{transform:none}
+#apps div{display:flex;align-items:center;gap:14px;padding:9px 4px;font-size:18px}
+#apps div span{width:42px;height:42px;display:grid;place-items:center;background:var(--ac);color:#fff;font-size:20px}
+#app{position:absolute;inset:0;z-index:20;background:var(--bg);padding:34px 0 50px;transform:translateY(100%);transition:transform .28s ease;overflow-y:auto}
+#app.on{transform:none}
+#ah{padding:14px 18px;font-size:30px;font-weight:300;background:var(--ac);color:#fff}
+#ab{padding:18px;line-height:1.5}
+.sw{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.sw i{width:44px;height:44px;display:block;border:2px solid transparent}
+.btn{background:var(--ac);color:#fff;border:0;padding:12px 18px;font-size:15px;margin:4px 6px 4px 0}
+</style>
+</head>
+<body>
+<div id="ph">
+  <div id="sb"><span>📶 LTE &nbsp;📡</span><span id="sc">00:00</span><span>🔋 87%</span></div>
+  <div id="start">
+    <h2>Iniciar <button id="all" aria-label="Todos os aplicativos">→</button></h2>
+    <div class="grid" id="grid"></div>
+  </div>
+  <div id="apps"></div>
+  <div id="app"><div id="ah"></div><div id="ab"></div></div>
+  <div id="lock"><div id="lk">00:00</div><div id="ld"></div><div id="lh">Toque para desbloquear ↑</div></div>
+  <div id="nb"><button id="bk">←</button><button id="hm"><div class="win"><i></i><i></i><i></i><i></i></div></button><button id="se">🔍</button></div>
+</div>
+<script>
+function $(i){return document.getElementById(i)}
+var accents=['#0078d7','#e51400','#60a917','#fa6800','#aa00ff','#d80073','#00aba9','#825a2c'];
+var tiles=[
+{n:'Telefone',i:'📞',c:'s2'},{n:'Mensagens',i:'💬',c:'',bg:'#00aba9'},{n:'Email',i:'✉️',c:'',bg:'#2d89ef'},
+{n:'Clima',i:'☀️',c:'w2',bg:'#1ba1e2',live:'<b>24°</b>São Paulo • Ensolarado'},
+{n:'Calendário',i:'📅',c:'w2',bg:'#7e3878',live:'<b id="cd">--</b><span id="cw"></span>'},
+{n:'Edge',i:'🌐',c:'s2',bg:'#0050ef'},{n:'Fotos',i:'🖼️',c:'',bg:'#e3a21a'},{n:'Câmera',i:'📷',c:'',bg:'#647687'},
+{n:'Loja',i:'🛍️',c:'w2',bg:'#00a300'},{n:'Mapas',i:'🗺️',c:'',bg:'#d80073'},{n:'Música',i:'🎵',c:'',bg:'#e51400'},
+{n:'Xbox',i:'🎮',c:'w2',bg:'#107c10',live:'<b>🏆</b>Nova conquista!'},{n:'Calculadora',i:'🧮',c:'',bg:'#555'},{n:'Relógio',i:'⏰',c:'',bg:'#a0522d'},
+{n:'Configurações',i:'⚙️',c:'w2',bg:'#444'},{n:'Pessoas',i:'👥',c:'',bg:'#fa6800'},{n:'Office',i:'📄',c:'',bg:'#d24726'}];
+var body={
+'Configurações':function(){return '<p>Cor de destaque</p><div class="sw">'+accents.map(function(a){return '<i style="background:'+a+'" data-a="'+a+'"></i>'}).join('')+'</div><p>Tema</p><button class="btn" data-t="dark">Escuro</button><button class="btn" data-t="light">Claro</button>'},
+'Calculadora':function(){return '<p style="font-size:44px;font-weight:200;margin:0" id="cr">0</p><div id="ck"></div>'},
+'Relógio':function(){return '<p style="font-size:64px;font-weight:200;margin:0" id="rc"></p><p>Alarmes: 07:00 • 07:30</p>'},
+'Telefone':function(){return '<p>📞 Mãe<br>📞 Trabalho<br>📞 Entregas</p>'}};
+function pad(n){return n<10?'0'+n:''+n}
+function tick(){var d=new Date(),t=pad(d.getHours())+':'+pad(d.getMinutes());$('sc').textContent=t;$('lk').textContent=t;
+  $('ld').textContent=d.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
+  if($('cd')){$('cd').textContent=d.getDate();$('cw').textContent=d.toLocaleDateString('pt-BR',{weekday:'long',month:'long'})}
+  if($('rc'))$('rc').textContent=t+':'+pad(d.getSeconds())}
+function build(){
+  $('grid').innerHTML=tiles.map(function(t,i){return '<div class="tile '+t.c+'" data-i="'+i+'" style="'+(t.bg?'background:'+t.bg:'')+'"><span class="ic">'+t.i+'</span>'+(t.live?'<div class="live">'+t.live+'</div>':'')+t.n+'</div>'}).join('');
+  var sorted=tiles.slice().sort(function(a,b){return a.n.localeCompare(b.n)});
+  $('apps').innerHTML=sorted.map(function(t){return '<div data-n="'+t.n+'"><span style="'+(t.bg?'background:'+t.bg:'')+'">'+t.i+'</span>'+t.n+'</div>'}).join('');
+}
+function openApp(n){
+  var t=tiles.filter(function(x){return x.n==n})[0];
+  $('ah').textContent=n;
+  $('ab').innerHTML=body[n]?body[n]():'<p style="font-size:60px;margin:0">'+t.i+'</p><p>'+n+' — aplicativo de demonstração do modelo Windows 10 Mobile.</p>';
+  $('app').className='on';
+  if(n=='Calculadora')calc();
+  tick();
+}
+function calc(){
+  var keys=['7','8','9','÷','4','5','6','×','1','2','3','−','0','.','=','+'],exp='';
+  $('ck').innerHTML=keys.map(function(k){return '<button class="btn" style="width:22%;margin:1%">'+k+'</button>'}).join('');
+  $('ck').onclick=function(e){var k=e.target.textContent;if(e.target.tagName!='BUTTON')return;
+    if(k=='='){try{exp=''+eval(exp.replace(/÷/g,'/').replace(/×/g,'*').replace(/−/g,'-'))}catch(x){exp='Erro'}}else{if(exp=='Erro')exp='';exp+=k}
+    $('cr').textContent=exp||'0'}}
+function home(){$('app').className='';$('apps').className=''}
+$('grid').onclick=function(e){var n=e.target;while(n&&n!==this&&!n.getAttribute('data-i'))n=n.parentNode;if(n&&n.getAttribute&&n.getAttribute('data-i'))openApp(tiles[+n.getAttribute('data-i')].n)};
+$('apps').onclick=function(e){var n=e.target;while(n&&n!==this&&!n.getAttribute('data-n'))n=n.parentNode;if(n&&n.getAttribute&&n.getAttribute('data-n')){$('apps').className='';openApp(n.getAttribute('data-n'))}};
+$('ab').onclick=function(e){var a=e.target.getAttribute('data-a'),t=e.target.getAttribute('data-t');
+  if(a)document.documentElement.style.setProperty('--ac',a);
+  if(t)document.body.className=t=='light'?'light':''};
+$('all').onclick=function(){$('apps').className='on'};
+$('hm').onclick=home;
+$('bk').onclick=function(){if($('app').className=='on')$('app').className='';else $('apps').className=''};
+$('se').onclick=function(){openApp('Edge')};
+$('lock').onclick=function(){this.className='up'};
+build();tick();setInterval(tick,1000);
+</script>
+</body>
+</html>
