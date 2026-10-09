@@ -1,18 +1,11 @@
-TERMWIN PARA WINDOWS NATIVO
-===========================
+TermWin — versão desktop nativa para Windows x64
 
-O projeto Android original foi mantido na pasta app/. Foi adicionada uma versao desktop Windows em windows/.
+Compilação automática:
+1. Envie este projeto para o GitHub.
+2. O workflow .github/workflows/build.yml usa um runner Windows e .NET 8 para publicar a versão desktop.
+3. No GitHub, abra Actions > Build TermWin EXE > última execução > Artifacts > TermWin-Windows-x64.
+4. Baixe e extraia o artefato ZIP.
 
-COMO GERAR O EXE
-1. Extraia o ZIP inteiro para uma pasta no Windows.
-2. Instale o .NET 8 SDK (nao apenas o runtime): https://dotnet.microsoft.com/download/dotnet/8.0
-3. Execute Build-TermWin-Windows.bat.
-4. O resultado sera windows/../dist/TermWin.exe (pasta TermWin/dist/TermWin.exe).
+O projeto desktop está em windows/TermWin.Windows.csproj. O workflow principal foi alterado para gerar o EXE, em vez do APK. O código Android original continua no diretório app/, mas não é compilado por esse workflow.
 
-REQUISITOS PARA EXECUTAR
-- Windows 10/11 x64.
-- Microsoft Edge WebView2 Runtime: https://developer.microsoft.com/microsoft-edge/webview2/
-- Mantenha a pasta Assets ao lado do executavel. O EXE e publicado como arquivo unico para o runtime .NET, mas os modelos HTML e o video ficam em Assets/.
-
-NOTA SOBRE A CONVERSAO
-A versao desktop e um aplicativo Windows real (WinForms) que hospeda as telas HTML do projeto e fornece navegacao entre Inicio, IA e Videos. Recursos Android que dependam de APIs exclusivas do telefone, servicos em segundo plano, notificacoes Android ou armazenamento especifico do Android nao sao automaticamente convertidos e precisariam de implementacao Windows separada.
+Requisito de execução: Windows x64. O aplicativo usa WebView2; instale o Microsoft Edge WebView2 Runtime se ele não estiver presente.
