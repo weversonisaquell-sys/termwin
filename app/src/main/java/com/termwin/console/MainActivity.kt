@@ -1487,6 +1487,101 @@ Long-press a tab to rename it.
         catch (e: Exception) { err(t, tr("could not open the browser", "não foi possível abrir o navegador")) }
     }
 
+    /** Virtual mouse (yellow pointer). The finger works like a touchpad: move = cursor, tap = click,
+     *  tap + hold + move = drag, two fingers = scroll. Real touch events are sent to the WebView at the cursor. */
+    inner class MouseLayer(private val web: android.webkit.WebView) : View(this@MainActivity) {
+        private val dn = resources.displayMetrics.density
+        private fun bmp(n: String) = assets.open(n).use { android.graphics.BitmapFactory.decodeStream(it) }
+        private val arrow = bmp("cursor_arrow.png")
+        private val hand = bmp("cursor_hand.png")
+        private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG or android.graphics.Paint.ANTI_ALIAS_FLAG)
+        private var cx = 0f; private var cy = 0f; private var ready = false
+        private var isHand = false; private var lastProbe = 0L
+        private var lx = 0f; private var ly = 0f; private var px0 = 0f; private var py0 = 0f
+        private var downT = 0L; private var moved = false; private var lastTap = 0L
+        private var dragging = false; private var scrolling = false
+        private var sT = 0L; private var ax0 = 0f; private var ay0 = 0f; private var ax = 0f; private var ay = 0f
+
+        fun setOn(on: Boolean) { visibility = if (on) View.VISIBLE else View.GONE }
+
+        private fun fire(action: Int, t0: Long, x: Float, y: Float) {
+            val ev = MotionEvent.obtain(t0, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+            ev.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+            web.dispatchTouchEvent(ev); ev.recycle()
+        }
+
+        private fun click() {
+            val t = android.os.SystemClock.uptimeMillis()
+            fire(MotionEvent.ACTION_DOWN, t, cx, cy)
+            val x = cx; val y = cy
+            postDelayed({ fire(MotionEvent.ACTION_UP, t, x, y) }, 45)
+        }
+
+        private fun probe() {
+            val n = android.os.SystemClock.uptimeMillis()
+            if (n - lastProbe < 90) return
+            lastProbe = n
+            val js = "(function(){var r=window.devicePixelRatio||1,e=document.elementFromPoint(" + cx.toInt() + "/r," + cy.toInt() + "/r);" +
+                "for(var i=0;e&&i<7;i++,e=e.parentElement){var c=getComputedStyle(e).cursor,g=e.tagName;" +
+                "if(c=='pointer'||g=='A'||g=='BUTTON'||g=='SELECT'||g=='SUMMARY')return 1}return 0})()"
+            try { web.evaluateJavascript(js) { v -> val h = v == "1"; if (h != isHand) { isHand = h; invalidate() } } } catch (e: Exception) { }
+        }
+
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            if (!ready) { cx = width / 2f; cy = height / 2f; ready = true }
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lx = e.x; ly = e.y; px0 = e.x; py0 = e.y; moved = false; downT = e.eventTime
+                    dragging = lastTap > 0 && e.eventTime - lastTap < 350
+                    if (dragging) { sT = android.os.SystemClock.uptimeMillis(); fire(MotionEvent.ACTION_DOWN, sT, cx, cy) }
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount == 2 && !dragging) {
+                    scrolling = true; moved = true
+                    ax0 = (e.getX(0) + e.getX(1)) / 2; ay0 = (e.getY(0) + e.getY(1)) / 2; ax = ax0; ay = ay0
+                    sT = android.os.SystemClock.uptimeMillis(); fire(MotionEvent.ACTION_DOWN, sT, cx, cy)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (scrolling && e.pointerCount >= 2) {
+                        ax = (e.getX(0) + e.getX(1)) / 2; ay = (e.getY(0) + e.getY(1)) / 2
+                        fire(MotionEvent.ACTION_MOVE, sT, cx + (ax - ax0), cy + (ay - ay0))
+                    } else if (!scrolling) {
+                        if (Math.hypot((e.x - px0).toDouble(), (e.y - py0).toDouble()) > 10 * dn) moved = true
+                        cx = (cx + (e.x - lx) * 1.7f).coerceIn(0f, width - 1f)
+                        cy = (cy + (e.y - ly) * 1.7f).coerceIn(0f, height - 1f)
+                        lx = e.x; ly = e.y
+                        if (dragging) fire(MotionEvent.ACTION_MOVE, sT, cx, cy)
+                        invalidate(); probe()
+                    }
+                }
+                MotionEvent.ACTION_POINTER_UP -> if (scrolling) {
+                    fire(MotionEvent.ACTION_UP, sT, cx + (ax - ax0), cy + (ay - ay0)); scrolling = false
+                    val i = if (e.actionIndex == 0) 1 else 0
+                    lx = e.getX(i); ly = e.getY(i)
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (scrolling) { fire(MotionEvent.ACTION_UP, sT, cx + (ax - ax0), cy + (ay - ay0)); scrolling = false }
+                    else if (dragging) { fire(MotionEvent.ACTION_UP, sT, cx, cy); dragging = false; lastTap = 0 }
+                    else if (!moved && e.eventTime - downT < 300) { click(); lastTap = e.eventTime }
+                    else lastTap = 0
+                    probe()
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    if (scrolling || dragging) fire(MotionEvent.ACTION_CANCEL, sT, cx, cy)
+                    scrolling = false; dragging = false
+                }
+            }
+            return true
+        }
+
+        override fun onDraw(c: android.graphics.Canvas) {
+            if (!ready) return
+            val b = if (isHand) hand else arrow
+            val hx = if (isHand) 16f else 13f; val hy = if (isHand) 3f else 2f
+            val s = (if (isHand) 30f else 34f) * dn / b.height
+            c.save(); c.translate(cx - hx * s, cy - hy * s); c.scale(s, s); c.drawBitmap(b, 0f, 0f, paint); c.restore()
+        }
+    }
+
     /** Opens the page inside a Windows-style window (WebView) instead of the phone's browser. */
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
     private fun openWebWindow(title: String, url: String, yt: Boolean = false, ai: Boolean = false) {
@@ -1502,11 +1597,17 @@ Long-press a tab to rename it.
         card.clipToOutline = false
         val wv = android.webkit.WebView(this)
         lateinit var p: Panel
+        var mouse: MouseLayer? = null
         val tb = LinearLayout(this)
         tb.setBackgroundColor(TITLE)
         tb.addView(tv("   ▣   $title — $url", 13f, Color.WHITE).apply { gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }, LinearLayout.LayoutParams(0, dp(40), 1f))
         if (yt) tb.addView(capBtn("＋", false, 46) { startPublish() })
         if (ai) tb.addView(capBtn("🔑", false, 46) { showProviderKey() })
+        tb.addView(capBtn("🖱", false, 46) {
+            val on = !prefs.getBoolean("mouse_on", true)
+            prefs.edit().putBoolean("mouse_on", on).apply(); mouse?.setOn(on)
+            toast(if (on) tr("Mouse on", "Mouse ligado") else tr("Mouse off — touch the page directly", "Mouse desligado — toque direto na página"))
+        })
         tb.addView(capBtn("⟳", false, 46) { wv.reload() })
         tb.addView(capBtn("✕", true, 46) { p.close() })
         card.addView(tb, LinearLayout.LayoutParams(MATCH, dp(40)))
@@ -1519,7 +1620,12 @@ Long-press a tab to rename it.
         if (yt) pubWv = wv
         wv.webViewClient = android.webkit.WebViewClient()
         wv.webChromeClient = android.webkit.WebChromeClient()
-        card.addView(wv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        val holder = FrameLayout(this)
+        holder.addView(wv, FrameLayout.LayoutParams(MATCH, MATCH))
+        val ml = MouseLayer(wv); mouse = ml
+        ml.setOn(prefs.getBoolean("mouse_on", true))
+        holder.addView(ml, FrameLayout.LayoutParams(MATCH, MATCH))
+        card.addView(holder, LinearLayout.LayoutParams(MATCH, 0, 1f))
         ov.addView(card, FrameLayout.LayoutParams((dm.widthPixels * 0.94).toInt(), (dm.heightPixels * 0.92).toInt(), Gravity.CENTER))
         root.addView(ov, FrameLayout.LayoutParams(MATCH, MATCH))
         p = Panel(ov, LinearLayout(this), LinearLayout(this))
@@ -2261,8 +2367,17 @@ Long-press a tab to rename it.
     private fun subsRead(): JSONArray = synchronized(vlock) {
         try { JSONArray(File(vidDir(), "subs.json").readText()) } catch (e: Exception) { JSONArray() }
     }
+    private fun chSubsRead(): JSONObject = synchronized(vlock) {
+        try { JSONObject(File(vidDir(), "chsubs.json").readText()) } catch (e: Exception) { JSONObject() }
+    }
     private fun subsToggle(name: String, on: Boolean) = synchronized(vlock) {
         val old = subsRead(); val out = JSONArray()
+        val had = (0 until old.length()).any { old.getString(it).equals(name, true) }
+        if (name.isNotBlank() && on != had) {
+            val cs = chSubsRead(); val key = name.lowercase()
+            cs.put(key, maxOf(0, cs.optInt(key) + (if (on) 1 else -1)))
+            try { File(vidDir(), "chsubs.json").writeText(cs.toString()) } catch (e: Exception) { }
+        }
         for (i in 0 until old.length()) if (!old.getString(i).equals(name, true)) out.put(old.getString(i))
         if (on && name.isNotBlank()) out.put(name)
         try { File(vidDir(), "subs.json").writeText(out.toString()) } catch (e: Exception) { logError("video", "subs: ${e.message}") }
@@ -2283,11 +2398,24 @@ Long-press a tab to rename it.
 
     private fun pubVid(e: JSONObject) = JSONObject().put("id", e.optString("id")).put("title", e.optString("title")).put("channel", e.optString("channel"))
         .put("dur", e.optLong("dur")).put("ts", e.optLong("ts")).put("views", e.optInt("views")).put("short", e.optBoolean("short", false))
+        .put("likes", e.optInt("likes")).put("dislikes", e.optInt("dislikes")).put("my", e.optInt("my"))
 
     private fun ytRoute(o: OutputStream, path: String, range: String?, query: String) {
         fun qp(k: String) = query.split("&").firstOrNull { it.startsWith("$k=") }?.substringAfter("=")?.let { Uri.decode(it.replace("+", " ")) } ?: ""
         fun find(id: String): JSONObject? { val a = vidsRead(); for (i in 0 until a.length()) if (a.getJSONObject(i).optString("id") == id) return a.getJSONObject(i); return null }
         when {
+            path == "/api/chsubs" -> jsonOut(o, chSubsRead())
+            path == "/api/react" -> synchronized(vlock) {
+                val id = qp("id"); val r = (qp("r").toIntOrNull() ?: 0).coerceIn(-1, 1)
+                val a = vidsRead(); val res = JSONObject()
+                for (i in 0 until a.length()) { val x = a.getJSONObject(i); if (x.optString("id") == id) {
+                    val old = x.optInt("my")
+                    val l = maxOf(0, x.optInt("likes") - (if (old == 1) 1 else 0) + (if (r == 1) 1 else 0))
+                    val d = maxOf(0, x.optInt("dislikes") - (if (old == -1) 1 else 0) + (if (r == -1) 1 else 0))
+                    x.put("likes", l).put("dislikes", d).put("my", r)
+                    res.put("likes", l).put("dislikes", d).put("my", r) } }
+                vidsWrite(a); jsonOut(o, res)
+            }
             path == "/api/subs" -> jsonOut(o, subsRead())
             path == "/api/sub" -> { subsToggle(qp("name"), qp("on") == "1"); jsonOut(o, JSONObject().put("ok", true)) }
             path == "/api/videos" -> {
@@ -2307,7 +2435,7 @@ Long-press a tab to rename it.
                 val own = me != null && me.optString("channel").equals(name, true)
                 val since = if (own) me!!.optLong("created", if (first == Long.MAX_VALUE) System.currentTimeMillis() else first) else if (first == Long.MAX_VALUE) 0L else first
                 jsonOut(o, JSONObject().put("exists", own || list.length() > 0).put("name", name).put("own", own)
-                    .put("handle", "@" + name.lowercase().replace(Regex("[^a-z0-9]"), "")).put("videos", list).put("views", views).put("since", since))
+                    .put("handle", "@" + name.lowercase().replace(Regex("[^a-z0-9]"), "")).put("videos", list).put("views", views).put("subs", chSubsRead().optInt(name.lowercase())).put("since", since))
             }
             path.startsWith("/api/view/") -> synchronized(vlock) {
                 val id = path.removePrefix("/api/view/"); val a = vidsRead()
