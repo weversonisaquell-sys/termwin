@@ -6,142 +6,201 @@
 <meta name="theme-color" content="#0f0f0f">
 <title>YouTube</title>
 <style>
-:root{--bg:#0f0f0f;--card:#272727;--txt:#f1f1f1;--sub:#aaa;--red:#ff0033;--line:#272727}
+:root{--bg:#0f0f0f;--c:#272727;--t:#f1f1f1;--s:#aaa;--r:#f03}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--txt);font-family:Roboto,Arial,Helvetica,sans-serif}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--t);font:14px Roboto,Arial,sans-serif}
 body{display:flex;flex-direction:column}
-header{flex:none;height:50px;display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--bg);border-bottom:1px solid var(--line)}
-.logo{display:flex;align-items:center;gap:5px;font-weight:700;letter-spacing:-.5px;font-size:19px;cursor:pointer}
-.logo i{width:30px;height:21px;background:var(--red);border-radius:6px;display:inline-block;position:relative}
-.logo i:after{content:"";position:absolute;left:12px;top:5px;border-left:8px solid #fff;border-top:5.5px solid transparent;border-bottom:5.5px solid transparent}
-.search{flex:1;display:flex;justify-content:center}
-.search input{width:100%;max-width:520px;height:34px;border-radius:20px;border:1px solid #303030;background:#121212;color:var(--txt);padding:0 16px;font-size:14px;outline:none}
-.hb{flex:none;height:34px;border:0;border-radius:18px;padding:0 13px;background:var(--card);color:var(--txt);font-size:13px;display:flex;align-items:center;gap:7px}
-.av{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#7f5af0,#2cb67d);display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff}
-main{flex:1;min-height:0;position:relative;overflow:hidden}
-.view{display:none;position:absolute;inset:0;flex-direction:column}
-.view.on{display:flex}
-.gw{flex:1;min-height:0;overflow:hidden;padding:12px 12px 0}
-.grid{display:grid;gap:12px;align-content:start}
-.pager{flex:none;display:none;align-items:center;justify-content:center;gap:14px;height:38px;font-size:13px;color:var(--sub)}
-.pager button{width:34px;height:28px;border:0;border-radius:14px;background:var(--card);color:var(--txt);font-size:13px}
-.card{cursor:pointer;min-width:0}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+header{flex:none;height:52px;display:flex;align-items:center;gap:8px;padding:0 12px}
+.ib{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-size:17px;flex:none}
+.ib:active{background:var(--c)}
+.logo{display:flex;align-items:center;gap:4px;font-weight:700;font-size:19px;letter-spacing:-.8px;cursor:pointer;flex:none}
+.logo i{width:28px;height:20px;background:var(--r);border-radius:6px;position:relative}
+.logo i:after{content:"";position:absolute;left:11px;top:5px;border-left:8px solid #fff;border-top:5px solid transparent;border-bottom:5px solid transparent}
+.sbx{flex:1;display:flex;justify-content:center;gap:8px;min-width:0}
+.sb{display:flex;flex:1;max-width:560px;height:36px;border:1px solid #303030;border-radius:20px;overflow:hidden;background:#121212}
+.sb input{flex:1;min-width:0;border:0;background:none;color:var(--t);padding:0 16px;font-size:14px;outline:0}
+.sb button{width:54px;background:#222;border-left:1px solid #303030}
+#mic{background:var(--c)}
+.pill{height:34px;border-radius:17px;padding:0 12px;background:var(--c);display:flex;align-items:center;gap:6px;font-size:13px;flex:none}
+.av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:700;color:#fff;flex:none;cursor:pointer}
+.pill .av{width:24px;height:24px;font-size:12px}
+.av.sm{width:24px;height:24px;font-size:12px}
+.av.big{width:56px;height:56px;font-size:24px}
+#app{flex:1;min-height:0;display:flex}
+.nv{flex:none;width:72px;padding:4px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.nv a{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 0;font-size:10px;border-radius:10px;cursor:pointer}
+.nv a b{font-size:18px;font-weight:400}
+.nv a:active,.nv a.on{background:var(--c)}
+body.ex .nv{width:176px}
+body.ex .nv a{flex-direction:row;gap:18px;padding:9px 12px;font-size:13px}
+body.wt .nv{display:none}
+main{flex:1;min-width:0;position:relative}
+.v{display:none;position:absolute;inset:0;overflow-y:auto;overscroll-behavior:contain}
+.v.on{display:block}
+.chips{position:sticky;top:0;z-index:5;display:flex;gap:8px;padding:8px 16px;background:var(--bg);overflow-x:auto;scrollbar-width:none}
+.chip{flex:none;padding:6px 12px;border-radius:8px;background:var(--c);font-size:13px;font-weight:500;white-space:nowrap}
+.chip.on{background:var(--t);color:var(--bg)}
+.gr{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:18px 12px;padding:8px 16px 24px}
+.cd,.rs,.rl,.sc{cursor:pointer;min-width:0}
 .th{position:relative;aspect-ratio:16/9;background:#222;border-radius:10px;overflow:hidden}
 .th img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.dur{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.8);padding:1px 5px;border-radius:4px;font-size:11px;font-weight:600}
-.mt{display:flex;gap:8px;padding:7px 2px 0}
-.mt .a{width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:700;font-size:12px;color:#fff}
-.t{font-size:13px;line-height:1.25;font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
-.s{font-size:11.5px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.s a,.cn{color:var(--sub);cursor:pointer}
-.empty{grid-column:1/-1;padding:30px;text-align:center;color:var(--sub);font-size:14px}
-.empty button,.btn{margin-top:12px;border:0;border-radius:18px;padding:8px 16px;background:#f1f1f1;color:#0f0f0f;font-size:13px;font-weight:600}
-.btn.alt{background:var(--card);color:var(--txt)}
-/* player */
-.pl{flex:1;display:flex;min-height:0}
-.pv{flex:1;min-width:0;background:#000;display:flex}
-.pv video{width:100%;height:100%;object-fit:contain;background:#000}
-.pi{flex:none;width:240px;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
-.pt{font-size:16px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
-.pc{display:flex;align-items:center;gap:8px;cursor:pointer}
-.pc .a{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff}
-@media (orientation:portrait){.pl{flex-direction:column}.pi{width:auto}.pv{flex:none;height:34vh}}
-/* channel */
-.banner{flex:none;height:52px}
-.cb{flex:1;min-height:0;display:flex}
-.ci{flex:none;width:230px;padding:0 14px;display:flex;flex-direction:column;gap:4px}
-.bigav{width:62px;height:62px;border-radius:50%;margin-top:-26px;border:3px solid var(--bg);display:grid;place-items:center;font-size:28px;font-weight:700;color:#fff}
-.ci h2{margin:6px 0 0;font-size:20px;font-weight:700;line-height:1.15;word-break:break-word}
-.cv{flex:1;min-width:0;display:flex;flex-direction:column}
-.tabs{flex:none;display:flex;gap:18px;padding:8px 14px 0;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;color:var(--sub)}
-.tabs span{padding-bottom:7px}.tabs .on{color:var(--txt);border-bottom:2px solid var(--txt)}
-@media (orientation:portrait){.cb{flex-direction:column}.ci{width:auto}}
+.th i{position:absolute;right:5px;bottom:5px;background:rgba(0,0,0,.8);padding:1px 4px;border-radius:4px;font:600 11px Roboto,Arial}
+.mt{display:flex;gap:10px;padding-top:10px}
+.t{font-size:14px;font-weight:500;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.s{font-size:12px;color:var(--s);line-height:1.5}
+.s span{cursor:pointer}
+.hd{display:flex;align-items:center;gap:8px;padding:10px 16px 0;font-size:18px;font-weight:700}
+.shl{display:flex;gap:10px;overflow-x:auto;padding:8px 16px;scrollbar-width:none}
+.sc{flex:none;width:130px}
+.sc .th{aspect-ratio:9/16}
+.emp{padding:40px 20px;text-align:center;color:var(--s)}
+.btn{border-radius:18px;padding:8px 14px;background:var(--t);color:var(--bg);font-weight:500;font-size:13px;white-space:nowrap}
+.btn.on,.btn.al{background:var(--c);color:var(--t)}
+.wp{display:flex;gap:20px;padding:12px 16px 24px}
+.wl{flex:1;min-width:0}
+.wr{flex:none;width:300px}
+.wl video{width:100%;aspect-ratio:16/9;max-height:78vh;background:#000;border-radius:12px;display:block}
+.w1{font-size:17px;font-weight:700;margin:10px 0 8px;line-height:1.3}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.nm{font-weight:600;cursor:pointer}
+.dsc{background:var(--c);border-radius:12px;padding:10px 12px;margin:12px 0;font-size:13px}
+.rl{display:flex;gap:8px;margin-bottom:10px}
+.rl .th{flex:none;width:150px}
+.rs{display:flex;gap:14px;padding:8px 16px;max-width:900px}
+.rs .th{flex:none;width:240px}
+#shv{overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none}
+.sv{height:100%;scroll-snap-align:start;scroll-snap-stop:always;display:flex;align-items:center;justify-content:center;gap:12px;padding:8px 0}
+.sf{position:relative;height:100%;aspect-ratio:9/16;max-width:92vw;background:#000;border-radius:14px;overflow:hidden}
+.sf video{width:100%;height:100%;object-fit:cover}
+.so{position:absolute;left:0;right:0;bottom:0;padding:30px 12px 12px;background:linear-gradient(transparent,rgba(0,0,0,.75));font-size:13px}
+.sa{display:flex;flex-direction:column;gap:10px;align-self:flex-end;padding-bottom:12px}
+.sa button{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px}
+.sa b{width:40px;height:40px;border-radius:50%;background:var(--c);display:grid;place-items:center;font-size:17px;font-weight:400}
+#sn{display:none;position:absolute;right:14px;top:50%;transform:translateY(-50%);flex-direction:column;gap:10px;z-index:3}
+body.sh #sn{display:flex}
+#sn button{width:40px;height:40px;border-radius:50%;background:var(--c)}
+#vo{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:20}
+#vo.on{display:flex}
+.vc{background:#212121;border-radius:16px;padding:18px 26px;text-align:center;min-width:240px;max-width:80%}
+.pu{width:56px;height:56px;border-radius:50%;background:var(--r);margin:0 auto 10px;display:grid;place-items:center;font-size:24px;animation:pu 1.2s infinite}
+@keyframes pu{0%{box-shadow:0 0 0 0 rgba(255,0,51,.6)}100%{box-shadow:0 0 0 22px rgba(255,0,51,0)}}
+#sp{position:fixed;inset:0;background:var(--bg);z-index:30;display:grid;place-items:center;transition:opacity .4s}
+#sp .logo{font-size:34px;animation:pop .7s cubic-bezier(.2,1.4,.4,1) both}
+#sp .logo i{width:54px;height:38px;border-radius:11px}
+#sp .logo i:after{left:21px;top:9px;border-left:15px solid #fff;border-top:10px solid transparent;border-bottom:10px solid transparent}
+@keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+@media(max-width:760px){.wp{flex-direction:column}.wr{width:auto}.rs .th{width:150px}}
 </style>
 </head>
 <body>
+<div id="sp"><div class="logo"><i></i>YouTube</div></div>
 <header>
-  <div class="logo" id="lg"><i></i>YouTube</div>
-  <div class="search"><input id="q" placeholder="Pesquisar" autocomplete="off"></div>
-  <button class="hb" id="up">＋ Publicar</button>
-  <button class="hb" id="ch"><span class="av" id="av">?</span>Canal</button>
+  <button class="ib" data-a="menu">☰</button>
+  <div class="logo" data-go="home"><i></i>YouTube</div>
+  <div class="sbx"><div class="sb"><input id="q" placeholder="Pesquisar" autocomplete="off"><button data-a="find">🔍</button></div><button class="ib" id="mic" data-a="mic">🎤</button></div>
+  <button class="pill" data-a="pub">＋ Criar</button>
+  <button class="pill" data-go="you"><span class="av" id="hav">?</span>Canal</button>
 </header>
-<main>
-  <section class="view on" id="home"><div class="gw"><div class="grid"></div></div><div class="pager"></div></section>
-  <section class="view" id="channel"></section>
-  <section class="view" id="player"><div class="pl">
-    <div class="pv"><video id="vd" controls playsinline></video></div>
-    <div class="pi"><button class="btn alt" id="bk" style="margin:0;align-self:flex-start">← Voltar</button>
-      <div class="pt" id="pt"></div><div class="s" id="ps" style="white-space:normal"></div>
-      <div class="pc" id="pc"><div class="a" id="pa"></div><b id="pn"></b></div>
-      <button class="btn alt" id="sh" style="margin:0;align-self:flex-start">↗ Compartilhar link</button></div>
-  </div></section>
-</main>
+<div id="app">
+  <nav class="nv"><a data-go="home" class="on"><b>🏠</b>Início</a><a data-go="shv"><b>⚡</b>Shorts</a><a data-go="sbv"><b>📺</b>Inscrições</a><a data-go="you"><b>👤</b>Você</a></nav>
+  <main>
+    <section class="v on" id="home"></section><section class="v" id="rs"></section><section class="v" id="wp"></section>
+    <section class="v" id="shv"></section><section class="v" id="sbv"></section><section class="v" id="ch"></section>
+    <div id="sn"><button data-a="up">▲</button><button data-a="dn">▼</button></div>
+  </main>
+</div>
+<div id="vo"><div class="vc"><div class="pu">🎤</div><div id="vt" style="font-size:16px;font-weight:600">Ouvindo…</div><div id="vx" class="s" style="margin:6px 0 12px;min-height:18px">Fale agora</div><button class="btn al" data-a="vcancel">Cancelar</button></div></div>
 <script>
-var vids=[],q='',view='home',prev='home',chan=null;
+var curId='',vids=[],subs=[],q='',chip='',cur='home',pr='home',chan=null,ctab='v',io=null;
 function $(i){return document.getElementById(i)}
-function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
-function fmt(ms){var s=Math.round(ms/1000),m=Math.floor(s/60);return m+':'+('0'+(s%60)).slice(-2)}
-function ago(t){var d=(Date.now()-t)/1000;if(d<60)return 'agora há pouco';if(d<3600)return 'há '+Math.floor(d/60)+' min';if(d<86400)return 'há '+Math.floor(d/3600)+' h';return 'há '+Math.floor(d/86400)+' dias'}
-function hue(n){var h=0;for(var i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))%360;return h}
-function col(n){return 'hsl('+hue(n)+',55%,45%)'}
-function ini(n){return esc((n||'?').charAt(0).toUpperCase())}
-function card(v){return '<div class="card" data-id="'+esc(v.id)+'"><div class="th"><img src="/t/'+encodeURIComponent(v.id)+'" alt=""><span class="dur">'+fmt(v.dur)+'</span></div><div class="mt"><div class="a" style="background:'+col(v.channel)+'">'+ini(v.channel)+'</div><div style="min-width:0"><div class="t">'+esc(v.title)+'</div><div class="s"><a data-ch="'+esc(v.channel)+'">'+esc(v.channel)+'</a> • '+v.views+' vis. • '+ago(v.ts)+'</div></div></div></div>'}
-/* paginated grid: always fits the window, never scrolls */
-function grid(root,arr,empty,again){
-  var gw=root.querySelector('.gw'),g=gw.firstChild,pg=root.querySelector('.pager');
-  var W=gw.clientWidth-24,H=gw.clientHeight-12,gap=12;
-  var cols=Math.max(1,Math.floor((W+gap)/(170+gap))),cw=(W-gap*(cols-1))/cols,ch=cw*9/16+50;
-  var rows=Math.max(1,Math.floor((H+gap)/(ch+gap))),per=cols*rows,pages=Math.max(1,Math.ceil(arr.length/per));
-  gw._p=Math.min(gw._p||0,pages-1);
-  g.style.gridTemplateColumns='repeat('+cols+',minmax(0,1fr))';
-  g.innerHTML=arr.length?arr.slice(gw._p*per,gw._p*per+per).map(card).join(''):'<div class="empty">'+empty+'</div>';
-  pg.style.display=pages>1?'flex':'none';
-  pg.innerHTML=pages>1?'<button data-d="-1">◀</button><span>'+(gw._p+1)+' / '+pages+'</span><button data-d="1">▶</button>':'';
-  pg.onclick=function(e){var d=+e.target.getAttribute('data-d');if(d){gw._p=Math.max(0,gw._p+d);grid(root,arr,empty)}};
-  if(pages>1&&!again)grid(root,arr,empty,true);
-}
-function show(v){if(v!=view){prev=view;view=v}['home','channel','player'].forEach(function(n){$(n).className='view'+(n==view?' on':'')});render()}
-function render(){
-  if(view=='home'){var l=vids.filter(function(v){return (v.title+' '+v.channel).toLowerCase().indexOf(q)>=0});
-    grid($('home'),l,vids.length?'Nenhum vídeo encontrado 🔎':'Ainda não há vídeos.<br><button onclick="pub()">＋ Publicar o primeiro</button>')}
-  if(view=='channel')renderChannel();
-}
-function load(){fetch('/api/videos').then(function(r){return r.json()}).then(function(a){vids=a;if(view=='channel'&&chan)openChannel(chan.name);else render()}).catch(function(){})}
-function openV(id){var v=vids.filter(function(x){return x.id==id})[0];if(!v)return;
-  $('pt').textContent=v.title;$('ps').textContent=(v.views+1)+' visualizações • '+ago(v.ts);$('pn').textContent=v.channel;
-  var a=$('pa');a.textContent=v.channel.charAt(0).toUpperCase();a.style.background=col(v.channel);
-  $('pc').onclick=function(){stopV();openChannel(v.channel)};
-  var d=$('vd');d.src='/v/'+encodeURIComponent(id);show('player');var p=d.play&&d.play();if(p&&p.catch)p.catch(function(){});
-  fetch('/api/view/'+encodeURIComponent(id));v.views++;
-  $('sh').onclick=function(){var u=location.origin+'/#'+id;try{navigator.clipboard.writeText(u)}catch(e){}this.textContent='✔ Link copiado'}}
-function stopV(){var d=$('vd');d.pause();d.removeAttribute('src');d.load()}
-function back(){stopV();show(prev=='player'?'home':prev)}
-/* channel page */
-function openChannel(name){fetch('/api/channel?name='+encodeURIComponent(name)).then(function(r){return r.json()}).then(function(c){chan=c;show('channel')})}
-function renderChannel(){
-  var c=chan,el=$('channel');if(!c)return;
-  if(!c.exists){el.innerHTML='<div class="empty" style="margin:auto">Este canal ainda não tem vídeos.</div>';return}
-  var h=hue(c.name),since=c.since?new Date(c.since).toLocaleDateString('pt-BR'):'';
-  el.innerHTML='<div class="banner" style="background:linear-gradient(120deg,hsl('+h+',60%,38%),hsl('+((h+70)%360)+',60%,22%))"></div>'+
-   '<div class="cb"><div class="ci"><div class="bigav" style="background:'+col(c.name)+'">'+ini(c.name)+'</div><h2>'+esc(c.name)+'</h2>'+
-   '<div class="s">'+esc(c.handle)+'</div><div class="s">'+c.videos.length+' vídeos • '+c.views+' visualizações</div>'+(since?'<div class="s">No YouTube desde '+since+'</div>':'')+
-   '<div style="display:flex;gap:8px;flex-wrap:wrap">'+(c.own?'<button class="btn" id="cp">＋ Publicar vídeo</button>':'')+'<button class="btn alt" id="cb">← Início</button></div></div>'+
-   '<div class="cv"><div class="tabs"><span class="on">Vídeos</span></div><div id="cr" style="flex:1;min-height:0;display:flex;flex-direction:column"><div class="gw"><div class="grid"></div></div><div class="pager"></div></div></div></div>';
-  if($('cp'))$('cp').onclick=pub;$('cb').onclick=function(){show('home')};
-  grid($('cr'),c.videos,c.own?'Você ainda não publicou vídeos.':'Sem vídeos.')
-}
+function e(t){return String(t).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function fmt(ms){var s=Math.round(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+':'+('0'+m).slice(-2):m)+':'+('0'+s%60).slice(-2)}
+function ago(t){var d=(Date.now()-t)/1000;if(d<60)return'agora há pouco';if(d<3600)return'há '+Math.floor(d/60)+' min';if(d<86400)return'há '+Math.floor(d/3600)+' h';return'há '+Math.floor(d/86400)+' dias'}
+function nv(n){return n>=1000?(n/1000).toFixed(1).replace('.',',')+' mil':n}
+function col(n){var h=0;for(var i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))%360;return'hsl('+h+',55%,45%)'}
+function av(n,c){return'<b class="av '+(c||'')+'" style="background:'+col(n)+'" data-ch="'+e(n)+'">'+e((n||'?').charAt(0).toUpperCase())+'</b>'}
+function im(v){return'<img loading="lazy" src="/t/'+encodeURIComponent(v.id)+'" alt="">'}
+function get(id){return vids.filter(function(x){return x.id==id})[0]}
+function card(v){return'<div class="cd" data-id="'+e(v.id)+'"><div class="th">'+im(v)+'<i>'+fmt(v.dur)+'</i></div><div class="mt">'+av(v.channel)+'<div style="min-width:0"><div class="t">'+e(v.title)+'</div><div class="s"><span data-ch="'+e(v.channel)+'">'+e(v.channel)+'</span><br>'+nv(v.views)+' vis. • '+ago(v.ts)+'</div></div></div></div>'}
+function sct(v){return'<div class="sc" data-s="'+e(v.id)+'"><div class="th">'+im(v)+'</div><div class="t" style="margin-top:6px;font-size:13px">'+e(v.title)+'</div><div class="s">'+nv(v.views)+' vis.</div></div>'}
+function sbtn(n){var on=subs.indexOf(n)>=0;return'<button class="btn'+(on?' on':'')+'" data-sub="'+e(n)+'">'+(on?'Inscrito':'Inscrever-se')+'</button>'}
+function show(n){if(cur=='wp'&&n!='wp')stopV();if(cur=='shv'&&n!='shv')stopS();cur=n;
+  ['home','rs','wp','shv','sbv','ch'].forEach(function(x){$(x).className='v'+(x==n?' on':'')});
+  document.body.classList.toggle('wt',n=='wp');document.body.classList.toggle('sh',n=='shv');
+  var m=n=='ch'&&chan&&chan.own?'you':n;[].forEach.call(document.querySelectorAll('.nv a'),function(a){a.classList.toggle('on',a.getAttribute('data-go')==m)})}
+function go(x){q='';$('q').value='';if(x=='home'){rHome();show('home')}else if(x=='shv')openS();else if(x=='sbv'){rSubs();show('sbv')}else you()}
+function rHome(){var l=vids.filter(function(v){return!v.short&&(!chip||v.channel==chip)}),s=vids.filter(function(v){return v.short}),cs=[];
+  vids.forEach(function(v){if(cs.indexOf(v.channel)<0)cs.push(v.channel)});
+  var h='<div class="chips"><button class="chip'+(chip?'':' on')+'" data-chip="">Tudo</button>'+cs.slice(0,12).map(function(c){return'<button class="chip'+(chip==c?' on':'')+'" data-chip="'+e(c)+'">'+e(c)+'</button>'}).join('')+'</div>';
+  if(s.length&&!chip)h+='<div class="hd">⚡ Shorts</div><div class="shl">'+s.map(sct).join('')+'</div>';
+  h+=l.length?'<div class="gr">'+l.map(card).join('')+'</div>':(s.length?'':'<div class="emp">Ainda não há vídeos.<br><br><button class="btn" data-a="pub">＋ Publicar o primeiro</button></div>');
+  $('home').innerHTML=h}
+function rRes(){var k=q.toLowerCase(),l=vids.filter(function(v){return(v.title+' '+v.channel).toLowerCase().indexOf(k)>=0});
+  $('rs').innerHTML=l.length?l.map(function(v){return'<div class="rs" data-id="'+e(v.id)+'"><div class="th">'+im(v)+'<i>'+fmt(v.dur)+'</i></div><div style="min-width:0"><div class="t" style="font-size:16px">'+e(v.title)+'</div><div class="s">'+nv(v.views)+' visualizações • '+ago(v.ts)+'</div><div class="row" style="margin:6px 0">'+av(v.channel).replace('class="av ','class="av sm ')+'<span class="s" data-ch="'+e(v.channel)+'">'+e(v.channel)+'</span></div></div></div>'}).join(''):'<div class="emp">Nenhum resultado para "'+e(q)+'" 🔎</div>'}
+function find(t){q=t.trim();$('q').value=t;if(q){rRes();show('rs')}else{rHome();show('home')}}
+function rSubs(){var l=vids.filter(function(v){return subs.indexOf(v.channel)>=0});
+  var h='<div class="shl" style="padding-top:12px">'+subs.map(function(n){return'<div style="text-align:center;width:72px;flex:none;cursor:pointer" data-ch="'+e(n)+'">'+av(n,'big')+'<div class="s">'+e(n)+'</div></div>'}).join('')+'</div>';
+  $('sbv').innerHTML=subs.length?h+(l.length?'<div class="gr">'+l.map(card).join('')+'</div>':'<div class="emp">Os canais que você segue ainda não têm vídeos.</div>'):'<div class="emp">Inscreva-se em canais para ver os vídeos deles aqui.<br><br><button class="btn" data-go="home">Explorar</button></div>'}
+function tgl(n){var i=subs.indexOf(n),on=i<0;if(on)subs.push(n);else subs.splice(i,1);fetch('/api/sub?name='+encodeURIComponent(n)+'&on='+(on?1:0));
+  [].forEach.call(document.querySelectorAll('[data-sub]'),function(b){if(b.getAttribute('data-sub')==n){b.className='btn'+(on?' on':'');b.textContent=on?'Inscrito':'Inscrever-se'}});if(cur=='sbv')rSubs()}
+function openV(id){var v=get(id);if(!v)return;if(cur!='wp')pr=cur;curId=id;
+  var rel=vids.filter(function(x){return x.id!=id}).sort(function(a,b){return(b.channel==v.channel)-(a.channel==v.channel)});
+  $('wp').innerHTML='<div class="wp"><div class="wl"><video id="vd" controls playsinline></video><div class="w1">'+e(v.title)+'</div><div class="row">'+av(v.channel)+'<div class="nm" data-ch="'+e(v.channel)+'">'+e(v.channel)+'</div>'+sbtn(v.channel)+'<span style="flex:1"></span><button class="btn al" data-a="like">👍 Gostei</button><button class="btn al" data-a="share">↗ Compartilhar</button></div><div class="dsc"><b>'+nv(v.views+1)+' visualizações • '+ago(v.ts)+'</b></div><button class="btn al" data-a="back">← Voltar</button></div><div class="wr"><div class="hd" style="padding:0 0 8px;font-size:15px">Próximos</div>'+
+  rel.map(function(x){return'<div class="rl" data-id="'+e(x.id)+'"><div class="th">'+im(x)+'<i>'+fmt(x.dur)+'</i></div><div style="min-width:0"><div class="t">'+e(x.title)+'</div><div class="s">'+e(x.channel)+'<br>'+nv(x.views)+' vis. • '+ago(x.ts)+'</div></div></div>'}).join('')+'</div></div>';
+  var d=$('vd');d.src='/v/'+encodeURIComponent(id);var p=d.play&&d.play();if(p&&p.catch)p.catch(function(){});
+  fetch('/api/view/'+encodeURIComponent(id));v.views++;show('wp');$('wp').scrollTop=0}
+function stopV(){var d=$('vd');if(d){d.pause();d.removeAttribute('src');d.load()}}
+function openS(id){var l=vids.filter(function(v){return v.short}),el=$('shv'),ix=0;
+  el.innerHTML=l.length?l.map(function(v,i){if(v.id==id)ix=i;return'<section class="sv" data-v="'+e(v.id)+'"><div class="sf"><video loop playsinline></video><div class="so"><div class="row">'+av(v.channel)+'<b data-ch="'+e(v.channel)+'">@'+e(v.channel.toLowerCase().replace(/[^a-z0-9]/g,''))+'</b>'+sbtn(v.channel)+'</div><div style="margin-top:6px">'+e(v.title)+'</div></div></div><div class="sa"><button data-a="like"><b>👍</b>Gostei</button><button data-a="share" data-sh="'+e(v.id)+'"><b>↗</b>Enviar</button></div></section>'}).join(''):'<div class="emp">Ainda não há Shorts.<br>Vídeos verticais de até 3 min viram Shorts quando você publica.</div>';
+  show('shv');setTimeout(function(){el.scrollTop=ix*el.clientHeight;obs()},40)}
+function obs(){if(io)io.disconnect();if(!window.IntersectionObserver)return;
+  io=new IntersectionObserver(function(es){es.forEach(function(en){var s=en.target,v=s.querySelector('video');
+    if(en.isIntersecting){v.src='/v/'+encodeURIComponent(s.getAttribute('data-v'));fetch('/api/view/'+encodeURIComponent(s.getAttribute('data-v')));var p=v.play();if(p&&p.catch)p.catch(function(){})}
+    else{v.pause();v.removeAttribute('src');v.load()}})},{root:$('shv'),threshold:.6});
+  [].forEach.call($('shv').querySelectorAll('.sv'),function(s){io.observe(s)})}
+function stopS(){if(io)io.disconnect();[].forEach.call($('shv').querySelectorAll('video'),function(v){v.pause();v.removeAttribute('src');v.load()})}
+function openChannel(n){fetch('/api/channel?name='+encodeURIComponent(n)).then(function(r){return r.json()}).then(function(c){chan=c;rCh();show('ch')})}
+function rCh(){var c=chan;if(!c.exists){$('ch').innerHTML='<div class="emp">Este canal ainda não tem vídeos.</div>';return}
+  var l=c.videos.filter(function(v){return ctab=='s'?!!v.short:!v.short});
+  $('ch').innerHTML='<div style="height:80px;background:linear-gradient(120deg,'+col(c.name)+',#1a1a1a)"></div><div class="row" style="padding:14px 16px;gap:16px">'+av(c.name,'big')+'<div style="flex:1;min-width:140px"><div style="font-size:22px;font-weight:700">'+e(c.name)+'</div><div class="s">'+e(c.handle)+' • '+c.videos.length+' vídeos • '+nv(c.views)+' visualizações</div></div>'+(c.own?'<button class="btn" data-a="pub">＋ Publicar vídeo</button>':sbtn(c.name))+'</div>'+
+  '<div class="chips" style="border-bottom:1px solid var(--c)"><button class="chip'+(ctab=='v'?' on':'')+'" data-tab="v">Vídeos</button><button class="chip'+(ctab=='s'?' on':'')+'" data-tab="s">Shorts</button></div>'+
+  (l.length?(ctab=='s'?'<div class="shl" style="flex-wrap:wrap">'+l.map(sct).join('')+'</div>':'<div class="gr">'+l.map(card).join('')+'</div>'):'<div class="emp">Nada aqui ainda.</div>')}
+function you(){fetch('/api/me').then(function(r){return r.json()}).then(function(m){if(m.name){ctab='v';openChannel(m.name);return}
+  chan=null;$('ch').innerHTML='<div class="emp">Entre com seu e-mail para ter um canal.<br><br><button class="btn" data-a="prof">👤 Entrar / criar perfil</button></div>';show('ch')})}
 function pub(){if(window.TW&&TW.publish)TW.publish();else alert('Para publicar, use o app TermWin neste aparelho.')}
-function myChannel(){fetch('/api/me').then(function(r){return r.json()}).then(function(m){
-  if(m.name){openChannel(m.name);return}
-  chan=null;show('channel');$('channel').innerHTML='<div class="empty" style="margin:auto">Entre com seu e-mail para ter um canal.<br><button onclick="if(window.TW&&TW.profile)TW.profile()">👤 Entrar / criar perfil</button></div>'})}
-document.addEventListener('click',function(e){var n=e.target,c=n.getAttribute&&n.getAttribute('data-ch');if(c){e.stopPropagation();openChannel(c);return}
-  while(n&&n!==document&&!(n.getAttribute&&n.getAttribute('data-id')))n=n.parentNode;
-  if(n&&n.getAttribute&&n.getAttribute('data-id'))openV(n.getAttribute('data-id'))},true);
-$('q').oninput=function(){q=this.value.toLowerCase();if(view!='home')show('home');else render()};
-$('bk').onclick=back;$('up').onclick=pub;$('ch').onclick=myChannel;$('lg').onclick=function(){stopV();show('home')};
-window.onresize=function(){render()};
-fetch('/api/me').then(function(r){return r.json()}).then(function(m){if(m.name)$('av').textContent=m.name.charAt(0).toUpperCase()}).catch(function(){});
-load();
+function listen(){if(window.TW&&TW.listen){$('vt').textContent='Ouvindo…';$('vx').textContent='Fale agora';$('vo').classList.add('on');TW.listen()}else alert('O microfone funciona dentro do app TermWin.')}
+window.onVoice=function(st,tx){if(st=='partial')$('vx').textContent=tx;else if(st=='final'){$('vo').classList.remove('on');find(tx)}
+  else if(st=='error'){$('vt').textContent='Não consegui ouvir';$('vx').textContent=tx||'Tente de novo';setTimeout(function(){$('vo').classList.remove('on')},1800)}};
+function act(a,n){
+  if(a=='menu')document.body.classList.toggle('ex');
+  else if(a=='find')find($('q').value);
+  else if(a=='mic')listen();
+  else if(a=='vcancel'){$('vo').classList.remove('on');if(window.TW&&TW.stopListen)TW.stopListen()}
+  else if(a=='pub')pub();
+  else if(a=='prof'){if(window.TW&&TW.profile)TW.profile()}
+  else if(a=='back'){show(pr==cur?'home':pr)}
+  else if(a=='like'){var b=n.querySelector('b');if(b)b.textContent='❤️';else n.textContent='👍 Curtido ✔'}
+  else if(a=='share'){var u=location.origin+'/#'+(n.getAttribute('data-sh')||curId);try{navigator.clipboard.writeText(u)}catch(x){}var b2=n.querySelector('b');if(b2)b2.textContent='✔';else n.textContent='✔ Link copiado'}
+  else if(a=='up'||a=='dn'){var s=$('shv');s.scrollTo({top:s.scrollTop+(a=='up'?-1:1)*s.clientHeight,behavior:'smooth'})}}
+document.addEventListener('click',function(ev){var t=ev.target;
+  if(t.tagName=='VIDEO'&&t.parentNode.className=='sf'){if(t.paused)t.play();else t.pause();return}
+  for(var n=t;n&&n.getAttribute;n=n.parentNode){var A=function(k){return n.getAttribute(k)};
+    if(A('data-sub')!=null){tgl(A('data-sub'));return}
+    if(A('data-ch')!=null){openChannel(A('data-ch'));return}
+    if(A('data-a')){act(A('data-a'),n);return}
+    if(A('data-chip')!=null){chip=A('data-chip');rHome();return}
+    if(A('data-tab')){ctab=A('data-tab');rCh();return}
+    if(A('data-go')){go(A('data-go'));return}
+    if(A('data-s')){openS(A('data-s'));return}
+    if(A('data-id')){openV(A('data-id'));return}}},true);
+$('q').oninput=function(){find(this.value)};
+$('q').onkeydown=function(ev){if(ev.key=='Enter')this.blur()};
+function load(){Promise.all([fetch('/api/videos').then(function(r){return r.json()}),fetch('/api/subs').then(function(r){return r.json()}).catch(function(){return[]})]).then(function(a){vids=a[0];subs=a[1];
+  if(cur=='home')rHome();else if(cur=='sbv')rSubs();else if(cur=='rs')rRes();else if(cur=='shv'&&!$('shv').querySelector('.sv'))openS()}).catch(function(){})}
+fetch('/api/me').then(function(r){return r.json()}).then(function(m){if(m.name){$('hav').textContent=m.name.charAt(0).toUpperCase();$('hav').style.background=col(m.name)}}).catch(function(){});
+rHome();load();
+setTimeout(function(){var s=$('sp');s.style.opacity=0;setTimeout(function(){s.remove()},450)},1300);
 </script>
 </body>
 </html>

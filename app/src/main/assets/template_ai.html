@@ -37,20 +37,27 @@ header .sp{flex:1}.pill{font-size:12px;color:var(--sub);border:1px solid var(--l
 #sp{flex:0 0 118px;min-width:0;border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:16px;padding:6px 10px;font-size:12px;outline:0;align-self:center}
 #go{flex:none;width:34px;height:34px;border:0;border-radius:12px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;font-size:18px}
 #go:disabled{opacity:.4}
+#mic{flex:none;width:34px;height:34px;border:0;border-radius:12px;background:var(--bg);color:var(--txt);font-size:16px}
+#mic.on{background:#ff3355}
 .note{text-align:center;color:var(--sub);font-size:11px;margin-top:8px}
 </style></head><body>
-<header><div class=mark>✦</div><b>Nova</b><span class=pill>TermWin</span><span class=sp></span><button id=apib class=pill style="background:none;color:var(--acc2);border-color:var(--acc2)">🔑 API</button><input id=key placeholder="API key twk_…"></header>
+<header><div class=mark>✦</div><b>Nova</b><span class=pill>TermWin</span><span class=sp></span><button id=apib class=pill style="background:none;color:var(--acc2);border-color:var(--acc2)">🔑 API</button><input id=key placeholder="Chave twk_… ou do provedor"></header>
 <div id=scroll><div id=col>
 <div id=hello><div class=mark>✦</div><h1>Como posso ajudar hoje?</h1><p>Pergunte algo ou peça um código — em qualquer linguagem.</p>
 <div class=ex><button>Crie um jogo de pulo em GDScript</button><button>Selection sort em Python</button><button>Explique o que é uma API</button></div></div>
 </div></div>
-<div id=bar><div id=box><input id=sp placeholder="App (opcional)"><textarea id=q rows=1 placeholder="Escreva sua pergunta…"></textarea><button id=go>↑</button></div></div>
+<div id=bar><div id=box><input id=sp placeholder="App (opcional)"><textarea id=q rows=1 placeholder="Escreva sua pergunta…"></textarea><button id=mic title="Falar">🎤</button><button id=go>↑</button></div><div class=note id=nt></div></div>
 <script>
 var col=document.getElementById('col'),sc=document.getElementById('scroll'),q=document.getElementById('q'),sp=document.getElementById('sp'),go=document.getElementById('go'),kb=document.getElementById('key');
 var tok='';try{tok=(location.hash.match(/t=([\w-]+)/)||[])[1]||localStorage.getItem('twk')||''}catch(e){}
 if(!tok){kb.style.display='block'}
-document.getElementById('apib').onclick=function(){if(window.TW&&TW.aiKey)TW.aiKey();else alert('Abra pelo app TermWin para colocar sua API.')};
-kb.onchange=function(){tok=kb.value.trim();try{localStorage.setItem('twk',tok)}catch(e){}};
+var nt=document.getElementById('nt');
+function note(m){nt.textContent=m;setTimeout(function(){nt.textContent=''},6000)}
+document.getElementById('apib').onclick=function(){kb.style.display=kb.style.display=='block'?'none':'block';if(kb.style.display=='block')kb.focus()};
+kb.onchange=function(){var v=kb.value.trim();if(!v)return;
+  if(/^twk_/.test(v)){tok=v;try{localStorage.setItem('twk',v)}catch(e){}}
+  if(window.TW&&TW.saveKey)TW.saveKey(v);else note(/^twk_/.test(v)?'Chave twk_ guardada neste navegador':'Cole chaves de provedor dentro do app TermWin')};
+window.onKey=function(ok,m){note(m);if(ok){kb.value='';kb.style.display='none'}};
 function esc(t){return t.replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
 function render(t){var parts=t.split('```'),h='';
   for(var i=0;i<parts.length;i++){
@@ -68,5 +75,8 @@ function send(t){t=t.trim();if(!t)return;var s=sp.value.trim();var hl=document.g
 go.onclick=function(){send(q.value)};
 q.onkeydown=function(e){if(e.key=='Enter'&&!e.shiftKey){e.preventDefault();send(q.value)}};
 q.oninput=function(){q.style.height='auto';q.style.height=Math.min(96,q.scrollHeight)+'px'};
+var mic=document.getElementById('mic');
+mic.onclick=function(){if(window.TW&&TW.listen){mic.className='on';TW.listen()}else note('O microfone funciona dentro do app TermWin')};
+window.onVoice=function(st,tx){if(st=='partial')q.value=tx;else if(st=='final'){mic.className='';q.value=tx;send(tx)}else if(st=='error'){mic.className='';note(tx||'Não ouvi nada')}};
 document.querySelector('.ex').onclick=function(e){if(e.target.tagName=='BUTTON')send(e.target.textContent)};
 </script></body></html>

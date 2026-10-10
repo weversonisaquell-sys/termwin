@@ -510,6 +510,7 @@ Long-press a tab to rename it.
         super.onRequestPermissionsResult(code, perms, res)
         settingsSync?.invoke()
         val denied = res.isNotEmpty() && res[0] != PackageManager.PERMISSION_GRANTED
+        if (code == 3) { val wasPending = voicePending; voicePending = false; if (denied) voiceJs("error", tr("Microphone permission denied", "Permissão do microfone negada")) else if (wasPending) startVoice(null) }
         if (code == 2 && denied && Build.VERSION.SDK_INT >= 33 && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) openNotifSettings()
     }
 
@@ -1514,7 +1515,7 @@ Long-press a tab to rename it.
         wv.settings.domStorageEnabled = true
         wv.settings.mediaPlaybackRequiresUserGesture = false
         wv.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        wv.addJavascriptInterface(TwBridge(), "TW")
+        wv.addJavascriptInterface(TwBridge(wv), "TW")
         if (yt) pubWv = wv
         wv.webViewClient = android.webkit.WebViewClient()
         wv.webChromeClient = android.webkit.WebChromeClient()
@@ -1522,7 +1523,7 @@ Long-press a tab to rename it.
         ov.addView(card, FrameLayout.LayoutParams((dm.widthPixels * 0.94).toInt(), (dm.heightPixels * 0.92).toInt(), Gravity.CENTER))
         root.addView(ov, FrameLayout.LayoutParams(MATCH, MATCH))
         p = Panel(ov, LinearLayout(this), LinearLayout(this))
-        p.onClose = { if (pubWv === wv) pubWv = null; try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
+        p.onClose = { if (pubWv === wv) pubWv = null; if (voiceWv === wv) { stopVoice(); voiceWv = null }; try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
         panels.add(p)
         wv.loadUrl(url)
     }
@@ -1667,7 +1668,7 @@ Long-press a tab to rename it.
             has("hello|ol[áa]|oi mundo|world") -> "hello"
             else -> null
         }
-        val head = tr("(offline mode — add a provider key with: ai key YOUR_KEY for full answers)\n", "(modo offline — para respostas completas adicione uma chave de provedor: ia key SUA_CHAVE)\n")
+        val head = tr("(app AI, basic mode — for full answers add a provider key with: ai key YOUR_KEY)\n", "(IA do app, modo básico — para respostas completas adicione uma chave de provedor: ia key SUA_CHAVE)\n")
         if (topic == null) return head + tr(
             "Offline I only know simple snippets: hello world, fibonacci, factorial, sorting, search, prime, palindrome, random, save/load, timer, health/damage, button click, jump, move, counter (Python, GDScript, Lua, JS). For any other question, add a provider API in 🔑 (Google Gemini has a free plan).",
             "Offline eu só sei trechos simples: hello world, fibonacci, fatorial, ordenar, busca, primo, palíndromo, aleatório, salvar/carregar, timer, vida/dano, clique de botão, pulo, mover, contador (Python, GDScript, Lua, JS). Para qualquer outra pergunta, coloque uma API de provedor em 🔑 (o Google Gemini tem plano grátis).")
@@ -1764,7 +1765,11 @@ Long-press a tab to rename it.
     /** Checks the key with the provider, then saves it. [done] runs on the UI thread with a message. */
     private fun saveProviderKey(raw: String, done: (Boolean, String) -> Unit) {
         val k = raw.trim().replace(Regex("\\s"), "")
-        if (k.startsWith("twk_")) { done(false, tr("That is a TermWin key (twk_…) — it only protects TermWin's own server. Paste the key from your AI provider.", "Essa é uma chave do TermWin (twk_…) — ela só protege o servidor do próprio TermWin. Cole a chave do seu provedor de IA.")); return }
+        if (k.startsWith("twk_")) {
+            if (apiVerify(k)) { prefs.edit().putBoolean("ai_twk", true).apply(); done(true, tr("✔ TermWin key accepted — the AI uses the app's own API", "✔ Chave do TermWin aceita — a IA usa a própria API do app")) }
+            else done(false, tr("This twk_ key was not found. Create one in 🔑 API Keys and paste it here.", "Essa chave twk_ não foi encontrada. Crie uma em 🔑 Chaves de API e cole aqui."))
+            return
+        }
         val p = providerOf(k)
         if (p.isEmpty()) { done(false, tr("Unknown key format. Supported: sk-ant-… (Anthropic), AIza… (Google Gemini), gsk_… (Groq), sk-or-… (OpenRouter), sk-… (OpenAI).", "Formato desconhecido. Aceito: sk-ant-… (Anthropic), AIza… (Google Gemini), gsk_… (Groq), sk-or-… (OpenRouter), sk-… (OpenAI).")); return }
         thread {
@@ -2109,11 +2114,11 @@ Long-press a tab to rename it.
         } catch (e: Exception) { 0L } finally { try { r.release() } catch (e: Exception) { } }
     }
 
-    private fun addVideo(id: String, title: String, file: String, thumb: String, dur: Long, channel: String, email: String) {
+    private fun addVideo(id: String, title: String, file: String, thumb: String, dur: Long, channel: String, email: String, short: Boolean? = null) {
         synchronized(vlock) {
             val a = vidsRead()
             a.put(JSONObject().put("id", id).put("title", title).put("file", file).put("thumb", thumb).put("dur", dur)
-                .put("channel", channel).put("email", email).put("ts", System.currentTimeMillis()).put("views", 0))
+                .put("channel", channel).put("email", email).put("ts", System.currentTimeMillis()).put("views", 0).also { if (short != null) it.put("short", short) })
             vidsWrite(a)
         }
     }
@@ -2137,12 +2142,73 @@ Long-press a tab to rename it.
     } catch (e: Exception) { null }
 
     // ---------- publish a video ----------
-    inner class TwBridge {
+    inner class TwBridge(private val web: android.webkit.WebView? = null) {
+        @android.webkit.JavascriptInterface fun listen() { runOnUiThread { startVoice(web) } }
+        @android.webkit.JavascriptInterface fun stopListen() { runOnUiThread { stopVoice() } }
+        @android.webkit.JavascriptInterface fun saveKey(k: String) { runOnUiThread { saveProviderKey(k) { ok, m -> web?.evaluateJavascript("if(window.onKey)onKey(" + ok + "," + JSONObject.quote(m) + ")", null) } } }
         @android.webkit.JavascriptInterface fun publish() { runOnUiThread { startPublish() } }
         @android.webkit.JavascriptInterface fun profile() { runOnUiThread { showProfile() } }
         @android.webkit.JavascriptInterface fun aiKey() { runOnUiThread { showProviderKey() } }
     }
     private var pubWv: android.webkit.WebView? = null
+
+    // ---------- voice search (microphone) ----------
+    private var recog: android.speech.SpeechRecognizer? = null
+    private var voiceWv: android.webkit.WebView? = null
+    private var voicePending = false
+
+    private fun voiceJs(st: String, tx: String = "") {
+        voiceWv?.evaluateJavascript("if(window.onVoice)onVoice(" + JSONObject.quote(st) + "," + JSONObject.quote(tx) + ")", null)
+    }
+
+    private fun stopVoice() {
+        try { recog?.cancel(); recog?.destroy() } catch (e: Exception) { }
+        recog = null
+    }
+
+    private fun startVoice(w: android.webkit.WebView?) {
+        if (w != null) voiceWv = w
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            voicePending = true
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 3)
+            return
+        }
+        if (!android.speech.SpeechRecognizer.isRecognitionAvailable(this)) {
+            voiceJs("error", tr("Voice recognition is not available on this phone", "Reconhecimento de voz indisponível neste aparelho"))
+            return
+        }
+        stopVoice()
+        val r = android.speech.SpeechRecognizer.createSpeechRecognizer(this)
+        recog = r
+        r.setRecognitionListener(object : android.speech.RecognitionListener {
+            override fun onReadyForSpeech(p: Bundle?) { voiceJs("start") }
+            override fun onBeginningOfSpeech() { }
+            override fun onRmsChanged(v: Float) { }
+            override fun onBufferReceived(b: ByteArray?) { }
+            override fun onEndOfSpeech() { voiceJs("end") }
+            override fun onEvent(t: Int, b: Bundle?) { }
+            override fun onPartialResults(b: Bundle?) {
+                b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { voiceJs("partial", it) }
+            }
+            override fun onResults(b: Bundle?) {
+                val t = b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: ""
+                if (t.isBlank()) voiceJs("error", tr("Did not catch that", "Não entendi, fale de novo")) else voiceJs("final", t)
+            }
+            override fun onError(e: Int) {
+                voiceJs("error", when (e) {
+                    android.speech.SpeechRecognizer.ERROR_NO_MATCH, android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> tr("Did not catch that", "Não entendi, fale de novo")
+                    android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> tr("Microphone permission denied", "Permissão do microfone negada")
+                    android.speech.SpeechRecognizer.ERROR_NETWORK, android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> tr("No internet for voice recognition", "Sem internet para o reconhecimento de voz")
+                    else -> tr("Voice error ($e)", "Erro de voz ($e)")
+                })
+            }
+        })
+        val i = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, if (pt) "pt-BR" else "en-US")
+        r.startListening(i)
+    }
 
     private fun startPublish() {
         if (profile() == null) { toast(tr("Sign in with your e-mail first (👤 Profile)", "Entre com seu e-mail antes (👤 Perfil)")); showProfile(); return }
@@ -2162,11 +2228,14 @@ Long-press a tab to rename it.
         p.body.addView(tv("🎬  $fname", 14f, Color.WHITE).apply { setPadding(0, dp(8), 0, 0) })
         val title = field(tr("Title", "Título"), fname.substringBeforeLast('.'))
         p.body.addView(title)
+        val cbShort = android.widget.CheckBox(this).apply { text = tr("Publish as a Short (vertical videos are detected automatically)", "Publicar como Short (vídeos verticais são detectados sozinhos)"); setTextColor(Color.WHITE); textSize = 12f }
+        p.body.addView(cbShort)
         p.body.addView(tv(tr("Channel: ", "Canal: ") + pr.optString("channel"), 12f, 0xFF9AA5B1.toInt()).apply { setPadding(0, dp(10), 0, 0) })
         p.button(tr("Cancel", "Cancelar")) { p.close() }
         p.button(tr("Publish", "Publicar"), true) {
             val tt = title.text.toString().trim()
             if (tt.isEmpty()) { toast(tr("Type a title", "Digite o título")); return@button }
+            val forceShort = cbShort.isChecked
             p.close()
             toast(tr("Publishing…", "Publicando…"))
             thread {
@@ -2177,7 +2246,7 @@ Long-press a tab to rename it.
                     contentResolver.openInputStream(uri)!!.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
                     val th = File(vidDir(), "$id.jpg")
                     val d = makeThumb(f, th)
-                    addVideo(id, tt, f.name, th.name, d, pr.optString("channel"), pr.optString("email"))
+                    addVideo(id, tt, f.name, th.name, d, pr.optString("channel"), pr.optString("email"), if (forceShort) true else null)
                     ui.post { toast(tr("Published ✔", "Publicado ✔")); pubWv?.evaluateJavascript("if(window.load)load()", null) }
                 } catch (e: Exception) {
                     logError("video", "publish: ${e.message}")
@@ -2189,15 +2258,42 @@ Long-press a tab to rename it.
 
     private fun jsonOut(o: OutputStream, j: Any) = send(o, "application/json; charset=utf-8", j.toString().toByteArray())
 
+    private fun subsRead(): JSONArray = synchronized(vlock) {
+        try { JSONArray(File(vidDir(), "subs.json").readText()) } catch (e: Exception) { JSONArray() }
+    }
+    private fun subsToggle(name: String, on: Boolean) = synchronized(vlock) {
+        val old = subsRead(); val out = JSONArray()
+        for (i in 0 until old.length()) if (!old.getString(i).equals(name, true)) out.put(old.getString(i))
+        if (on && name.isNotBlank()) out.put(name)
+        try { File(vidDir(), "subs.json").writeText(out.toString()) } catch (e: Exception) { logError("video", "subs: ${e.message}") }
+    }
+
+    /** Short = vertical/square video up to 3 min (or up to 60 s when the size is unknown). */
+    private fun detectShort(f: File, dur: Long): Boolean {
+        val r = android.media.MediaMetadataRetriever()
+        return try {
+            r.setDataSource(f.path)
+            var w = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            var h = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val rot = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            if (rot == 90 || rot == 270) { val x = w; w = h; h = x }
+            if (w > 0 && h > 0) (h >= w && dur <= 180_000L) else (dur in 1L..60_000L)
+        } catch (e: Exception) { false } finally { try { r.release() } catch (e: Exception) { } }
+    }
+
     private fun pubVid(e: JSONObject) = JSONObject().put("id", e.optString("id")).put("title", e.optString("title")).put("channel", e.optString("channel"))
-        .put("dur", e.optLong("dur")).put("ts", e.optLong("ts")).put("views", e.optInt("views"))
+        .put("dur", e.optLong("dur")).put("ts", e.optLong("ts")).put("views", e.optInt("views")).put("short", e.optBoolean("short", false))
 
     private fun ytRoute(o: OutputStream, path: String, range: String?, query: String) {
         fun qp(k: String) = query.split("&").firstOrNull { it.startsWith("$k=") }?.substringAfter("=")?.let { Uri.decode(it.replace("+", " ")) } ?: ""
         fun find(id: String): JSONObject? { val a = vidsRead(); for (i in 0 until a.length()) if (a.getJSONObject(i).optString("id") == id) return a.getJSONObject(i); return null }
         when {
+            path == "/api/subs" -> jsonOut(o, subsRead())
+            path == "/api/sub" -> { subsToggle(qp("name"), qp("on") == "1"); jsonOut(o, JSONObject().put("ok", true)) }
             path == "/api/videos" -> {
-                val a = vidsRead(); val out = JSONArray()
+                val a = vidsRead(); val out = JSONArray(); var chg = false
+                for (i in 0 until a.length()) { val x = a.getJSONObject(i); if (!x.has("short")) { x.put("short", detectShort(File(vidDir(), x.optString("file")), x.optLong("dur"))); chg = true } }
+                if (chg) vidsWrite(a)
                 for (i in a.length() - 1 downTo 0) out.put(pubVid(a.getJSONObject(i)))
                 jsonOut(o, out)
             }
@@ -2534,7 +2630,7 @@ Long-press a tab to rename it.
                     fun qp(k: String) = qs.split("&").firstOrNull { it.startsWith("$k=") }?.substringAfter("=")?.let { Uri.decode(it.replace("+", " ")) } ?: ""
                     val k = qp("key")
                     val ok = k == ownerToken || apiVisible().isEmpty() || apiVerify(k)
-                    val ans = if (ok) askAi(qp("q"), qp("spec")) else "401: invalid or missing API key (create one in 🔑 API Keys)"
+                    val ans = if (ok) askAi(qp("q"), qp("spec")) else tr("401: invalid or missing key. Paste a twk_ key created in 🔑 API Keys.", "401: chave inválida ou ausente. Cole uma chave twk_ criada em 🔑 Chaves de API.")
                     send(o, "application/json; charset=utf-8", JSONObject().put("answer", ans).toString().toByteArray())
                 } else sendAsset(o, "template_ai.html")
                 "custom" -> send(o, "text/html; charset=utf-8", s.cmd.ifBlank { "<h1>${s.name.replace("<", "&lt;")}</h1>" }.toByteArray())
