@@ -248,6 +248,7 @@ class MainActivity : Activity() {
   historico                  comandos usados
   botão 📜 Savedata           comandos recentes (Files/Savedata.wintext); toque para executar
   apk//open//nome.apk        procura o APK, abre o app em uma janela e guarda a pasta dele em Files/App data
+  shizuku                    mostra o estado do Shizuku e pede a permissão (usado no lugar do root)
   dados                      onde seus arquivos ficam salvos
   erros                      mostra os erros salvos (erros limpar)
   pkg listar                 lista pacotes (pkg instalar cowsay | pkg remover cowsay | pkg atualizar)
@@ -313,6 +314,7 @@ Toque e segure numa aba para renomear.
   history                    commands used
   📜 Savedata button         recent commands (Files/Savedata.wintext); tap one to run it
   apk//open//name.apk        find the APK, open the app in a window and keep its folder in Files/App data
+  shizuku                    show Shizuku status and ask for permission (used instead of root)
   data                       where your files are saved
   errors                     show saved errors (errors clear)
   pkg list                   list packages (pkg install cowsay | pkg remove cowsay | pkg upgrade)
@@ -3860,7 +3862,21 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             thread {
                 val id = su("id"); val feat = su("pm has-feature android.software.freeform_window_management").second
                 val sets = su("settings get global enable_freeform_support; settings get global force_resizable_activities; settings get global overlay_display_devices").second.replace("\n", " | ")
-                ui.post { append(t, "su: ${id.first} ${id.second.take(80)}\nandroid ${Build.VERSION.RELEASE} api ${Build.VERSION.SDK_INT} • ${Build.MANUFACTURER} ${Build.MODEL}\nfreeform feature: $feat\nsettings: $sets\ndisplays: ${displayIds()}\n") }
+                ui.post { append(t, "shizuku: running=${shzUp()} allowed=${shzGranted()} uid=${shzUid()}\nsu/shizuku: ${id.first} ${id.second.take(80)}\nandroid ${Build.VERSION.RELEASE} api ${Build.VERSION.SDK_INT} • ${Build.MANUFACTURER} ${Build.MODEL}\nfreeform feature: $feat\nsettings: $sets\ndisplays: ${displayIds()}\n") }
+            }
+            return true
+        }
+        if (Regex("^shizuku(\\s+(status|perm|allow|permissao|permissão))?$", RegexOption.IGNORE_CASE).matches(line.trim())) {
+            thread {
+                val inst = shzInstalled(); val up = shzUp(); val ok = shzGranted()
+                if (up && !ok) ui.post { shzAsk() }
+                val who = if (up && ok) su("id").second.take(70) else ""
+                ui.post {
+                    append(t, tr("Shizuku app: ${if (inst) "installed" else "NOT installed (download it from GitHub: RikkaApps/Shizuku)"}\n", "app Shizuku: ${if (inst) "instalado" else "NÃO instalado (baixe no GitHub: RikkaApps/Shizuku)"}\n"))
+                    append(t, tr("service: ${if (up) "running" else "not running — open Shizuku and tap Start"}\n", "serviço: ${if (up) "rodando" else "parado — abra o Shizuku e toque em Iniciar"}\n"))
+                    if (up) append(t, tr("TermWin permission: ${if (ok) "allowed ✔" else "asked — tap Allow in the Shizuku dialog, then run: shizuku"}\n", "permissão do TermWin: ${if (ok) "liberada ✔" else "pedida — toque em Permitir na janela do Shizuku e rode de novo: shizuku"}\n"))
+                    if (up && ok) append(t, tr("running as: $who (uid ${shzUid()})\n", "rodando como: $who (uid ${shzUid()})\n"))
+                }
             }
             return true
         }
@@ -3939,8 +3955,42 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     }
 
     // ---------- root: floating (freeform) windows ----------
+    // ---------- Shizuku: runs the same commands as root, without needing su ----------
+    private var shzListener = false
+    private var shzAskedAt = 0L
+    private fun shzUp(): Boolean = try { rikka.shizuku.Shizuku.pingBinder() } catch (e: Throwable) { false }
+    private fun shzGranted(): Boolean = try { !rikka.shizuku.Shizuku.isPreV11() && rikka.shizuku.Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED } catch (e: Throwable) { false }
+    private fun shzUid(): Int = try { rikka.shizuku.Shizuku.getUid() } catch (e: Throwable) { -1 }
+    private fun shzInstalled(): Boolean = try { packageManager.getPackageInfo("moe.shizuku.privileged.api", 0); true } catch (e: Exception) { false }
+    /** Shows Shizuku's "Allow TermWin?" dialog (must run on the UI thread). */
+    private fun shzAsk() {
+        try {
+            if (!shzListener) {
+                shzListener = true
+                rikka.shizuku.Shizuku.addRequestPermissionResultListener { _, r ->
+                    ui.post { toast(if (r == android.content.pm.PackageManager.PERMISSION_GRANTED) tr("Shizuku allowed ✔", "Shizuku liberado ✔") else tr("Shizuku denied", "Shizuku negado")) }
+                }
+            }
+            rikka.shizuku.Shizuku.requestPermission(4242)
+        } catch (e: Throwable) { }
+    }
+    /** Runs a shell command through Shizuku (root or adb/shell, depending on how Shizuku was started). null = Shizuku not usable. */
+    private fun shzRun(cmd: String): Pair<Int, String>? {
+        if (!shzUp() || !shzGranted()) return null
+        return try {
+            val m = rikka.shizuku.Shizuku::class.java.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+            m.isAccessible = true
+            val pr = m.invoke(null, arrayOf("sh", "-c", "( $cmd ) 2>&1"), null, null) as Process
+            val out = pr.inputStream.bufferedReader().readText().trim()
+            val code = if (pr.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) pr.exitValue() else { pr.destroy(); -1 }
+            code to out
+        } catch (e: Throwable) { null }
+    }
+
     private var suBin: String? = null
     private fun su(cmd: String): Pair<Int, String> {
+        shzRun(cmd)?.let { return it }
+        if (shzUp() && !shzGranted() && System.currentTimeMillis() - shzAskedAt > 60_000) { shzAskedAt = System.currentTimeMillis(); ui.post { shzAsk() } }
         val cands = suBin?.let { listOf(it) } ?: listOf("su", "/system/bin/su", "/system/xbin/su", "/sbin/su", "/data/adb/ksu/bin/su", "/data/adb/ap/bin/su", "/debug_ramdisk/su", "/product/bin/su")
         var last = "su não encontrado"
         for (bin in cands) {
@@ -3958,7 +4008,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     /** null = no root; true = floating windows already on; false = just turned on (needs one reboot). */
     private fun ensureFreeform(): Boolean? {
         val id = su("id")
-        if (id.first != 0 || !id.second.contains("uid=0")) return null
+        if (id.first != 0 || !(id.second.contains("uid=0") || id.second.contains("uid=2000"))) return null
         val a = su("settings get global enable_freeform_support").second
         val b = su("settings get global force_resizable_activities").second
         if (a == "1" && b == "1") return true
@@ -3975,7 +4025,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             ui.post { append(t, "TermWin v$ver\n") }
             if (ff == null) {
                 val d = su("id")
-                ui.post { append(t, tr("No root for TermWin (su: ${d.first} ${d.second.take(120)}). Give root permission to TermWin in Magisk/KernelSU.\nOpening as a normal app.\n", "Sem root para o TermWin (su: ${d.first} ${d.second.take(120)}). Dê permissão root ao TermWin no Magisk/KernelSU.\nAbrindo como app normal.\n")); launchPkg(t, pkg, label) }
+                ui.post { append(t, tr("TermWin has no root and no Shizuku (${d.first} ${d.second.take(120)}). Start Shizuku, then run: shizuku\nOpening as a normal app.\n", "O TermWin está sem root e sem Shizuku (${d.first} ${d.second.take(120)}). Inicie o Shizuku e rode: shizuku\nAbrindo como app normal.\n")); launchPkg(t, pkg, label) }
                 return@thread
             }
             val r = try { rootWindowLaunch(pkg) { m -> ui.post { append(t, m + "\n") } } } catch (e: Exception) { e.message ?: "erro" }
@@ -4083,7 +4133,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         p.body.addView(tv(tr("file: ", "arquivo: ") + short(src.path), 11f, 0xFF6B7785.toInt()).apply { setPadding(0, dp(8), 0, 0) })
         p.body.addView(tv(tr("app data: ", "app data: ") + short(File(appDataDir(), safeSeg(src.nameWithoutExtension)).path), 11f, 0xFF6B7785.toInt()))
         p.body.addView(tv(if (installed) tr("Installed on this phone.", "Instalado neste celular.") else tr("Not installed.", "Não instalado."), 13f, if (installed) GREEN else 0xFFFFB454.toInt()).apply { setPadding(0, dp(10), 0, dp(4)) })
-        p.body.addView(tv(tr("With root, TermWin turns on Android floating windows (one reboot the first time) and opens the app as a movable window you can play in.", "Com root, o TermWin liga as janelas flutuantes do Android (um reinício na primeira vez) e abre o app como uma janela movível em que você pode jogar."), 11f, 0xFF9AA5B1.toInt()))
+        p.body.addView(tv(tr("With root or Shizuku, TermWin turns on Android floating windows (one reboot the first time) and opens the app as a movable window you can play in.", "Com root ou Shizuku, o TermWin liga as janelas flutuantes do Android (um reinício na primeira vez) e abre o app como uma janela movível em que você pode jogar."), 11f, 0xFF9AA5B1.toInt()))
         p.button(tr("Close", "Fechar")) { p.close() }
         p.button(if (installed) tr("Open app", "Abrir app") else tr("Install", "Instalar"), true) {
             p.close()
