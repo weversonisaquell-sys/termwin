@@ -52,7 +52,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "1.8"
+const val VERSION = "1.9"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -81,7 +81,8 @@ class TermService : Service() {
     override fun onStartCommand(i: Intent?, flags: Int, id: Int): Int {
         ensureChannels(this)
         val n = Notification.Builder(this, "run")
-            .setSmallIcon(android.R.drawable.ic_menu_manage)
+            .setSmallIcon(R.drawable.ic_stat_termwin)
+            .setLargeIcon(android.graphics.BitmapFactory.decodeResource(resources, R.drawable.ic_notif_large))
             .setContentTitle("TermWin")
             .setContentText("Running commands / servers…")
             .setOngoing(true).build()
@@ -432,7 +433,12 @@ Long-press a tab to rename it.
         root = FrameLayout(this)
         root.setBackgroundColor(0xFF0B0F14.toInt())
         buildHome()
-        setContentView(root)
+        val wrap = FrameLayout(this)
+        wrap.addView(root, FrameLayout.LayoutParams(MATCH, MATCH))
+        gMouse = MouseLayer(root, true)
+        wrap.addView(gMouse, FrameLayout.LayoutParams(MATCH, MATCH))
+        setContentView(wrap)
+        applyMouse()
         handleIncoming(intent)
     }
 
@@ -469,6 +475,10 @@ Long-press a tab to rename it.
         home.addView(btns, LinearLayout.LayoutParams(WRAP, WRAP))
         root.addView(home, FrameLayout.LayoutParams(MATCH, MATCH))
 
+        val mb = pill(mouseLabel(), false) { toggleGlobalMouse() }
+        homeMouseBtn = mb
+        root.addView(mb, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END).apply { topMargin = dp(10); rightMargin = dp(12) })
+
         taskbar = tv("⊞   ▣ TermWin", 14f, Color.WHITE)
         taskbar.setPadding(dp(20), dp(10), dp(20), dp(10))
         taskbar.background = rounded(0xEE2B2B2B.toInt(), dp(10), 0xFF444444.toInt())
@@ -485,7 +495,9 @@ Long-press a tab to rename it.
         root.removeAllViews()
         win = null; tabBar = null; body = null; outView = null; scroll = null
         maximized = false
+        webMice.clear()
         buildHome()
+        applyMouse()
         if (wasOpen) openWindow()
         if (reopenSettings) showSettings()
     }
@@ -783,7 +795,8 @@ Long-press a tab to rename it.
                 Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val n = Notification.Builder(this, "done")
-                .setSmallIcon(if (ok) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
+                .setSmallIcon(R.drawable.ic_stat_termwin)
+                .setLargeIcon(android.graphics.BitmapFactory.decodeResource(resources, R.drawable.ic_notif_large))
                 .setContentTitle(title).setContentText(text).setContentIntent(pi).setAutoCancel(true).build()
             getSystemService(NotificationManager::class.java).notify(notifId++, n)
             true
@@ -976,6 +989,7 @@ Long-press a tab to rename it.
             true
         }
         tb.addView(ttl)
+        tb.addView(capBtn("🖱", false, 46) { toggleGlobalMouse() })
         tb.addView(capBtn("─", false, 46) { minimize() })
         tb.addView(capBtn("☐", false, 46) { toggleMax() })
         tb.addView(capBtn("✕", true, 46) { closeWindow() })
@@ -1487,52 +1501,122 @@ Long-press a tab to rename it.
         catch (e: Exception) { err(t, tr("could not open the browser", "não foi possível abrir o navegador")) }
     }
 
-    /** Virtual mouse (yellow pointer). The finger works like a touchpad: move = cursor, tap = click,
-     *  tap + hold + move = drag, two fingers = scroll. Real touch events are sent to the WebView at the cursor. */
-    inner class MouseLayer(private val web: android.webkit.WebView) : View(this@MainActivity) {
+    // ---------- virtual mouse ----------
+    private var gMouse: MouseLayer? = null
+    private var homeMouseBtn: TextView? = null
+    private val webMice = mutableListOf<MouseLayer>()
+    private var topWeb: android.webkit.WebView? = null
+
+    private fun mouseLabel() = if (prefs.getBoolean("mouse_all", false)) tr("🖱  Mouse: ON", "🖱  Mouse: LIGADO") else tr("🖱  Mouse", "🖱  Mouse")
+    private fun applyMouse() {
+        val all = prefs.getBoolean("mouse_all", false)
+        gMouse?.setOn(all)
+        val w = prefs.getBoolean("mouse_on", true) && !all
+        webMice.forEach { it.setOn(w) }
+        homeMouseBtn?.apply {
+            text = mouseLabel()
+            background = rounded(if (all) ACCENT else 0xFF2D2D2D.toInt(), dp(8), if (all) 0 else 0xFF454545.toInt())
+            setTextColor(if (all) Color.BLACK else Color.WHITE)
+        }
+    }
+    private fun toggleGlobalMouse() {
+        val on = !prefs.getBoolean("mouse_all", false)
+        prefs.edit().putBoolean("mouse_all", on).apply()
+        applyMouse()
+        toast(if (on) tr("Mouse on everywhere — drag to move, tap to click", "Mouse ligado em tudo — arraste para mover, toque para clicar")
+              else tr("Mouse off — touch the screen directly", "Mouse desligado — toque direto na tela"))
+    }
+
+    /** Virtual mouse (yellow pointer). The finger works like a touchpad: move = cursor (with speed acceleration),
+     *  tap = click, tap + hold + move = drag, two fingers = scroll. Real touch events are sent to [target] at the cursor.
+     *  global = true: covers the whole app (native buttons too), not only a web page. */
+    inner class MouseLayer(private val target: View, private val global: Boolean = false) : View(this@MainActivity) {
         private val dn = resources.displayMetrics.density
         private fun bmp(n: String) = assets.open(n).use { android.graphics.BitmapFactory.decodeStream(it) }
         private val arrow = bmp("cursor_arrow.png")
         private val hand = bmp("cursor_hand.png")
         private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG or android.graphics.Paint.ANTI_ALIAS_FLAG)
+        private val shade = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG or android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            colorFilter = android.graphics.PorterDuffColorFilter(0x66000000, android.graphics.PorterDuff.Mode.SRC_IN) }
+        private val ring = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 3f * dn }
         private var cx = 0f; private var cy = 0f; private var ready = false
         private var isHand = false; private var lastProbe = 0L
-        private var lx = 0f; private var ly = 0f; private var px0 = 0f; private var py0 = 0f
+        private var lx = 0f; private var ly = 0f; private var lt = 0L; private var px0 = 0f; private var py0 = 0f
         private var downT = 0L; private var moved = false; private var lastTap = 0L
         private var dragging = false; private var scrolling = false
         private var sT = 0L; private var ax0 = 0f; private var ay0 = 0f; private var ax = 0f; private var ay = 0f
+        private var rippleT = 0L
 
         fun setOn(on: Boolean) { visibility = if (on) View.VISIBLE else View.GONE }
 
         private fun fire(action: Int, t0: Long, x: Float, y: Float) {
             val ev = MotionEvent.obtain(t0, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
             ev.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
-            web.dispatchTouchEvent(ev); ev.recycle()
+            target.dispatchTouchEvent(ev); ev.recycle()
         }
 
         private fun click() {
             val t = android.os.SystemClock.uptimeMillis()
-            fire(MotionEvent.ACTION_DOWN, t, cx, cy)
             val x = cx; val y = cy
-            postDelayed({ fire(MotionEvent.ACTION_UP, t, x, y) }, 45)
+            rippleT = t; invalidate()
+            fire(MotionEvent.ACTION_DOWN, t, x, y)
+            postDelayed({ fire(MotionEvent.ACTION_UP, t, x, y) }, 35)
+        }
+
+        /** Cursor speed -> gain: slow = precise, fast = crosses the screen. */
+        private fun step(x: Float, y: Float, t: Long) {
+            val dx = x - lx; val dy = y - ly
+            val dt = maxOf(4L, t - lt).toFloat()
+            val v = Math.hypot(dx.toDouble(), dy.toDouble()).toFloat() / dn / dt
+            val gain = 0.95f + minOf(v, 2.4f) * 0.9f
+            cx = (cx + dx * gain).coerceIn(0f, width - 1f)
+            cy = (cy + dy * gain).coerceIn(0f, height - 1f)
+            lx = x; ly = y; lt = t
+        }
+
+        private fun hitClickable(v: View, x: Float, y: Float): Boolean {
+            if (v !is ViewGroup) return false
+            for (i in v.childCount - 1 downTo 0) {
+                val c = v.getChildAt(i)
+                if (c === this || c.visibility != View.VISIBLE) continue
+                val xx = x + v.scrollX - c.x; val yy = y + v.scrollY - c.y
+                if (xx < 0 || yy < 0 || xx > c.width || yy > c.height) continue
+                if (c is android.webkit.WebView) return false
+                if (c is ViewGroup) { if (hitClickable(c, xx, yy)) return true; if (c.isClickable && c.childCount == 0) return true }
+                else if (c.isClickable) return true
+            }
+            return false
         }
 
         private fun probe() {
             val n = android.os.SystemClock.uptimeMillis()
-            if (n - lastProbe < 90) return
+            if (n - lastProbe < 60) return
             lastProbe = n
-            val js = "(function(){var r=window.devicePixelRatio||1,e=document.elementFromPoint(" + cx.toInt() + "/r," + cy.toInt() + "/r);" +
+            var web: android.webkit.WebView? = target as? android.webkit.WebView
+            var ox = 0f; var oy = 0f
+            if (global) {
+                val w = topWeb
+                web = null
+                if (w != null && w.isShown) {
+                    val a = IntArray(2); val b = IntArray(2); w.getLocationOnScreen(a); getLocationOnScreen(b)
+                    ox = (a[0] - b[0]).toFloat(); oy = (a[1] - b[1]).toFloat()
+                    if (cx >= ox && cx <= ox + w.width && cy >= oy && cy <= oy + w.height) web = w
+                }
+                if (web == null) { val h = hitClickable(target, cx, cy); if (h != isHand) { isHand = h; invalidate() }; return }
+            }
+            val w2 = web ?: return
+            val js = "(function(){var r=window.devicePixelRatio||1,e=document.elementFromPoint(" + (cx - ox).toInt() + "/r," + (cy - oy).toInt() + "/r);" +
                 "for(var i=0;e&&i<7;i++,e=e.parentElement){var c=getComputedStyle(e).cursor,g=e.tagName;" +
                 "if(c=='pointer'||g=='A'||g=='BUTTON'||g=='SELECT'||g=='SUMMARY')return 1}return 0})()"
-            try { web.evaluateJavascript(js) { v -> val h = v == "1"; if (h != isHand) { isHand = h; invalidate() } } } catch (e: Exception) { }
+            try { w2.evaluateJavascript(js) { v -> val h = v == "1"; if (h != isHand) { isHand = h; invalidate() } } } catch (e: Exception) { }
         }
 
         override fun onTouchEvent(e: MotionEvent): Boolean {
             if (!ready) { cx = width / 2f; cy = height / 2f; ready = true }
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    lx = e.x; ly = e.y; px0 = e.x; py0 = e.y; moved = false; downT = e.eventTime
-                    dragging = lastTap > 0 && e.eventTime - lastTap < 350
+                    lx = e.x; ly = e.y; lt = e.eventTime; px0 = e.x; py0 = e.y; moved = false; downT = e.eventTime
+                    dragging = lastTap > 0 && e.eventTime - lastTap < 300
                     if (dragging) { sT = android.os.SystemClock.uptimeMillis(); fire(MotionEvent.ACTION_DOWN, sT, cx, cy) }
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount == 2 && !dragging) {
@@ -1545,23 +1629,22 @@ Long-press a tab to rename it.
                         ax = (e.getX(0) + e.getX(1)) / 2; ay = (e.getY(0) + e.getY(1)) / 2
                         fire(MotionEvent.ACTION_MOVE, sT, cx + (ax - ax0), cy + (ay - ay0))
                     } else if (!scrolling) {
-                        if (Math.hypot((e.x - px0).toDouble(), (e.y - py0).toDouble()) > 10 * dn) moved = true
-                        cx = (cx + (e.x - lx) * 1.7f).coerceIn(0f, width - 1f)
-                        cy = (cy + (e.y - ly) * 1.7f).coerceIn(0f, height - 1f)
-                        lx = e.x; ly = e.y
+                        if (Math.hypot((e.x - px0).toDouble(), (e.y - py0).toDouble()) > 7 * dn) moved = true
+                        for (h in 0 until e.historySize) step(e.getHistoricalX(h), e.getHistoricalY(h), e.getHistoricalEventTime(h))
+                        step(e.x, e.y, e.eventTime)
                         if (dragging) fire(MotionEvent.ACTION_MOVE, sT, cx, cy)
-                        invalidate(); probe()
+                        postInvalidateOnAnimation(); probe()
                     }
                 }
                 MotionEvent.ACTION_POINTER_UP -> if (scrolling) {
                     fire(MotionEvent.ACTION_UP, sT, cx + (ax - ax0), cy + (ay - ay0)); scrolling = false
                     val i = if (e.actionIndex == 0) 1 else 0
-                    lx = e.getX(i); ly = e.getY(i)
+                    lx = e.getX(i); ly = e.getY(i); lt = e.eventTime
                 }
                 MotionEvent.ACTION_UP -> {
                     if (scrolling) { fire(MotionEvent.ACTION_UP, sT, cx + (ax - ax0), cy + (ay - ay0)); scrolling = false }
                     else if (dragging) { fire(MotionEvent.ACTION_UP, sT, cx, cy); dragging = false; lastTap = 0 }
-                    else if (!moved && e.eventTime - downT < 300) { click(); lastTap = e.eventTime }
+                    else if (!moved && e.eventTime - downT < 280) { click(); lastTap = e.eventTime }
                     else lastTap = 0
                     probe()
                 }
@@ -1576,9 +1659,18 @@ Long-press a tab to rename it.
         override fun onDraw(c: android.graphics.Canvas) {
             if (!ready) return
             val b = if (isHand) hand else arrow
-            val hx = if (isHand) 16f else 13f; val hy = if (isHand) 3f else 2f
-            val s = (if (isHand) 30f else 34f) * dn / b.height
-            c.save(); c.translate(cx - hx * s, cy - hy * s); c.scale(s, s); c.drawBitmap(b, 0f, 0f, paint); c.restore()
+            val hx = if (isHand) 0.44f else 0.12f; val hy = 0.07f
+            val s = 40f * dn / b.height
+            val rt = android.os.SystemClock.uptimeMillis() - rippleT
+            if (rt in 0..240) {
+                val f = rt / 240f
+                ring.color = android.graphics.Color.argb((200 * (1 - f)).toInt(), 244, 196, 48)
+                c.drawCircle(cx, cy, (6f + 22f * f) * dn, ring)
+                postInvalidateOnAnimation()
+            }
+            c.save(); c.translate(cx - hx * b.width * s, cy - hy * b.height * s); c.scale(s, s)
+            c.drawBitmap(b, 1.8f / s * dn, 2.2f / s * dn, shade)
+            c.drawBitmap(b, 0f, 0f, paint); c.restore()
         }
     }
 
@@ -1601,12 +1693,15 @@ Long-press a tab to rename it.
         val tb = LinearLayout(this)
         tb.setBackgroundColor(TITLE)
         tb.addView(tv("   ▣   $title — $url", 13f, Color.WHITE).apply { gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }, LinearLayout.LayoutParams(0, dp(40), 1f))
-        if (yt) tb.addView(capBtn("＋", false, 46) { startPublish() })
+        if (yt) tb.addView(capBtn("＋", false, 46) { wv.evaluateJavascript("if(window.mk)mk()", null) })
         if (ai) tb.addView(capBtn("🔑", false, 46) { showProviderKey() })
         tb.addView(capBtn("🖱", false, 46) {
-            val on = !prefs.getBoolean("mouse_on", true)
-            prefs.edit().putBoolean("mouse_on", on).apply(); mouse?.setOn(on)
-            toast(if (on) tr("Mouse on", "Mouse ligado") else tr("Mouse off — touch the page directly", "Mouse desligado — toque direto na página"))
+            if (prefs.getBoolean("mouse_all", false)) { toggleGlobalMouse() }
+            else {
+                val on = !prefs.getBoolean("mouse_on", true)
+                prefs.edit().putBoolean("mouse_on", on).apply(); applyMouse()
+                toast(if (on) tr("Mouse on", "Mouse ligado") else tr("Mouse off — touch the page directly", "Mouse desligado — toque direto na página"))
+            }
         })
         tb.addView(capBtn("⟳", false, 46) { wv.reload() })
         tb.addView(capBtn("✕", true, 46) { p.close() })
@@ -1623,13 +1718,13 @@ Long-press a tab to rename it.
         val holder = FrameLayout(this)
         holder.addView(wv, FrameLayout.LayoutParams(MATCH, MATCH))
         val ml = MouseLayer(wv); mouse = ml
-        ml.setOn(prefs.getBoolean("mouse_on", true))
+        webMice.add(ml); topWeb = wv; applyMouse()
         holder.addView(ml, FrameLayout.LayoutParams(MATCH, MATCH))
         card.addView(holder, LinearLayout.LayoutParams(MATCH, 0, 1f))
         ov.addView(card, FrameLayout.LayoutParams((dm.widthPixels * 0.94).toInt(), (dm.heightPixels * 0.92).toInt(), Gravity.CENTER))
         root.addView(ov, FrameLayout.LayoutParams(MATCH, MATCH))
         p = Panel(ov, LinearLayout(this), LinearLayout(this))
-        p.onClose = { if (pubWv === wv) pubWv = null; if (voiceWv === wv) { stopVoice(); voiceWv = null }; try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
+        p.onClose = { webMice.remove(ml); if (topWeb === wv) topWeb = null; if (pubWv === wv) pubWv = null; if (voiceWv === wv) { stopVoice(); voiceWv = null }; try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
         panels.add(p)
         wv.loadUrl(url)
     }
@@ -1643,7 +1738,7 @@ Long-press a tab to rename it.
             "port 4089" to "define a porta (depois abra localhost:4089)", "turn off" to "desliga o servidor",
             "status" to "mostra estado e porta", "clear" to "limpa a tela", "exit" to "fecha esta aba")
         val rows = (if (pt) br else en).joinToString("") { "  " + it.first.padEnd(18) + it.second + "\n" }
-        val yt = if (name != "youtube") "" else if (pt) "  publicar          escolhe um vídeo do aparelho e publica (também o botão ＋)\n  (entre antes com o botão 👤 Perfil)\n" else "  publish           pick a video from your phone and publish it (or the ＋ button)\n  (sign in first with the 👤 Profile button)\n"
+        val yt = if (name != "youtube") "" else if (pt) "  publicar          escolhe um vídeo do aparelho e publica (também o botão ＋)\n  post seu texto    publica um post de texto no seu canal (ou ＋ → Post)\n  (entre antes com o botão 👤 Perfil)\n" else "  publish           pick a video from your phone and publish it (or the ＋ button)\n  post your text    publish a text post on your channel (or ＋ → Post)\n  (sign in first with the 👤 Profile button)\n"
         val ai = if (name != "ai") yt else if (pt) "  ia//pergunta//app   gera resposta ou código (app é opcional)\n  ia//faça um jogo//GDScript   exemplo (também: ai// e aí//)\n  ia key SUA_CHAVE   API do provedor (Gemini/Groq/Anthropic/OpenAI…; ia key limpar apaga)\n  ia model NOME      troca o modelo\n"
             else "  ai//question//app   answer or code (app is optional)\n  ai//make a game//GDScript   example (also: ia// and aí//)\n  ai key YOUR_KEY   provider API (Gemini/Groq/Anthropic/OpenAI…; ai key clear deletes it)\n  ai model NAME      change the model\n"
         return tr("$label server — $st, port ${s.port}\n", "Servidor $label — $st, porta ${s.port}\n") + rows + ai
@@ -1945,6 +2040,14 @@ Long-press a tab to rename it.
                 ui.postDelayed({ openWebWindow(label, full, t.tpl == "youtube", t.tpl == "ai") }, 500)
             }
             (l == "publish" || l == "publicar") && t.tpl == "youtube" -> startPublish()
+            (l == "post" || l == "postar" || l.startsWith("post ") || l.startsWith("postar ")) && t.tpl == "youtube" -> {
+                val txt = line.trim().substringAfter(" ", "").trim()
+                if (txt.isEmpty()) {
+                    if (pubWv != null) pubWv?.evaluateJavascript("if(window.pst)pst()", null)
+                    else err(t, tr("usage: post your text (or open the page and use ＋ → Post)", "uso: post seu texto (ou abra a página e use ＋ → Post)"))
+                } else if (addPost(txt)) { append(t, tr("post published ✔\n", "post publicado ✔\n")); pubWv?.evaluateJavascript("if(window.load)load()", null) }
+                else err(t, tr("sign in first with the 👤 Profile button", "entre antes com o botão 👤 Perfil"))
+            }
             l == "play" || l.startsWith("play ") -> err(t, tr("usage: play $name", "uso: play $name"))
             l == "turn off" || l == "turnoff" || l == "desligar" ->
                 if (s.running) stopServer(s) else append(t, tr("the server is already off\n", "o servidor já está desligado\n"))
@@ -2362,6 +2465,36 @@ Long-press a tab to rename it.
         }
     }
 
+    private fun jaRead(n: String): JSONArray = synchronized(vlock) {
+        try { JSONArray(File(vidDir(), n).readText()) } catch (e: Exception) { JSONArray() }
+    }
+    private fun jaWrite(n: String, a: JSONArray) {
+        synchronized(vlock) { try { File(vidDir(), n).writeText(a.toString()) } catch (e: Exception) { logError("video", e.message ?: "write") } }
+    }
+    private fun addPost(text: String): Boolean {
+        val me = profile() ?: return false
+        val t = text.trim().take(500)
+        if (t.isEmpty()) return false
+        synchronized(vlock) {
+            val a = jaRead("posts.json")
+            a.put(JSONObject().put("id", System.currentTimeMillis().toString(36) + a.length()).put("channel", me.optString("channel"))
+                .put("email", me.optString("email")).put("text", t).put("ts", System.currentTimeMillis()).put("likes", 0).put("my", 0))
+            jaWrite("posts.json", a)
+        }
+        return true
+    }
+    private fun addComment(vid: String, text: String): Boolean {
+        val me = profile() ?: return false
+        val t = text.trim().take(300)
+        if (t.isEmpty() || vid.isEmpty()) return false
+        synchronized(vlock) {
+            val a = jaRead("comments.json")
+            a.put(JSONObject().put("vid", vid).put("channel", me.optString("channel")).put("text", t).put("ts", System.currentTimeMillis()))
+            jaWrite("comments.json", a)
+        }
+        return true
+    }
+
     private fun jsonOut(o: OutputStream, j: Any) = send(o, "application/json; charset=utf-8", j.toString().toByteArray())
 
     private fun subsRead(): JSONArray = synchronized(vlock) {
@@ -2405,6 +2538,35 @@ Long-press a tab to rename it.
         fun find(id: String): JSONObject? { val a = vidsRead(); for (i in 0 until a.length()) if (a.getJSONObject(i).optString("id") == id) return a.getJSONObject(i); return null }
         when {
             path == "/api/chsubs" -> jsonOut(o, chSubsRead())
+            path == "/api/posts" -> {
+                val a = jaRead("posts.json"); val me = profile()?.optString("channel") ?: ""; val out = JSONArray()
+                for (i in a.length() - 1 downTo 0) { val x = a.getJSONObject(i)
+                    out.put(JSONObject().put("id", x.optString("id")).put("channel", x.optString("channel")).put("text", x.optString("text"))
+                        .put("ts", x.optLong("ts")).put("likes", x.optInt("likes")).put("my", x.optInt("my"))
+                        .put("own", me.isNotEmpty() && me.equals(x.optString("channel"), true))) }
+                jsonOut(o, out)
+            }
+            path == "/api/post" -> { val ok = addPost(qp("text")); jsonOut(o, JSONObject().put("ok", ok)) }
+            path == "/api/postlike" -> synchronized(vlock) {
+                val a = jaRead("posts.json"); val id = qp("id"); val res = JSONObject()
+                for (i in 0 until a.length()) { val x = a.getJSONObject(i); if (x.optString("id") == id) {
+                    val my = 1 - x.optInt("my"); val l = maxOf(0, x.optInt("likes") + (if (my == 1) 1 else -1))
+                    x.put("my", my).put("likes", l); res.put("my", my).put("likes", l) } }
+                jaWrite("posts.json", a); jsonOut(o, res)
+            }
+            path == "/api/postdel" -> synchronized(vlock) {
+                val a = jaRead("posts.json"); val id = qp("id"); val me = profile()?.optString("channel") ?: ""; val out = JSONArray()
+                for (i in 0 until a.length()) { val x = a.getJSONObject(i)
+                    if (!(x.optString("id") == id && me.isNotEmpty() && me.equals(x.optString("channel"), true))) out.put(x) }
+                jaWrite("posts.json", out); jsonOut(o, JSONObject().put("ok", true))
+            }
+            path == "/api/comments" -> {
+                val a = jaRead("comments.json"); val id = qp("id"); val out = JSONArray()
+                for (i in a.length() - 1 downTo 0) { val x = a.getJSONObject(i); if (x.optString("vid") == id)
+                    out.put(JSONObject().put("channel", x.optString("channel")).put("text", x.optString("text")).put("ts", x.optLong("ts"))) }
+                jsonOut(o, out)
+            }
+            path == "/api/comment" -> { val ok = addComment(qp("id"), qp("text")); jsonOut(o, JSONObject().put("ok", ok)) }
             path == "/api/react" -> synchronized(vlock) {
                 val id = qp("id"); val r = (qp("r").toIntOrNull() ?: 0).coerceIn(-1, 1)
                 val a = vidsRead(); val res = JSONObject()
