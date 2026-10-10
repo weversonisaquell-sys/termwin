@@ -229,6 +229,7 @@ class MainActivity : Activity() {
   nano arquivo.txt           editor de texto (também: edit, vi)
   creat//Projeto//html//index.html   cria o arquivo em Files/Projects/Projeto e abre o editor (py, js, css, json…)
   open//Projeto//index.html  abre o arquivo no editor
+  open//github.com/usuario/repo   abre o site numa janela do app (movível) e dá para baixar arquivos de qualquer site
   ct arquivo.txt             cria o arquivo em Files/Files Created e abre o editor (sem nome: pergunta o nome)
   cmd1 && cmd2 && cmd3       encadeia comandos como no Termux (help && clear funciona; até 1780 &&, com 1781 para e avisa)
   copy NomePasta             procura no celular todo e copia para Files/Copied/NomePasta
@@ -291,6 +292,7 @@ Toque e segure numa aba para renomear.
   nano file.txt              text editor (also: edit, vi)
   creat//Project//html//index.html   create the file in Files/Projects/Project and open the editor (py, js, css, json…)
   open//Project//index.html  open the file in the editor
+  open//github.com/user/repo   open the site in an app window (movable); you can download files from any site
   ct file.txt                create the file in Files/Files Created and open the editor (no name: it asks)
   cmd1 && cmd2 && cmd3       chain commands like Termux (help && clear works; up to 1780 &&, 1781 stops and warns)
   copy FolderName            search the whole phone and copy to Files/Copied/FolderName
@@ -1786,7 +1788,22 @@ Long-press a tab to rename it.
         wv.addJavascriptInterface(TwBridge(wv), "TW")
         if (yt) pubWv = wv
         wv.webViewClient = android.webkit.WebViewClient()
-        wv.webChromeClient = android.webkit.WebChromeClient()
+        wv.settings.setSupportMultipleWindows(true)
+        wv.addJavascriptInterface(TwDl(), "TWDL")
+        wv.webChromeClient = object : android.webkit.WebChromeClient() {
+            // links with target=_blank open in this same window (so their downloads work too)
+            override fun onCreateWindow(view: android.webkit.WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
+                val tmp = android.webkit.WebView(this@MainActivity)
+                tmp.webViewClient = object : android.webkit.WebViewClient() {
+                    override fun onPageStarted(v: android.webkit.WebView, u: String, f: android.graphics.Bitmap?) { if (u != "about:blank") { view.loadUrl(u); v.stopLoading(); v.destroy() } }
+                }
+                (resultMsg.obj as android.webkit.WebView.WebViewTransport).webView = tmp
+                resultMsg.sendToTarget()
+                return true
+            }
+        }
+        // any file link/button on any site downloads to the phone's Downloads folder (no outside browser)
+        wv.setDownloadListener { dlUrl, ua, cd, mime, _ -> startWebDownload(wv, dlUrl, ua, cd, mime) }
         val holder = FrameLayout(this)
         holder.addView(wv, FrameLayout.LayoutParams(MATCH, MATCH))
         val ml = MouseLayer(wv); mouse = ml
@@ -1799,6 +1816,129 @@ Long-press a tab to rename it.
         p.onClose = { webMice.remove(ml); if (topWeb === wv) topWeb = null; if (pubWv === wv) pubWv = null; if (voiceWv === wv) { stopVoice(); voiceWv = null }; try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
         panels.add(p)
         wv.loadUrl(url)
+    }
+
+    // ---------- downloads from the in-app web windows ----------
+    private fun downloadsDir() = File(filesRoot(), "Downloads").apply { mkdirs() }
+    @Volatile private var blobOkUntil = 0L
+    @Volatile private var blobName = ""
+
+    /** Receives a blob: file that WE asked the page for (a page cannot write files on its own). */
+    inner class TwDl {
+        @android.webkit.JavascriptInterface fun save(dataUrl: String) {
+            if (System.currentTimeMillis() > blobOkUntil) return
+            blobOkUntil = 0L
+            try {
+                val b64 = dataUrl.substringAfter("base64,", "")
+                if (b64.isNotEmpty()) saveBytes(blobName, android.util.Base64.decode(b64, android.util.Base64.DEFAULT))
+            } catch (e: Exception) { ui.post { toast("download: ${e.message}") } }
+        }
+    }
+
+    private fun dlTargetDir(): File {
+        if (storageOk()) try {
+            val pub = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS); pub.mkdirs()
+            if (pub.canWrite()) return pub
+        } catch (e: Exception) { }
+        return downloadsDir()
+    }
+
+    private fun uniqueDlFile(name: String): File {
+        val dir = dlTargetDir(); val safe = safeSeg(name)
+        val base = safe.substringBeforeLast('.', safe); val ext = if (safe.contains('.')) "." + safe.substringAfterLast('.') else ""
+        var f = File(dir, safe); var i = 1
+        while (f.exists()) { f = File(dir, "$base ($i)$ext"); i++ }
+        return f
+    }
+
+    private fun dlDone(f: File) = ui.post {
+        toast(tr("downloaded: ${f.name}", "baixado: ${f.name}"))
+        notifyDone(tr("✔ Download finished", "✔ Download concluído"), f.name + " — " + short(f.parent ?: ""), true)
+    }
+
+    private fun saveBytes(name: String, bytes: ByteArray) {
+        val f = uniqueDlFile(name)
+        f.writeBytes(bytes)
+        dlDone(f)
+    }
+
+    private fun startWebDownload(wv: android.webkit.WebView, url: String, ua: String?, cd: String?, mime: String?) {
+        val name = android.webkit.URLUtil.guessFileName(url, cd, mime)
+        if (url.startsWith("data:")) {
+            thread { try { saveBytes(name, android.util.Base64.decode(url.substringAfter("base64,"), android.util.Base64.DEFAULT)) } catch (e: Exception) { ui.post { toast("download: ${e.message}") } } }
+            return
+        }
+        if (url.startsWith("blob:")) {
+            blobName = name; blobOkUntil = System.currentTimeMillis() + 60_000
+            toast(tr("downloading $name…", "baixando $name…"))
+            val u = url.replace("'", "%27")
+            wv.evaluateJavascript("(function(){fetch('$u').then(function(r){return r.blob()}).then(function(b){var f=new FileReader();f.onload=function(){TWDL.save(f.result)};f.readAsDataURL(b)})})()", null)
+            return
+        }
+        val cookie = try { android.webkit.CookieManager.getInstance().getCookie(url) } catch (e: Exception) { null }
+        toast(tr("downloading $name…", "baixando $name…"))
+        try {
+            val rq = DownloadManager.Request(Uri.parse(url))
+            if (!mime.isNullOrEmpty()) rq.setMimeType(mime)
+            if (!cookie.isNullOrEmpty()) rq.addRequestHeader("Cookie", cookie)
+            if (!ua.isNullOrEmpty()) rq.addRequestHeader("User-Agent", ua)
+            rq.setTitle(name)
+            rq.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            rq.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+            getSystemService(DownloadManager::class.java).enqueue(rq)
+        } catch (e: Exception) { fallbackDownload(url, ua, cookie, name) }
+    }
+
+    /** Own downloader (follows redirects, sends the page's cookies) used when the system DownloadManager is not allowed to write. */
+    private fun fallbackDownload(url: String, ua: String?, cookie: String?, name: String) {
+        thread {
+            try {
+                var u = url; var cn: java.net.HttpURLConnection? = null
+                for (hop in 0..8) {
+                    val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection
+                    c.instanceFollowRedirects = false; c.connectTimeout = 15000; c.readTimeout = 30000
+                    if (!ua.isNullOrEmpty()) c.setRequestProperty("User-Agent", ua)
+                    if (hop == 0 && !cookie.isNullOrEmpty()) c.setRequestProperty("Cookie", cookie)
+                    val code = c.responseCode
+                    val loc = c.getHeaderField("Location")
+                    if (code in 301..308 && loc != null) { u = java.net.URL(java.net.URL(u), loc).toString(); c.disconnect(); continue }
+                    cn = c; break
+                }
+                val c = cn ?: throw Exception("too many redirects")
+                if (c.responseCode !in 200..299) throw Exception("HTTP ${c.responseCode}")
+                val cdh = c.getHeaderField("Content-Disposition")
+                val nm = if (cdh != null) android.webkit.URLUtil.guessFileName(u, cdh, c.contentType) else name
+                val f = uniqueDlFile(nm)
+                c.inputStream.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+                dlDone(f)
+            } catch (e: Exception) { ui.post { toast(tr("download failed: ${e.message}", "falha no download: ${e.message}")) } }
+        }
+    }
+
+    private val FILE_EXT = setOf("html", "htm", "css", "js", "json", "py", "txt", "md", "kt", "java", "xml", "png", "jpg", "jpeg", "gif", "svg", "gd", "lua", "cs", "cpp", "c", "h",
+        "sh", "yml", "yaml", "toml", "ini", "csv", "zip", "mp3", "mp4", "pdf", "tscn", "tres", "gradle", "kts", "winv", "winser", "wintext")
+
+    /** open//github.com/user/repo or open//https://site.com/page -> the address to open, or null when it is a project file (open//Proj//index.html). */
+    private fun webUrlOf(t: TabData, raw: String): String? {
+        val a = raw.trim().removeSurrounding("\"").removeSurrounding("'")
+        if (a.isEmpty() || a.any { it.isWhitespace() }) return null
+        val low = a.lowercase()
+        if (low.startsWith("http://") || low.startsWith("https://")) return a
+        if (low.startsWith("localhost") || Regex("^\\d{1,3}(\\.\\d{1,3}){3}(:\\d+)?(/.*)?$").matches(low)) return "http://$a"
+        if (low.startsWith("www.")) return "https://$a"
+        val host = low.substringBefore('/').substringBefore('?').substringBefore(':')
+        val tld = host.substringAfterLast('.')
+        if (Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+$").matches(host) && tld.length in 2..24 && tld.all { it in 'a'..'z' } && tld !in FILE_EXT) {
+            if (resolvePath(t, a.substringBefore('/'))?.exists() == true) return null
+            return "https://$a"
+        }
+        return null
+    }
+
+    private fun openSiteWindow(t: TabData, url: String) {
+        val host = try { Uri.parse(url).host ?: url } catch (e: Exception) { url }
+        append(t, tr("opening $url in a window (you can download files here)\n", "abrindo $url numa janela (dá para baixar arquivos aqui)\n"))
+        openWebWindow(host, url)
     }
 
     private fun tplHelp(label: String, name: String, s: Srv): String {
@@ -3562,6 +3702,10 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         val m = SLASH_RE.find(ln)
         if (m != null) {
             val verb = m.groupValues[1].lowercase()
+            if (!(verb.startsWith("cre") || verb == "criar")) {
+                val site = webUrlOf(t, m.groupValues[2])
+                if (site != null) { openSiteWindow(t, site); return true }
+            }
             val parts = m.groupValues[2].split("//").map { it.trim() }.filter { it.isNotEmpty() }
             if (verb.startsWith("cre") || verb == "criar") creatCmd(t, parts) else openFileCmd(t, parts)
             return true
