@@ -266,6 +266,8 @@ class MainActivity : Activity() {
   nano arquivo.txt           editor de texto (também: edit, vi)
   creat//Projeto//html//index.html   cria o arquivo em Files/Projects/Projeto e abre o editor (py, js, css, json…)
   open//Projeto//index.html  abre o arquivo no editor
+  Roblox//arquivo.rbxl       acha o arquivo no celular, publica como modelo no Roblox e abre o link da loja numa janela
+  Roblox//chave              salva a chave da API e o seu ID do Roblox (só na primeira vez)
   open//github.com/usuario/repo   abre o site numa janela do app (movível) e dá para baixar arquivos de qualquer site
   ct arquivo.txt             cria o arquivo em Files/Files Created e abre o editor (sem nome: pergunta o nome)
   cmd1 && cmd2 && cmd3       encadeia comandos como no Termux (help && clear funciona; até 1780 &&, com 1781 para e avisa)
@@ -332,6 +334,8 @@ Toque e segure numa aba para renomear.
   nano file.txt              text editor (also: edit, vi)
   creat//Project//html//index.html   create the file in Files/Projects/Project and open the editor (py, js, css, json…)
   open//Project//index.html  open the file in the editor
+  Roblox//file.rbxl          find the file on the phone, publish it as a Roblox model and open the store link in a window
+  Roblox//key                save the API key and your Roblox ID (first time only)
   open//github.com/user/repo   open the site in an app window (movable); you can download files from any site
   ct file.txt                create the file in Files/Files Created and open the editor (no name: it asks)
   cmd1 && cmd2 && cmd3       chain commands like Termux (help && clear works; up to 1780 &&, 1781 stops and warns)
@@ -3849,6 +3853,131 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         if (f.isDirectory) append(t, short(f.path) + "\n" + (f.listFiles()?.sortedBy { it.name }?.joinToString("") { "  " + it.name + (if (it.isDirectory) "/" else "") + "\n" } ?: "")) else openEditor(t, f)
     }
 
+    // ---------- Roblox//file.rbxl : find the file, publish it as a Roblox model, open the store link in a window ----------
+    private fun robloxKey(): String? = apiGet("_roblox")?.takeIf { it.isNotBlank() }
+    private fun robloxOwner(): String = prefs.getString("roblox_owner", "") ?: ""
+
+    private fun robloxCmd(t: TabData, rest: String) {
+        val arg = rest.split("//").map { it.trim() }.filter { it.isNotEmpty() }.joinToString("//").trim().removeSurrounding("\"").removeSurrounding("'")
+        if (arg.isEmpty()) { err(t, tr("usage: Roblox//file.rbxl   (first time: Roblox//key)", "uso: Roblox//arquivo.rbxl   (primeira vez: Roblox//chave)")); return }
+        if (arg.lowercase() in listOf("key", "chave", "setup", "config", "login")) { showRobloxKey(); return }
+        if (robloxKey() == null || robloxOwner().isEmpty()) {
+            append(t, tr("Roblox needs your API key and your ID first. Fill them in the window, then run the command again.\n", "O Roblox precisa da sua chave de API e do seu ID antes. Preencha na janela e rode o comando de novo.\n"))
+            showRobloxKey(); return
+        }
+        var name = arg
+        if (name.substringAfterLast('/').substringAfterLast('.', "").isEmpty()) name += ".rbxl"
+        val ext = name.substringAfterLast('.').lowercase()
+        if (ext !in listOf("rbxl", "rbxm")) {
+            err(t, tr("Only .rbxl and .rbxm files can be published (not .$ext).", "Só dá para publicar arquivos .rbxl e .rbxm (não .$ext).")); return
+        }
+        append(t, tr("searching $name …\n", "procurando $name …\n"))
+        busy(1)
+        thread {
+            try {
+                val f = findRobloxFile(name, t)
+                if (f == null) { ui.post { err(t, tr("file not found: $name", "arquivo não encontrado: $name")) }; return@thread }
+                if (f.length() > 30L * 1024 * 1024) { ui.post { err(t, tr("file is bigger than 30 MB (Roblox limit)", "arquivo maior que 30 MB (limite do Roblox)")) }; return@thread }
+                ui.post { append(t, tr("found: ${short(f.path)}  (${f.length() / 1024} KB)\nuploading to Roblox …\n", "achei: ${short(f.path)}  (${f.length() / 1024} KB)\nenviando para o Roblox …\n")) }
+                robloxPublish(t, f)
+            } catch (e: Exception) {
+                ui.post { err(t, "Roblox: ${e.message}") }
+            } finally { ui.post { busy(-1) } }
+        }
+    }
+
+    private fun findRobloxFile(name: String, t: TabData): File? {
+        if (name.contains('/')) resolvePath(t, name)?.let { if (it.isFile) return it }
+        val base = name.substringAfterLast('/')
+        val pub = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val docs = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+        val roots = listOf(File(t.cwd), downloadsDir(), filesRoot(), dataDir(), File(pub, "Downloaded"), pub, docs).filter { it.isDirectory }
+        for (r in roots) r.walkTopDown().maxDepth(8).firstOrNull { it.isFile && it.name.equals(base, true) }?.let { return it }
+        return findAnywhere(base, t)?.takeIf { it.isFile }
+    }
+
+    /** Open Cloud Assets API: POST /assets/v1/assets (multipart) -> operation -> poll until it has the assetId. */
+    private fun robloxPublish(t: TabData, f: File) {
+        val key = robloxKey() ?: return
+        val owner = robloxOwner()
+        val creator = if (owner.startsWith("g", true)) JSONObject().put("groupId", owner.drop(1)) else JSONObject().put("userId", owner)
+        val title = f.nameWithoutExtension.take(50).ifBlank { "TermWin model" }
+        val reqJson = JSONObject().put("assetType", "Model").put("displayName", title)
+            .put("description", "Uploaded from TermWin").put("creationContext", JSONObject().put("creator", creator)).toString()
+        val boundary = "----TermWin" + System.currentTimeMillis()
+        val head = ("--$boundary\r\nContent-Disposition: form-data; name=\"request\"\r\nContent-Type: application/json\r\n\r\n$reqJson\r\n" +
+            "--$boundary\r\nContent-Disposition: form-data; name=\"fileContent\"; filename=\"${title.replace("\"", "")}.rbxm\"\r\nContent-Type: model/x-rbxm\r\n\r\n").toByteArray()
+        val tail = "\r\n--$boundary--\r\n".toByteArray()
+        val c = java.net.URL("https://apis.roblox.com/assets/v1/assets").openConnection() as java.net.HttpURLConnection
+        c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = 120000
+        c.setRequestProperty("x-api-key", key)
+        c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        c.setFixedLengthStreamingMode(head.size.toLong() + f.length() + tail.size)
+        c.outputStream.use { o -> o.write(head); f.inputStream().use { it.copyTo(o) }; o.write(tail) }
+        val code = c.responseCode
+        val body = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
+        if (code !in 200..299) { robloxFail(t, code, body); return }
+        var op = try { JSONObject(body) } catch (e: Exception) { null }
+        val opId = op?.optString("operationId")?.ifEmpty { op?.optString("path")?.substringAfterLast('/') } ?: ""
+        var tries = 0
+        while (op != null && !op.optBoolean("done", false) && opId.isNotEmpty() && tries++ < 60) {
+            Thread.sleep(2000)
+            val g = java.net.URL("https://apis.roblox.com/assets/v1/operations/$opId").openConnection() as java.net.HttpURLConnection
+            g.setRequestProperty("x-api-key", key); g.connectTimeout = 20000; g.readTimeout = 30000
+            val gc = g.responseCode
+            val gb = (if (gc in 200..299) g.inputStream else g.errorStream)?.bufferedReader()?.readText() ?: ""
+            if (gc !in 200..299) { robloxFail(t, gc, gb); return }
+            op = try { JSONObject(gb) } catch (e: Exception) { null }
+        }
+        if (op == null || !op.optBoolean("done", false)) { ui.post { err(t, tr("Roblox is still processing. Wait a bit and run the command again.", "O Roblox ainda está processando. Espere um pouco e rode o comando de novo.")) }; return }
+        val err0 = op.optJSONObject("error")
+        if (err0 != null) { robloxFail(t, err0.optInt("code", 0), err0.optString("message")); return }
+        val id = op.optJSONObject("response")?.optString("assetId").orEmpty()
+        if (id.isEmpty()) { ui.post { err(t, "Roblox: " + tr("no asset id came back", "não veio o ID do modelo")) }; return }
+        val link = "https://create.roblox.com/store/asset/$id"
+        ui.post {
+            append(t, tr("published ✔  model ID: $id\n$link\nopening the model page in a window …\n", "publicado ✔  ID do modelo: $id\n$link\nabrindo a página do modelo numa janela …\n"))
+            openWebWindow("Roblox", link)
+        }
+    }
+
+    private fun robloxFail(t: TabData, code: Int, body: String) {
+        val msg = (try { JSONObject(body).let { it.optString("message").ifEmpty { it.optString("error") } } } catch (e: Exception) { "" }).ifEmpty { body.take(200) }
+        val hint = when (code) {
+            401, 403 -> tr(" — check the key: permission Assets (read+write), and the IP list must allow 0.0.0.0/0. Fix it with Roblox//key", " — confira a chave: permissão Assets (ler+escrever) e a lista de IP precisa aceitar 0.0.0.0/0. Corrija com Roblox//chave")
+            400 -> tr(" — Roblox may not accept a place (.rbxl) as a model. Save the content as .rbxm and try again", " — o Roblox pode não aceitar um lugar (.rbxl) como modelo. Salve o conteúdo como .rbxm e tente de novo")
+            429 -> tr(" — upload limit reached, try later", " — limite de envios atingido, tente mais tarde")
+            else -> ""
+        }
+        ui.post { err(t, "Roblox [$code]: $msg$hint") }
+    }
+
+    private fun showRobloxKey() {
+        val p = panel(tr("Roblox publish", "Publicar no Roblox"), 0.7f)
+        p.body.addView(tv(tr("1) Open the Creator Hub keys page, create an API key with the Assets API (read + write) permission and IP 0.0.0.0/0. 2) Paste the key and your Roblox user ID (for a group, write g + the group number, e.g. g1234). Your account must be ID-verified to upload.",
+            "1) Abra a página de chaves do Creator Hub, crie uma chave de API com a permissão da Assets API (ler + escrever) e IP 0.0.0.0/0. 2) Cole a chave e o seu ID de usuário do Roblox (para grupo, escreva g + o número do grupo, ex.: g1234). Sua conta precisa ter o ID verificado para enviar."), 12f, 0xFF9AA5B1.toInt()))
+        val saved = robloxKey()
+        p.body.addView(tv(if (saved == null) tr("Status: no key saved", "Status: sem chave salva") else tr("Status: key saved (…${saved.takeLast(4)}), ID ${robloxOwner()}", "Status: chave salva (…${saved.takeLast(4)}), ID ${robloxOwner()}"),
+            13f, if (saved == null) 0xFFFFB454.toInt() else GREEN).apply { setPadding(0, dp(8), 0, 0) })
+        val kv = field(tr("Roblox API key", "Chave de API do Roblox"))
+        kv.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        p.body.addView(kv)
+        val idv = field(tr("Your Roblox user ID (numbers)", "Seu ID de usuário do Roblox (números)"), robloxOwner())
+        p.body.addView(idv)
+        val msg = tv("", 12f, 0xFFFFB454.toInt()).apply { setPadding(0, dp(8), 0, 0) }
+        p.body.addView(msg)
+        p.button(tr("Get key", "Pegar chave")) { openWebWindow("Roblox", "https://create.roblox.com/dashboard/credentials") }
+        p.button(tr("Close", "Fechar")) { p.close() }
+        p.button(tr("Save", "Salvar"), true) {
+            val k = kv.text.toString().trim().ifEmpty { saved ?: "" }
+            val id = idv.text.toString().trim().replace(" ", "")
+            if (k.isEmpty()) { msg.text = tr("Paste the API key", "Cole a chave de API"); return@button }
+            if (!Regex("^[gG]?\\d{1,20}$").matches(id)) { msg.text = tr("The ID must be only numbers (group: g + number)", "O ID deve ser só números (grupo: g + número)"); return@button }
+            apiPut("_roblox", k); prefs.edit().putString("roblox_owner", id).apply()
+            toast(tr("Roblox saved ✔ — now run: Roblox//file.rbxl", "Roblox salvo ✔ — agora rode: Roblox//arquivo.rbxl")); p.close()
+        }
+    }
+
     // ---------- apk//open//name.apk : find the APK, open the app in a window, keep its folder in Files/App data ----------
     private val RE_APK = Regex("^(?:apk|akp)\\s*//\\s*(?:open|onpen|abrir)\\s*//\\s*(.+)$", RegexOption.IGNORE_CASE)
     private fun appDataDir() = File(filesRoot(), "App data").apply { mkdirs() }
@@ -4411,7 +4540,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         append(t, sb.toString())
     }
 
-    private val SLASH_RE = Regex("^(creat|create|criar|open|abrir)\\s*//(.*)$", RegexOption.IGNORE_CASE)
+    private val SLASH_RE = Regex("^(creat|create|criar|open|abrir|roblox)\\s*//(.*)$", RegexOption.IGNORE_CASE)
 
     /** Commands shared by the terminal and every server template. Returns true when handled. */
     private fun fileCmd(t: TabData, line: String): Boolean {
@@ -4419,6 +4548,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         val m = SLASH_RE.find(ln)
         if (m != null) {
             val verb = m.groupValues[1].lowercase()
+            if (verb == "roblox") { robloxCmd(t, m.groupValues[2].trim()); return true }
             if (!(verb.startsWith("cre") || verb == "criar")) {
                 val site = webUrlOf(t, m.groupValues[2])
                 if (site != null) { openSiteWindow(t, site); return true }
