@@ -3887,9 +3887,13 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             try {
                 val f = findRobloxFile(name, t)
                 if (f == null) { ui.post { err(t, tr("file not found: $name", "arquivo não encontrado: $name")) }; return@thread }
-                if (f.length() > 30L * 1024 * 1024) { ui.post { err(t, tr("file is bigger than 30 MB (Roblox limit)", "arquivo maior que 30 MB (limite do Roblox)")) }; return@thread }
-                ui.post { append(t, tr("found: ${short(f.path)}  (${f.length() / 1024} KB)\nuploading to Roblox …\n", "achei: ${short(f.path)}  (${f.length() / 1024} KB)\nenviando para o Roblox …\n")) }
-                robloxPublish(t, f)
+                val title = f.nameWithoutExtension.take(50).ifBlank { "TermWin model" }
+                val isPlace = f.extension.equals("rbxl", true)
+                ui.post { append(t, tr("found: ${f.path}  (${f.length() / 1024} KB)\n", "achei: ${f.path}  (${f.length() / 1024} KB)\n") + (if (isPlace) tr("converting to the model format (.rbxm) …\n", "convertendo para o formato de modelo (.rbxm) …\n") else "")) }
+                val data = if (isPlace) rbxToModel(f.readBytes(), title).bytes else f.readBytes()
+                if (data.size > 30L * 1024 * 1024) { ui.post { err(t, tr("file is bigger than 30 MB (Roblox limit)", "arquivo maior que 30 MB (limite do Roblox)")) }; return@thread }
+                ui.post { append(t, tr("uploading to Roblox (${data.size / 1024} KB) …\n", "enviando para o Roblox (${data.size / 1024} KB) …\n")) }
+                robloxPublish(t, title, data)
             } catch (e: Exception) {
                 ui.post { err(t, "Roblox: ${e.message}") }
             } finally { ui.post { busy(-1) } }
@@ -3907,11 +3911,10 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     }
 
     /** Open Cloud Assets API: POST /assets/v1/assets (multipart) -> operation -> poll until it has the assetId. */
-    private fun robloxPublish(t: TabData, f: File) {
+    private fun robloxPublish(t: TabData, title: String, data: ByteArray) {
         val key = robloxKey() ?: return
         val owner = robloxOwner()
         val creator = if (owner.startsWith("g", true)) JSONObject().put("groupId", owner.drop(1)) else JSONObject().put("userId", owner)
-        val title = f.nameWithoutExtension.take(50).ifBlank { "TermWin model" }
         val reqJson = JSONObject().put("assetType", "Model").put("displayName", title)
             .put("description", "Uploaded from TermWin").put("creationContext", JSONObject().put("creator", creator)).toString()
         val boundary = "----TermWin" + System.currentTimeMillis()
@@ -3922,8 +3925,8 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = 120000
         c.setRequestProperty("x-api-key", key)
         c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        c.setFixedLengthStreamingMode(head.size.toLong() + f.length() + tail.size)
-        c.outputStream.use { o -> o.write(head); f.inputStream().use { it.copyTo(o) }; o.write(tail) }
+        c.setFixedLengthStreamingMode(head.size.toLong() + data.size + tail.size)
+        c.outputStream.use { o -> o.write(head); o.write(data); o.write(tail) }
         val code = c.responseCode
         val body = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText() ?: ""
         if (code !in 200..299) { robloxFail(t, code, body); return }
@@ -3955,7 +3958,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         val msg = (try { JSONObject(body).let { it.optString("message").ifEmpty { it.optString("error") } } } catch (e: Exception) { "" }).ifEmpty { body.take(200) }
         val hint = when (code) {
             401, 403 -> tr(" — check the key: permission Assets (read+write), and the IP list must allow 0.0.0.0/0. Fix it with Roblox//key", " — confira a chave: permissão Assets (ler+escrever) e a lista de IP precisa aceitar 0.0.0.0/0. Corrija com Roblox//chave")
-            400 -> tr(" — Roblox may not accept a place (.rbxl) as a model. Save the content as .rbxm and try again", " — o Roblox pode não aceitar um lugar (.rbxl) como modelo. Salve o conteúdo como .rbxm e tente de novo")
+            400 -> tr(" — Roblox did not accept the file as a model", " — o Roblox não aceitou o arquivo como modelo")
             429 -> tr(" — upload limit reached, try later", " — limite de envios atingido, tente mais tarde")
             else -> ""
         }
