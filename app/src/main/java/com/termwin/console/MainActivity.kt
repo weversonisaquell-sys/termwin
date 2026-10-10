@@ -80,12 +80,25 @@ fun ensureChannels(c: Context) {
 class TermService : Service() {
     override fun onBind(i: Intent?): IBinder? = null
     override fun onStartCommand(i: Intent?, flags: Int, id: Int): Int {
+        if (i?.action == "com.termwin.OFF") {
+            val a = MainActivity.instance
+            if (a != null) a.turnOffAll() else { stopSelf(); android.os.Process.killProcess(android.os.Process.myPid()) }
+            return START_NOT_STICKY
+        }
         ensureChannels(this)
+        val pf = android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        val off = android.app.PendingIntent.getService(this, 11, Intent(this, TermService::class.java).setAction("com.termwin.OFF"), pf)
+        val enter = android.app.PendingIntent.getActivity(this, 12, Intent(this, MainActivity::class.java).setAction("com.termwin.ENTER")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT), pf)
+        val ic = android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_stat_termwin)
         val n = Notification.Builder(this, "run")
             .setSmallIcon(R.drawable.ic_stat_termwin)
             .setLargeIcon(android.graphics.BitmapFactory.decodeResource(resources, R.drawable.ic_notif_large))
             .setContentTitle("TermWin")
             .setContentText("Running commands / servers…")
+            .setContentIntent(enter)
+            .addAction(Notification.Action.Builder(ic, "turn off", off).build())
+            .addAction(Notification.Action.Builder(ic, "enter", enter).build())
             .setOngoing(true).build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         else startForeground(1, n)
@@ -98,6 +111,7 @@ class MaxScroll(c: Context, private val maxH: Int) : ScrollView(c) {
 }
 
 class MainActivity : Activity() {
+    companion object { @Volatile var instance: MainActivity? = null }
     private val ui = Handler(Looper.getMainLooper())
     private val tabs = mutableListOf<TabData>()
     private val servers = mutableListOf<Srv>()
@@ -215,6 +229,8 @@ class MainActivity : Activity() {
   nano arquivo.txt           editor de texto (também: edit, vi)
   creat//Projeto//html//index.html   cria o arquivo em Files/Projects/Projeto e abre o editor (py, js, css, json…)
   open//Projeto//index.html  abre o arquivo no editor
+  ct arquivo.txt             cria o arquivo em Files/Files Created e abre o editor (sem nome: pergunta o nome)
+  cmd1 && cmd2 && cmd3       encadeia comandos como no Termux (help && clear funciona; até 1780 &&, com 1781 para e avisa)
   copy NomePasta             procura no celular todo e copia para Files/Copied/NomePasta
   copy                       abre o seletor para copiar pastas de OUTROS apps (ex.: Termux) para Files/Copied  |  depois: cd copied/NomePasta
   🛡 PROTEÇÃO: rm, mv, find -delete etc. só funcionam dentro da pasta do app (~). Fora dela (Download, fotos…) são bloqueados.
@@ -275,6 +291,8 @@ Toque e segure numa aba para renomear.
   nano file.txt              text editor (also: edit, vi)
   creat//Project//html//index.html   create the file in Files/Projects/Project and open the editor (py, js, css, json…)
   open//Project//index.html  open the file in the editor
+  ct file.txt                create the file in Files/Files Created and open the editor (no name: it asks)
+  cmd1 && cmd2 && cmd3       chain commands like Termux (help && clear works; up to 1780 &&, 1781 stops and warns)
   copy FolderName            search the whole phone and copy to Files/Copied/FolderName
   copy                       opens the picker to copy folders from OTHER apps (e.g. Termux) to Files/Copied  |  then: cd copied/FolderName
   🛡 PROTECTION: rm, mv, find -delete etc. only work inside the app folder (~). Anywhere else (Downloads, photos…) they are blocked.
@@ -350,9 +368,9 @@ Long-press a tab to rename it.
     private fun short(p: String) = p.replace(filesDir.path, "~")
 
     private fun pill(text: String, primary: Boolean, click: () -> Unit) =
-        tv(text, 14f, if (primary) Color.BLACK else Color.WHITE).apply {
+        tv(text, 13f, if (primary) Color.BLACK else Color.WHITE).apply {
             gravity = Gravity.CENTER
-            setPadding(dp(18), dp(9), dp(18), dp(9))
+            setPadding(dp(14), dp(8), dp(14), dp(8))
             background = rounded(if (primary) ACCENT else 0xFF2D2D2D.toInt(), dp(8), if (primary) 0 else 0xFF454545.toInt())
             setOnClickListener { click() }
         }
@@ -444,10 +462,11 @@ Long-press a tab to rename it.
     // ---------- lifecycle ----------
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        instance = this
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         load()
         System.setProperty("user.home", filesDir.path)
-        try { projectsDir(); copiedDir() } catch (e: Exception) { }
+        try { projectsDir(); copiedDir(); createdDir() } catch (e: Exception) { }
         ensureStorageLinks()
         ensureChannels(this)
         root = FrameLayout(this)
@@ -470,6 +489,7 @@ Long-press a tab to rename it.
     /** A .winv / .winser / .wintext tapped in a file manager opens here. */
     private fun handleIncoming(i: Intent?) {
         val it2 = i ?: return
+        if (it2.action == "com.termwin.ENTER") { it2.action = null; ui.post { enterRunning() }; return }
         if (it2.action != Intent.ACTION_VIEW) return
         val uri = it2.data ?: return
         it2.data = null
@@ -497,7 +517,7 @@ Long-press a tab to rename it.
 
         val mb = pill(mouseLabel(), false) { toggleGlobalMouse() }
         homeMouseBtn = mb
-        root.addView(mb, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END).apply { topMargin = dp(10); rightMargin = dp(12) })
+        root.addView(mb, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END).apply { topMargin = dp(8); rightMargin = dp(10) })
 
         taskbar = tv("⊞   ▣ TermWin", 14f, Color.WHITE)
         taskbar.setPadding(dp(20), dp(10), dp(20), dp(10))
@@ -537,6 +557,7 @@ Long-press a tab to rename it.
     override fun onStop() { super.onStop(); bg = true }
     override fun onResume() { super.onResume(); settingsSync?.invoke(); ensureStorageLinks() }
     override fun onPause() { super.onPause(); save() }
+    override fun onDestroy() { if (instance === this) instance = null; super.onDestroy() }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
@@ -833,6 +854,26 @@ Long-press a tab to rename it.
         }
         if (notifyDone("TermWin", msg, true, true)) append(t, tr("notification sent: $msg\n", "notificação enviada: $msg\n"))
         else err(t, tr("Could not send the notification", "Não foi possível enviar a notificação"))
+    }
+
+    /** Notification button "turn off": stops every server and running command, then the background service. */
+    fun turnOffAll() {
+        ui.post {
+            servers.filter { it.running }.forEach { try { stopServer(it) } catch (e: Exception) { } }
+            tabs.forEach { try { it.proc?.destroy() } catch (e: Exception) { } }
+            busyN = 0
+            try { stopService(Intent(this, TermService::class.java)) } catch (e: Exception) { }
+            toast(tr("everything turned off", "tudo desligado"))
+            serversRefresh?.invoke()
+        }
+    }
+
+    /** Notification button "enter": opens the window on the running server (or the servers list). */
+    private fun enterRunning() {
+        restore()
+        val s = servers.firstOrNull { it.running } ?: return
+        val i = tabs.indexOfFirst { it.srvName == s.name }
+        if (i >= 0) { cur = i; refreshTabs(); showTab() } else showServers()
     }
 
     private fun busy(d: Int) {
@@ -1191,7 +1232,8 @@ Long-press a tab to rename it.
     private fun sayCur(s: String) { if (tabs.isNotEmpty()) append(tabs[cur.coerceIn(0, tabs.size - 1)], s) }
 
     /** Shows an error in the terminal AND saves it to errors.log (and, through the log, to the .winv). */
-    private fun err(t: TabData, msg: String) { append(t, msg + "\n"); logError(t.name, msg) }
+    @Volatile private var errCount = 0
+    private fun err(t: TabData, msg: String) { errCount++; append(t, msg + "\n"); logError(t.name, msg) }
     private fun sayErr(msg: String) { sayCur(msg + "\n"); logError("server", msg) }
 
     // ---------- commands ----------
@@ -1240,11 +1282,15 @@ Long-press a tab to rename it.
         return a + tl.removePrefix(first)
     }
 
-    private fun exec(t: TabData, rawLine: String) {
+    private fun exec(t: TabData, rawLine: String, single: Boolean = false) {
         if (rawLine.isEmpty()) return
         val line = expandAlias(rawLine)
-        if (t.tpl.isNotEmpty()) { if (!line.contains("//") && splitChain(line).size > 1) chain(t, line) else tplExec(t, line); saveSoon(); return }
-        if (needsChain(line)) { chain(t, line); saveSoon(); return }
+        if (!single) {
+            val n = chainOps(line)
+            if (n > MAX_AND) { err(t, tr("&& limit exceeded: at most $MAX_AND (you used $n). Nothing was run.", "limite de && excedido: no máximo $MAX_AND (você usou $n). Nada foi executado.")); return }
+        }
+        if (t.tpl.isNotEmpty()) { if (single) tplExec(t, line) else if (!line.contains("//") && splitChain(line).size > 1) chain(t, line) else tplExec(t, line); saveSoon(); return }
+        if (!single && needsChain(line)) { chain(t, line); saveSoon(); return }
         if (fileCmd(t, line)) { saveSoon(); return }
         val p = line.split(" ").filter { it.isNotEmpty() }
         when (cmd(p[0])) {
@@ -1530,7 +1576,7 @@ Long-press a tab to rename it.
     private val webMice = mutableListOf<MouseLayer>()
     private var topWeb: android.webkit.WebView? = null
 
-    private fun mouseLabel() = if (prefs.getBoolean("mouse_all", false)) tr("🖱  Mouse: ON", "🖱  Mouse: LIGADO") else tr("🖱  Mouse", "🖱  Mouse")
+    private fun mouseLabel() = if (prefs.getBoolean("mouse_all", false)) tr("🖱 ON", "🖱 LIG") else "🖱"
     private fun applyMouse() {
         val all = prefs.getBoolean("mouse_all", false)
         gMouse?.setOn(all)
@@ -1538,7 +1584,9 @@ Long-press a tab to rename it.
         webMice.forEach { it.setOn(w) }
         homeMouseBtn?.apply {
             text = mouseLabel()
-            background = rounded(if (all) ACCENT else 0xFF2D2D2D.toInt(), dp(8), if (all) 0 else 0xFF454545.toInt())
+            textSize = 11f
+            background = rounded(if (all) ACCENT else 0xCC2D2D2D.toInt(), dp(12), if (all) 0 else 0xFF454545.toInt())
+            setPadding(dp(9), dp(3), dp(9), dp(3))
             setTextColor(if (all) Color.BLACK else Color.WHITE)
         }
     }
@@ -1683,7 +1731,7 @@ Long-press a tab to rename it.
             if (!ready) return
             val b = if (isHand) hand else arrow
             val hx = if (isHand) 0.44f else 0.12f; val hy = 0.07f
-            val s = 40f * dn / b.height
+            val s = 32f * dn / b.height
             val rt = android.os.SystemClock.uptimeMillis() - rippleT
             if (rt in 0..240) {
                 val f = rt / 240f
@@ -1757,10 +1805,10 @@ Long-press a tab to rename it.
         val st = if (s.running) "ON" else "OFF"
         val en = listOf("help" to "this help", "play $name" to "turn the server on and open the page",
             "port 4089" to "set the port (then open localhost:4089)", "turn off" to "turn the server off",
-            "status" to "show state and port", "creat//Proj//html//index.html" to "create a file in Files/Projects and edit it", "open//Proj//index.html" to "open a file in the editor", "copy Folder" to "copy a folder from the phone to Files/Copied", "cd path" to "change folder (any path)", "clear" to "clear the screen", "exit" to "close this tab")
+            "status" to "show state and port", "creat//Proj//html//index.html" to "create a file in Files/Projects and edit it", "open//Proj//index.html" to "open a file in the editor", "copy Folder" to "copy a folder from the phone to Files/Copied", "cd path" to "change folder (any path)", "clear" to "clear the screen", "ct file.txt" to "create a file in Files/Files Created", "exit" to "close this tab")
         val br = listOf("help" to "esta ajuda", "play $name" to "liga o servidor e abre a página",
             "port 4089" to "define a porta (depois abra localhost:4089)", "turn off" to "desliga o servidor",
-            "status" to "mostra estado e porta", "creat//Proj//html//index.html" to "cria um arquivo em Files/Projects e edita", "open//Proj//index.html" to "abre um arquivo no editor", "copy Pasta" to "copia uma pasta do celular para Files/Copied", "cd caminho" to "muda de pasta (qualquer caminho)", "clear" to "limpa a tela", "exit" to "fecha esta aba")
+            "status" to "mostra estado e porta", "creat//Proj//html//index.html" to "cria um arquivo em Files/Projects e edita", "open//Proj//index.html" to "abre um arquivo no editor", "copy Pasta" to "copia uma pasta do celular para Files/Copied", "cd caminho" to "muda de pasta (qualquer caminho)", "clear" to "limpa a tela", "ct arquivo.txt" to "cria um arquivo em Files/Files Created", "exit" to "fecha esta aba")
         val rows = (if (pt) br else en).joinToString("") { "  " + it.first.padEnd(18) + it.second + "\n" }
         val yt = if (name != "youtube") "" else if (pt) "  publicar          escolhe um vídeo do aparelho e publica (também o botão ＋)\n  post seu texto    publica um post de texto no seu canal (ou ＋ → Post)\n  player//test      lista os vídeos como player1, player2…\n  player//test//player2//youtube   toca o vídeo 2 SEM nenhuma conta logada\n  (entre antes com o botão 👤 Perfil)\n" else "  publish           pick a video from your phone and publish it (or the ＋ button)\n  post your text    publish a text post on your channel (or ＋ → Post)\n  player//test      list videos as player1, player2…\n  player//test//player2//youtube   play video 2 with NO account signed in\n  (sign in first with the 👤 Profile button)\n"
         val ai = if (name != "ai") yt else if (pt) "  ia//pergunta//app   gera resposta ou código (app é opcional)\n  ia//faça um jogo//GDScript   exemplo (também: ai// e aí//)\n  ia key SUA_CHAVE   API do provedor (Gemini/Groq/Anthropic/OpenAI…; ia key limpar apaga)\n  ia model NOME      troca o modelo\n"
@@ -2867,6 +2915,38 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         return out
     }
 
+    private val MAX_AND = 1780
+
+    /** How many && operators the line has (outside quotes). */
+    private fun chainOps(line: String): Int {
+        var q = '\u0000'; var n = 0; var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            if (q != '\u0000') { if (c == q) q = '\u0000' }
+            else if (c == '"' || c == '\'') q = c
+            else if (c == '&' && i + 1 < line.length && line[i + 1] == '&') { n++; i++ }
+            i++
+        }
+        return n
+    }
+
+    private val INTERNAL = setOf("help", "clear", "exit", "logout", "nano", "edit", "vi", "alias", "unalias", "export", "unset", "env", "wget", "curl",
+        "server", "pkg", "termwin", "neofetch", "cowsay", "tree", "info", "memory", "storage", "ip", "battery", "notify", "open", "history", "data", "errors",
+        "ct", "creat", "create", "copy", "copiar", "google", "projects", "projetos")
+    private val TPL_WORDS = setOf("help", "ajuda", "play", "publish", "publicar", "post", "postar", "turn", "turnoff", "desligar", "port", "status", "clear", "limpar",
+        "exit", "ai", "ia", "aí", "player", "ct", "creat", "create", "copy", "copiar", "google", "open", "abrir", "ls", "pwd", "projects", "projetos")
+
+    /** True when TermWin itself runs this command (help, clear, ct…); false = the Android shell runs it. */
+    private fun isInternal(t: TabData, seg: String): Boolean {
+        val ln = expandAlias(seg.trim())
+        if (ln.isEmpty()) return false
+        val w0 = ln.split(Regex("\\s+"))[0].lowercase()
+        if (t.tpl.isNotEmpty()) return w0 in TPL_WORDS || SLASH_RE.containsMatchIn(ln)
+        if (SLASH_RE.containsMatchIn(ln)) return true
+        val w = cmd(w0)
+        return w in INTERNAL || w0 in INTERNAL || w0.startsWith("termwin-") || w0.startsWith("termux-")
+    }
+
     private fun needsChain(line: String): Boolean {
         val f = line.trim().split(Regex("\\s+"))[0].lowercase()
         return f == "git" || f == "unzip" || splitChain(line).size > 1
@@ -2881,6 +2961,8 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         busy(1)
         thread {
             var ok = true
+            var exited = false
+            var lastClear = false
             var actionsUrl: String? = null
             var cwd = File(t.cwd)
             val vars = mutableMapOf<String, String>()
@@ -2888,6 +2970,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             for (seg in segs) {
                 val a = splitArgs(seg, vars)
                 if (a.isEmpty()) continue
+                lastClear = false
                 val good: Boolean = try {
                     when {
                         a.size == 1 && Regex("^[A-Za-z_][A-Za-z0-9_]*=").containsMatchIn(seg.trim()) -> {
@@ -2903,6 +2986,31 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                         }
                         a[0] == "git" -> { val r = gitRun(a.drop(1), cwd, ::out); if (r && a.getOrNull(1) == "push") actionsUrl = ghActionsUrl(cwd); r }
                         a[0] == "unzip" -> unzipRun(a.drop(1), cwd, ::out)
+                        isInternal(t, seg) -> {
+                            val execLine = a.joinToString(" ") { x -> if (x.any { c -> c.isWhitespace() }) "\"" + x + "\"" else x }
+                            val e0 = errCount
+                            val latch = java.util.concurrent.CountDownLatch(1)
+                            var base = 0
+                            ui.post {
+                                base = busyN
+                                try { exec(t, execLine, true) } catch (e: Exception) { err(t, "${a[0]}: ${e.message}") } finally { latch.countDown() }
+                            }
+                            latch.await()
+                            // wait for async work started by the command (curl, wget, downloads…)
+                            var spins = 0
+                            while (spins < 36000) {
+                                val l2 = java.util.concurrent.CountDownLatch(1); var still = false
+                                ui.post { still = busyN > base; l2.countDown() }
+                                l2.await()
+                                if (!still) break
+                                Thread.sleep(100); spins++
+                            }
+                            val w0 = a[0].lowercase()
+                            val wc = cmd(w0)
+                            lastClear = wc == "clear" || w0 == "limpar"
+                            if (wc == "exit" || w0 == "logout") exited = true
+                            errCount == e0
+                        }
                         else -> {
                             val blocked = guardCheck(seg, cwd)
                             if (blocked != null) { out(blocked + "\n"); logError(t.name, "BLOCKED: $seg"); false } else {
@@ -2923,11 +3031,12 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                     }
                 } catch (e: Exception) { out("${a[0]}: ${e.message}\n"); false }
                 if (!good) { ok = false; out("✖ " + tr("stopped at: ", "parou em: ") + seg + "\n"); break }
+                if (exited) break
             }
             ui.post {
                 if (cwd.isDirectory) { t.prev = t.cwd; t.cwd = cwd.path }
                 t.proc = null; busy(-1)
-                if (ok) append(t, "✔\n")
+                if (ok && !lastClear) append(t, "✔\n")
                 val au = actionsUrl
                 if (ok && au != null) {
                     append(t, tr("opening GitHub Actions window: $au\n", "abrindo a janela do GitHub Actions: $au\n"))
@@ -3134,6 +3243,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     // ---------- Files / Projects / Copied, creat, open//, copy, smart cd ----------
     private fun filesRoot() = File(dataDir(), "Files").apply { mkdirs() }
     private fun projectsDir() = File(filesRoot(), "Projects").apply { mkdirs() }
+    private fun createdDir() = File(filesRoot(), "Files Created").apply { mkdirs() }
     private fun copiedDir() = File(filesRoot(), "Copied").apply { mkdirs() }
 
     private fun walkCI(base: File, segs: List<String>): File? {
@@ -3221,6 +3331,32 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     private fun creatUsage(t: TabData) = err(t, tr(
         "usage: creat//Project//html//index.html   (also: creat//Project//py//main.py — saved in Files/Projects/Project)",
         "uso: creat//Projeto//html//index.html   (também: creat//Projeto//py//main.py — salva em Files/Projects/Projeto)"))
+
+    /** ct file.ext [other.ext…] — creates the file(s) in Files/Files Created and opens the editor on the last one. Without a name it asks. */
+    private fun ctCmd(t: TabData, rest: String) {
+        val names = splitArgs(rest, emptyMap()).filter { it.isNotBlank() }
+        if (names.isEmpty()) {
+            promptText(tr("File name (e.g. notes.txt)", "Nome do arquivo (ex.: notas.txt)"), "") { n -> if (n.isNotBlank()) ctMake(t, listOf(n.trim())) }
+            return
+        }
+        ctMake(t, names)
+    }
+
+    private fun ctMake(t: TabData, names: List<String>) {
+        try {
+            val dir = createdDir()
+            var last: File? = null
+            for (nm in names) {
+                var fn = safeSeg(nm.substringAfterLast('/'))
+                if (!fn.contains('.')) fn += ".txt"
+                val f = File(dir, fn)
+                if (!f.exists()) { f.writeText(STARTER[fn.substringAfterLast('.').lowercase()] ?: ""); append(t, tr("created ", "criado ") + short(f.path) + "\n") }
+                else append(t, tr("already exists: ", "já existe: ") + short(f.path) + "\n")
+                last = f
+            }
+            last?.let { openEditor(t, it) }
+        } catch (e: Exception) { err(t, "ct: ${e.message}") }
+    }
 
     private fun creatCmd(t: TabData, parts: List<String>) {
         if (parts.isEmpty()) { creatUsage(t); return }
@@ -3452,6 +3588,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                 else append(t, l.joinToString("") { it.name + (if (it.isDirectory) "/" else "") + "\n" })
             } else return false
             "nano", "edit", "vi" -> editFile(t, rest.ifEmpty { null })
+            "ct" -> ctCmd(t, rest)
             "projects", "projetos" -> {
                 val l = projectsDir().listFiles()?.filter { it.isDirectory }?.sortedBy { it.name.lowercase() } ?: emptyList()
                 append(t, short(projectsDir().path) + "\n" + (if (l.isEmpty()) tr("  (no projects yet — use creat//Project//html//index.html)\n", "  (nenhum projeto ainda — use creat//Projeto//html//index.html)\n")
