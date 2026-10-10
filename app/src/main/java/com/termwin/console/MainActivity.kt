@@ -3797,6 +3797,14 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             thread { su("settings delete global overlay_display_devices"); ui.post { append(t, tr("virtual window closed\n", "janela virtual fechada\n")) } }
             return true
         }
+        if (Regex("^(janela|window)\\s+(diag|info)$", RegexOption.IGNORE_CASE).matches(line.trim())) {
+            thread {
+                val id = su("id"); val feat = su("pm has-feature android.software.freeform_window_management").second
+                val sets = su("settings get global enable_freeform_support; settings get global force_resizable_activities; settings get global overlay_display_devices").second.replace("\n", " | ")
+                ui.post { append(t, "su: ${id.first} ${id.second.take(80)}\nandroid ${Build.VERSION.RELEASE} api ${Build.VERSION.SDK_INT} • ${Build.MANUFACTURER} ${Build.MODEL}\nfreeform feature: $feat\nsettings: $sets\ndisplays: ${displayIds()}\n") }
+            }
+            return true
+        }
         val m = RE_APK.matchEntire(line.trim()) ?: return false
         var name = m.groupValues[1].trim().trim('"')
         if (listOf(".apk", ".apkm", ".xapk", ".apks").none { name.endsWith(it, true) }) name += ".apk"
@@ -3872,12 +3880,21 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     }
 
     // ---------- root: floating (freeform) windows ----------
-    private fun su(cmd: String): Pair<Int, String> = try {
-        val pr = ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
-        val out = pr.inputStream.bufferedReader().readText().trim()
-        val code = if (pr.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) pr.exitValue() else { pr.destroy(); -1 }
-        code to out
-    } catch (e: Exception) { -1 to (e.message ?: "") }
+    private var suBin: String? = null
+    private fun su(cmd: String): Pair<Int, String> {
+        val cands = suBin?.let { listOf(it) } ?: listOf("su", "/system/bin/su", "/system/xbin/su", "/sbin/su", "/data/adb/ksu/bin/su", "/data/adb/ap/bin/su", "/debug_ramdisk/su", "/product/bin/su")
+        var last = "su não encontrado"
+        for (bin in cands) {
+            try {
+                val pr = ProcessBuilder(bin, "-c", cmd).redirectErrorStream(true).start()
+                val out = pr.inputStream.bufferedReader().readText().trim()
+                val code = if (pr.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) pr.exitValue() else { pr.destroy(); -1 }
+                suBin = bin
+                return code to out
+            } catch (e: Exception) { last = e.message ?: last }
+        }
+        return -1 to last
+    }
 
     /** null = no root; true = floating windows already on; false = just turned on (needs one reboot). */
     private fun ensureFreeform(): Boolean? {
@@ -3895,8 +3912,11 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         append(t, tr("opening $label…\n", "abrindo $label…\n"))
         thread {
             val ff = ensureFreeform()
+            val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" }
+            ui.post { append(t, "TermWin v$ver\n") }
             if (ff == null) {
-                ui.post { append(t, tr("No root access: opening as a normal app.\n", "Sem acesso root: abrindo como app normal.\n")); launchPkg(t, pkg, label) }
+                val d = su("id")
+                ui.post { append(t, tr("No root for TermWin (su: ${d.first} ${d.second.take(120)}). Give root permission to TermWin in Magisk/KernelSU.\nOpening as a normal app.\n", "Sem root para o TermWin (su: ${d.first} ${d.second.take(120)}). Dê permissão root ao TermWin no Magisk/KernelSU.\nAbrindo como app normal.\n")); launchPkg(t, pkg, label) }
                 return@thread
             }
             val r = try { rootWindowLaunch(pkg) { m -> ui.post { append(t, m + "\n") } } } catch (e: Exception) { e.message ?: "erro" }
@@ -3912,6 +3932,20 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         val mode = Regex("mode=([a-z\\-]+)").find(ln)?.groupValues?.get(1) ?: "?"
         val id = Regex("#(\\d+)").find(ln)?.groupValues?.get(1)?.toIntOrNull() ?: -1
         return mode to id
+    }
+
+    /** Which display the app's task is on, from `am stack list`. */
+    private fun taskDisplay(pkg: String): Int? {
+        for (cmd in listOf("cmd activity stack list", "am stack list")) {
+            val out = su(cmd).second
+            var disp: Int? = null
+            for (ln in out.lines()) {
+                val m = Regex("displayId=(\\d+)").find(ln)
+                if (m != null && !ln.contains("taskId=")) disp = m.groupValues[1].toInt()
+                if (ln.contains("taskId=") && ln.contains("$pkg/")) return m?.groupValues?.get(1)?.toInt() ?: disp
+            }
+        }
+        return null
     }
 
     private fun displayIds(): Set<Int> {
@@ -3950,8 +3984,20 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         if (before.none { it > 0 }) { su("settings put global overlay_display_devices 1280x720/240"); Thread.sleep(2500) }
         val now = displayIds().filter { it > 0 }
         val id = (now.toSet() - before).maxOrNull() ?: now.maxOrNull() ?: return "a tela virtual não foi criada (a ROM bloqueia overlay_display_devices)"
-        val st = su("am start --user 0 --display $id -n $cn")
-        if (st.second.contains("Error", true) || st.second.contains("Exception", true)) return st.second.take(200)
+        fun startOn(): String = su("am start --user 0 --display $id -n $cn").second
+        var out = startOn()
+        if (out.contains("Error", true) || out.contains("Exception", true)) return out.take(200)
+        Thread.sleep(1500)
+        var d = taskDisplay(pkg)
+        say("tela virtual: $id • o app ficou na tela: ${d ?: "?"}")
+        if (d != null && d != id) {
+            su("settings put global enable_non_resizable_multi_window 1; settings put global force_resizable_activities 1")
+            su("am force-stop $pkg"); Thread.sleep(600)
+            out = startOn(); Thread.sleep(1500)
+            d = taskDisplay(pkg)
+            say("2ª tentativa • o app ficou na tela: ${d ?: "?"}")
+            if (d != null && d != id) return "o Android jogou o app de volta para a tela principal (ele não aceita multi-tela). Reinicie o celular uma vez (force_resizable foi ligado) e tente de novo. Saída: ${out.take(100)}"
+        }
         say("tela virtual $id criada: o jogo está na janela que apareceu na tela (arraste para mover, pince para ajustar). Para fechar: janela off")
         return "overlay"
     }
