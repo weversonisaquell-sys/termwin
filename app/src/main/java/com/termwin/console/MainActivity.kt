@@ -53,7 +53,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "2.2"
+const val VERSION = "2.3"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -1762,7 +1762,7 @@ Long-press a tab to rename it.
             "port 4089" to "define a porta (depois abra localhost:4089)", "turn off" to "desliga o servidor",
             "status" to "mostra estado e porta", "creat//Proj//html//index.html" to "cria um arquivo em Files/Projects e edita", "open//Proj//index.html" to "abre um arquivo no editor", "copy Pasta" to "copia uma pasta do celular para Files/Copied", "cd caminho" to "muda de pasta (qualquer caminho)", "clear" to "limpa a tela", "exit" to "fecha esta aba")
         val rows = (if (pt) br else en).joinToString("") { "  " + it.first.padEnd(18) + it.second + "\n" }
-        val yt = if (name != "youtube") "" else if (pt) "  publicar          escolhe um vídeo do aparelho e publica (também o botão ＋)\n  post seu texto    publica um post de texto no seu canal (ou ＋ → Post)\n  (entre antes com o botão 👤 Perfil)\n" else "  publish           pick a video from your phone and publish it (or the ＋ button)\n  post your text    publish a text post on your channel (or ＋ → Post)\n  (sign in first with the 👤 Profile button)\n"
+        val yt = if (name != "youtube") "" else if (pt) "  publicar          escolhe um vídeo do aparelho e publica (também o botão ＋)\n  post seu texto    publica um post de texto no seu canal (ou ＋ → Post)\n  player//test      lista os vídeos como player1, player2…\n  player//test//player2//youtube   toca o vídeo 2 SEM nenhuma conta logada\n  (entre antes com o botão 👤 Perfil)\n" else "  publish           pick a video from your phone and publish it (or the ＋ button)\n  post your text    publish a text post on your channel (or ＋ → Post)\n  player//test      list videos as player1, player2…\n  player//test//player2//youtube   play video 2 with NO account signed in\n  (sign in first with the 👤 Profile button)\n"
         val ai = if (name != "ai") yt else if (pt) "  ia//pergunta//app   gera resposta ou código (app é opcional)\n  ia//faça um jogo//GDScript   exemplo (também: ai// e aí//)\n  ia key SUA_CHAVE   API do provedor (Gemini/Groq/Anthropic/OpenAI…; ia key limpar apaga)\n  ia model NOME      troca o modelo\n"
             else "  ai//question//app   answer or code (app is optional)\n  ai//make a game//GDScript   example (also: ia// and aí//)\n  ai key YOUR_KEY   provider API (Gemini/Groq/Anthropic/OpenAI…; ai key clear deletes it)\n  ai model NAME      change the model\n"
         return tr("$label server — $st, port ${s.port}\n", "Servidor $label — $st, porta ${s.port}\n") + rows + ai
@@ -2010,6 +2010,33 @@ Long-press a tab to rename it.
         }
     }
 
+    /** player//test            -> lists the videos as player1, player2…
+     *  player//test//player2//youtube -> plays video number 2 with NO account signed in (anonymous visitor test) */
+    private fun ytPlayerTest(t: TabData, s: Srv, raw: String) {
+        val parts = raw.split("//").map { it.trim() }
+        if (parts.size < 2 || !parts[1].equals("test", true) && !parts[1].equals("teste", true)) {
+            err(t, tr("usage: player//test//player2//youtube", "uso: player//test//player2//youtube")); return
+        }
+        val a = vidsRead(); val n = a.length()
+        // number 1 = newest video (same order as the feed)
+        fun at(num: Int): JSONObject = a.getJSONObject(n - num)
+        val num = parts.drop(2).firstNotNullOfOrNull { Regex("^(?:player\\s*)?(\\d+)$", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1)?.toIntOrNull() }
+        if (num == null) {
+            if (n == 0) { append(t, tr("no videos published yet. Use: publish\n", "nenhum vídeo publicado ainda. Use: publicar\n")); return }
+            val sb = StringBuilder(tr("players:\n", "players:\n"))
+            for (i in 1..minOf(n, 50)) { val e = at(i); sb.append("  player$i  ").append(e.optString("title")).append("  (").append(e.optString("channel")).append(")\n") }
+            sb.append(tr("pick one: player//test//player2//youtube\n", "escolha um: player//test//player2//youtube\n"))
+            append(t, sb.toString()); return
+        }
+        if (num < 1 || num > n) { err(t, tr("player$num does not exist ($n videos)", "player$num não existe ($n vídeos)")); return }
+        val e = at(num); val id = e.optString("id")
+        if (!s.running) startServer(s)
+        val path = "/_anon/$id"
+        append(t, tr("▶ player$num — ${e.optString("title")}\nrunning with NO account signed in (anonymous test)\n", "▶ player$num — ${e.optString("title")}\nexecutando SEM nenhuma conta logada (teste anônimo)\n"))
+        lanIp()?.let { append(t, tr("test on ANOTHER device/account (same Wi-Fi): http://$it:${s.port}$path\n", "teste em OUTRO aparelho/conta (mesmo Wi-Fi): http://$it:${s.port}$path\n")) }
+        ui.postDelayed({ openWebWindow("YouTube • player$num", "http://localhost:${s.port}$path") }, 500)
+    }
+
     private fun tplExec(t: TabData, line: String) {
         val s = findSrv(t.srvName)
         val name = when (t.tpl) { "youtube" -> "youtube"; "ai" -> "ai"; else -> "windows 10" }
@@ -2064,6 +2091,7 @@ Long-press a tab to rename it.
                 val full = if (t.tpl == "ai") "$u#t=$ownerToken" else u
                 ui.postDelayed({ openWebWindow(label, full, t.tpl == "youtube", t.tpl == "ai") }, 500)
             }
+            l.startsWith("player") && Regex("^player\\s*//", RegexOption.IGNORE_CASE).containsMatchIn(line.trim()) && t.tpl == "youtube" -> ytPlayerTest(t, s, line.trim())
             (l == "publish" || l == "publicar") && t.tpl == "youtube" -> startPublish()
             (l == "post" || l == "postar" || l.startsWith("post ") || l.startsWith("postar ")) && t.tpl == "youtube" -> {
                 val txt = line.trim().substringAfter(" ", "").trim()
@@ -2704,6 +2732,36 @@ Long-press a tab to rename it.
                 for (i in 0 until a.length()) { val e = a.getJSONObject(i); if (e.optString("id") == id) e.put("views", e.optInt("views") + 1) }
                 vidsWrite(a); jsonOut(o, JSONObject().put("ok", true))
             }
+            path.startsWith("/_anon/v/") -> {
+                val e = find(path.removePrefix("/_anon/v/")); val f = e?.let { File(vidDir(), it.optString("file")) }
+                if (f != null && f.isFile) serveFile(o, f, range) else send(o, "text/plain; charset=utf-8", "404".toByteArray(), "404 Not Found")
+            }
+            path.startsWith("/_anon/") -> {
+                val id = path.removePrefix("/_anon/"); val e = find(id)
+                if (e == null) send(o, "text/plain; charset=utf-8", "404".toByteArray(), "404 Not Found")
+                else {
+                    fun esc(x: String) = x.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+                    val acct = if (reqProfile() == null) tr("NONE (anonymous test, nobody signed in)", "NENHUMA (teste anônimo, ninguém logado)") else tr("signed in", "logado")
+                    val html = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<body style="margin:0;background:#0f0f0f;color:#fff;font:14px sans-serif">
+<div style="padding:10px"><b>@TITLE@</b><div style="color:#aaa">@CHLABEL@: @CH@</div>
+<div style="margin:6px 0;padding:6px;border-radius:6px;background:#222">👤 @ACCLABEL@: @ACCT@</div></div>
+<video id=v src="/_anon/v/@ID@" controls playsinline autoplay style="width:100%;max-height:60vh;background:#000"></video>
+<pre id=s style="padding:10px;color:#9f9;white-space:pre-wrap"></pre>
+<script>
+var v=document.getElementById('v'),s=document.getElementById('s');
+function log(x){s.textContent+=x+"\n"}
+['loadedmetadata','canplay','playing','pause','ended','waiting','stalled'].forEach(function(n){v.addEventListener(n,function(){log(n=='loadedmetadata'?n+' '+Math.round(v.duration)+'s':n)})});
+v.addEventListener('error',function(){log('@ERR@ (code '+(v.error&&v.error.code)+')')});
+fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP '+r.status+(r.status<300?' ✔ @OK@':' ✖ @BAD@'))}).catch(function(){log('@BAD@')});
+</script>"""
+                        .replace("@TITLE@", esc(e.optString("title"))).replace("@CH@", esc(e.optString("channel"))).replace("@ID@", esc(id))
+                        .replace("@CHLABEL@", tr("channel", "canal")).replace("@ACCLABEL@", tr("Account", "Conta")).replace("@ACCT@", acct)
+                        .replace("@ERR@", tr("ERROR loading the video", "ERRO ao carregar o vídeo"))
+                        .replace("@OK@", tr("plays with no account", "toca sem conta")).replace("@BAD@", tr("blocked without account", "bloqueado sem conta"))
+                    send(o, "text/html; charset=utf-8", html.toByteArray())
+                }
+            }
             path.startsWith("/v/") -> {
                 val e = find(path.removePrefix("/v/")); val f = e?.let { File(vidDir(), it.optString("file")) }
                 if (f != null && f.isFile) serveFile(o, f, range) else send(o, "text/plain; charset=utf-8", "404".toByteArray(), "404 Not Found")
@@ -2823,6 +2881,7 @@ Long-press a tab to rename it.
         busy(1)
         thread {
             var ok = true
+            var actionsUrl: String? = null
             var cwd = File(t.cwd)
             val vars = mutableMapOf<String, String>()
             fun out(s: String) { ui.post { append(t, s) } }
@@ -2842,7 +2901,7 @@ Long-press a tab to rename it.
                             }
                             if (tg2 != null && tg2.isDirectory) { cwd = tg2; true } else { out("cd: ${a.getOrNull(1) ?: ""}: " + tr("No such file or directory", "Arquivo ou diretório inexistente") + "\n"); false }
                         }
-                        a[0] == "git" -> gitRun(a.drop(1), cwd, ::out)
+                        a[0] == "git" -> { val r = gitRun(a.drop(1), cwd, ::out); if (r && a.getOrNull(1) == "push") actionsUrl = ghActionsUrl(cwd); r }
                         a[0] == "unzip" -> unzipRun(a.drop(1), cwd, ::out)
                         else -> {
                             val blocked = guardCheck(seg, cwd)
@@ -2869,9 +2928,24 @@ Long-press a tab to rename it.
                 if (cwd.isDirectory) { t.prev = t.cwd; t.cwd = cwd.path }
                 t.proc = null; busy(-1)
                 if (ok) append(t, "✔\n")
+                val au = actionsUrl
+                if (ok && au != null) {
+                    append(t, tr("opening GitHub Actions window: $au\n", "abrindo a janela do GitHub Actions: $au\n"))
+                    ui.postDelayed({ openWebWindow("GitHub Actions", au) }, 400)
+                }
                 notifyDone(if (ok) tr("✔ Command finished", "✔ Comando concluído") else tr("✖ Command failed", "✖ Comando falhou"), line.take(80), ok)
             }
         }
+    }
+
+    /** Link of the Actions page of the GitHub repo that this folder pushes to (origin), or null. */
+    private fun ghActionsUrl(cwd: File): String? {
+        return try {
+            val repo = org.eclipse.jgit.storage.file.FileRepositoryBuilder().findGitDir(cwd).build()
+            val url = try { repo.config.getString("remote", "origin", "url") } finally { repo.close() }
+            val m = Regex("github\\.com[/:]([^/\\s]+)/([^/\\s]+?)(?:\\.git)?/?$").find(url ?: "") ?: return null
+            "https://github.com/" + m.groupValues[1] + "/" + m.groupValues[2] + "/actions"
+        } catch (e: Exception) { null }
     }
 
     private fun unzipRun(args: List<String>, cwd: File, out: (String) -> Unit): Boolean {
@@ -3553,7 +3627,7 @@ __tw_ok() {
     __d="${'$'}{__p%/*}"; [ "${'$'}__d" = "${'$'}__p" ] && __d=.; [ -z "${'$'}__d" ] && __d=/
     __b="${'$'}{__p##*/}"
     case "${'$'}__b" in ..|.) return 1;; esac
-    __r=${'$'}(cd -P -- "${'$'}__d" 2>/dev/null && pwd -P) || return 1
+    __r=${'$'}(cd -P -- "${'$'}__d" 2>/dev/null && pwd -P) || return 0
     __r="${'$'}__r/${'$'}__b"
   fi
   for __s in ${'$'}TW_SAFE; do case "${'$'}__r" in "${'$'}__s"|"${'$'}__s"/*) return 0;; esac; done
@@ -3755,8 +3829,10 @@ find() {
             }
             // "host" = the phone owner, only when the request comes from the phone itself and NOT through a tunnel/proxy
             val isHost = c.inetAddress.isLoopbackAddress && !fwd && (hostH == "localhost" || hostH == "127.0.0.1" || hostH.isEmpty())
-            if (s.type == "tpl-youtube") ytCtx.set(YtCtx(Regex("(?:^|;\\s*)tws=([0-9a-f]{32})").find(cookie)?.groupValues?.get(1) ?: "", gtok, isHost))
             val path = Uri.decode((first.split(" ").getOrNull(1) ?: "/").substringBefore("?"))
+            // /_anon/... = player test: the request is always treated as a visitor with NO account (never the phone owner)
+            val anon = path.startsWith("/_anon/")
+            if (s.type == "tpl-youtube") ytCtx.set(if (anon) YtCtx("", "", false) else YtCtx(Regex("(?:^|;\\s*)tws=([0-9a-f]{32})").find(cookie)?.groupValues?.get(1) ?: "", gtok, isHost))
             val o = c.getOutputStream()
             when (s.type) {
                 "files" -> serveFiles(o, s, path)
