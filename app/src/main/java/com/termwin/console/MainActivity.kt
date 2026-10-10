@@ -3793,6 +3793,10 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     private fun appDataDir() = File(filesRoot(), "App data").apply { mkdirs() }
 
     private fun apkCmd(t: TabData, line: String): Boolean {
+        if (Regex("^(janela|window)\\s+off$", RegexOption.IGNORE_CASE).matches(line.trim())) {
+            thread { su("settings delete global overlay_display_devices"); ui.post { append(t, tr("virtual window closed\n", "janela virtual fechada\n")) } }
+            return true
+        }
         val m = RE_APK.matchEntire(line.trim()) ?: return false
         var name = m.groupValues[1].trim().trim('"')
         if (listOf(".apk", ".apkm", ".xapk", ".apks").none { name.endsWith(it, true) }) name += ".apk"
@@ -3886,7 +3890,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         return false
     }
 
-    /** Opens an installed app as a floating window (needs root once, to enable freeform windows). */
+    /** Opens an installed app as a floating window (root). Tries freeform mode, then a virtual overlay screen. */
     private fun openAsWindow(t: TabData, pkg: String, label: String) {
         append(t, tr("opening $label…\n", "abrindo $label…\n"))
         thread {
@@ -3895,51 +3899,61 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                 ui.post { append(t, tr("No root access: opening as a normal app.\n", "Sem acesso root: abrindo como app normal.\n")); launchPkg(t, pkg, label) }
                 return@thread
             }
-            val feat = su("pm has-feature android.software.freeform_window_management").second.contains("true")
-            if (ff == false || !feat) {
-                ui.post { append(t, tr("Floating windows turned on with root. Reboot the phone once, then tap Open app again.\n", "Janelas flutuantes ativadas com root. Reinicie o celular uma vez e toque em Abrir app de novo.\n")) }
-                if (ff == false) return@thread
-            }
-            val res = rootFreeformLaunch(pkg)
+            val r = try { rootWindowLaunch(pkg) { m -> ui.post { append(t, m + "\n") } } } catch (e: Exception) { e.message ?: "erro" }
             ui.post {
-                when (res) {
-                    "window" -> append(t, tr("opened $label in a floating window\n", "$label aberto em janela flutuante\n"))
-                    "full" -> append(t, tr("$label opened but Android kept it fullscreen. Feature freeform: $feat. If false, reboot once; if it stays false this ROM has no floating windows.\n", "$label abriu mas o Android manteve em tela cheia. Freeform no sistema: $feat. Se false, reinicie uma vez; se continuar false, essa ROM não tem janelas flutuantes.\n"))
-                    else -> { err(t, tr("root launch failed: $res", "falhou abrir com root: $res")); launchPkg(t, pkg, label) }
-                }
+                if (r != "freeform" && r != "overlay") { err(t, tr("could not open in a window: $r", "não consegui abrir em janela: $r")); launchPkg(t, pkg, label) }
             }
         }
     }
 
-    /** Root: starts the app in FREEFORM mode (5), finds its task and resizes it to a centered window. Returns "window", "full" or an error text. */
-    private fun rootFreeformLaunch(pkg: String): String {
-        val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return "no launcher activity"
-        val cn = launch.component?.flattenToShortString() ?: return "no component"
-        val dm = resources.displayMetrics
-        val sw = maxOf(dm.widthPixels, dm.heightPixels); val sh = minOf(dm.widthPixels, dm.heightPixels)
-        val w = (sw * 0.78).toInt(); val h = (sh * 0.80).toInt()
-        val l = (sw - w) / 2; val tp = (sh - h) / 2
+    /** Task mode (freeform / fullscreen / ...) and id of the app's task, read from dumpsys. */
+    private fun taskInfo(pkg: String): Pair<String, Int>? {
+        val ln = su("dumpsys activity activities").second.lines().firstOrNull { it.contains("Task{") && it.contains(pkg) } ?: return null
+        val mode = Regex("mode=([a-z\\-]+)").find(ln)?.groupValues?.get(1) ?: "?"
+        val id = Regex("#(\\d+)").find(ln)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+        return mode to id
+    }
+
+    private fun displayIds(): Set<Int> {
+        val out = su("dumpsys display").second
+        val a = Regex("(?m)^\\s*Display (\\d+):").findAll(out).map { it.groupValues[1].toInt() }
+        val b = Regex("mDisplayId=(\\d+)").findAll(out).map { it.groupValues[1].toInt() }
+        return (a + b).toSet()
+    }
+
+    /** Root: 1) real freeform window (needs the system feature) 2) virtual overlay screen (a movable window on top of the phone screen). Returns "freeform", "overlay" or an error text. */
+    private fun rootWindowLaunch(pkg: String, say: (String) -> Unit): String {
+        val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return "app sem atividade de launcher"
+        val cn = launch.component?.flattenToShortString() ?: return "app sem componente"
+        val feat = su("pm has-feature android.software.freeform_window_management").second.contains("true")
+        say("android ${Build.VERSION.RELEASE} (api ${Build.VERSION.SDK_INT}) • freeform: $feat")
         su("am force-stop $pkg")
-        val st = su("am start --windowingMode 5 -n $cn")
-        if (st.second.contains("Error", true) || st.second.contains("Exception", true)) return st.second.take(200)
-        Thread.sleep(1500)
-        fun taskLine(): String? {
-            for (cmd in listOf("cmd activity stack list", "am stack list", "dumpsys activity activities")) {
-                val out = su(cmd).second
-                val ln = out.lines().firstOrNull { it.contains("taskId=") && it.contains("$pkg/") }
-                if (ln != null) return ln
+        if (feat) {
+            val dm = resources.displayMetrics
+            val sw = maxOf(dm.widthPixels, dm.heightPixels); val sh = minOf(dm.widthPixels, dm.heightPixels)
+            val w = (sw * 0.78).toInt(); val h = (sh * 0.80).toInt(); val l = (sw - w) / 2; val tp = (sh - h) / 2
+            val st = su("am start --user 0 --windowingMode 5 -n $cn")
+            Thread.sleep(1500)
+            val info = taskInfo(pkg)
+            if (info != null && info.first == "freeform") {
+                if (info.second >= 0) for (c in listOf("am task resize ${info.second} $l $tp ${l + w} ${tp + h}", "cmd activity task resize ${info.second} $l $tp ${l + w} ${tp + h}")) { if (su(c).first == 0) break }
+                say("janela flutuante ativa")
+                return "freeform"
             }
-            return null
-        }
-        var ln = taskLine() ?: return "window" // started in freeform mode; could not read the task list
-        val id = Regex("taskId=(\\d+)").find(ln)?.groupValues?.get(1) ?: return "window"
-        for (cmd in listOf("am task resize $id $l $tp ${l + w} ${tp + h}", "cmd activity task resize $id $l $tp ${l + w} ${tp + h}")) {
-            if (su(cmd).first == 0) break
-        }
-        Thread.sleep(500)
-        ln = taskLine() ?: ln
-        val b = Regex("bounds=\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]").find(ln)?.groupValues?.drop(1)?.map { it.toInt() }
-        return if (b != null && (b[2] - b[0]) >= sw && (b[3] - b[1]) >= sh) "full" else "window"
+            say("freeform: o Android abriu em modo '${info?.first}' ${st.second.take(100)} — tentando tela virtual…")
+            su("am force-stop $pkg")
+        } else say("sem janelas flutuantes no sistema — usando tela virtual (não precisa reiniciar)…")
+
+        // virtual overlay screen: shows a second screen as a window you can drag/pinch over the phone screen
+        su("settings put global force_resizable_activities 1")
+        val before = displayIds()
+        if (before.none { it > 0 }) { su("settings put global overlay_display_devices 1280x720/240"); Thread.sleep(2500) }
+        val now = displayIds().filter { it > 0 }
+        val id = (now.toSet() - before).maxOrNull() ?: now.maxOrNull() ?: return "a tela virtual não foi criada (a ROM bloqueia overlay_display_devices)"
+        val st = su("am start --user 0 --display $id -n $cn")
+        if (st.second.contains("Error", true) || st.second.contains("Exception", true)) return st.second.take(200)
+        say("tela virtual $id criada: o jogo está na janela que apareceu na tela (arraste para mover, pince para ajustar). Para fechar: janela off")
+        return "overlay"
     }
 
     /** apk//open// only finds the file and shows this window. Nothing is opened or installed until you tap a button. */
