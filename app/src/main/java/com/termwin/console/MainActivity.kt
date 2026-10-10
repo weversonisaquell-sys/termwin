@@ -52,7 +52,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "2.0"
+const val VERSION = "2.2"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -215,6 +215,7 @@ class MainActivity : Activity() {
   creat//Projeto//html//index.html   cria o arquivo em Files/Projects/Projeto e abre o editor (py, js, css, json…)
   open//Projeto//index.html  abre o arquivo no editor
   copy NomePasta             procura no celular todo e copia para Files/Copied/NomePasta
+  copy                       abre o seletor para copiar pastas de OUTROS apps (ex.: Termux) para Files/Copied  |  depois: cd copied/NomePasta
   🛡 PROTEÇÃO: rm, mv, find -delete etc. só funcionam dentro da pasta do app (~). Fora dela (Download, fotos…) são bloqueados.
   projetos                   lista os projetos
   ls storage                 mostra tudo de storage/emulated/0 com ícone de pasta (ls storage -r = com subpastas)
@@ -274,6 +275,7 @@ Toque e segure numa aba para renomear.
   creat//Project//html//index.html   create the file in Files/Projects/Project and open the editor (py, js, css, json…)
   open//Project//index.html  open the file in the editor
   copy FolderName            search the whole phone and copy to Files/Copied/FolderName
+  copy                       opens the picker to copy folders from OTHER apps (e.g. Termux) to Files/Copied  |  then: cd copied/FolderName
   🛡 PROTECTION: rm, mv, find -delete etc. only work inside the app folder (~). Anywhere else (Downloads, photos…) they are blocked.
   projects                   list projects
   ls storage                 show everything in storage/emulated/0 with folder icons (ls storage -r = with subfolders)
@@ -548,6 +550,7 @@ Long-press a tab to rename it.
         super.onActivityResult(req, res, data)
         if (req == 78) { val cb = pendingAuth; pendingAuth = null; if (res == RESULT_OK) cb?.invoke() else toast(tr("Not authenticated", "Não autenticado")); return }
         if (req == 79) { if (res == RESULT_OK) data?.data?.let { showPublish(it) }; return }
+        if (req == 80) { if (res == RESULT_OK) data?.data?.let { copyFromTree(it) } else copyTab?.let { append(it, tr("copy cancelled\n", "cópia cancelada\n")) }; return }
         if (req != 77 || res != RESULT_OK) return
         val uri = data?.data ?: return
         importUri(uri)
@@ -1239,7 +1242,7 @@ Long-press a tab to rename it.
     private fun exec(t: TabData, rawLine: String) {
         if (rawLine.isEmpty()) return
         val line = expandAlias(rawLine)
-        if (t.tpl.isNotEmpty()) { tplExec(t, line); saveSoon(); return }
+        if (t.tpl.isNotEmpty()) { if (!line.contains("//") && splitChain(line).size > 1) chain(t, line) else tplExec(t, line); saveSoon(); return }
         if (needsChain(line)) { chain(t, line); saveSoon(); return }
         if (fileCmd(t, line)) { saveSoon(); return }
         val p = line.split(" ").filter { it.isNotEmpty() }
@@ -2291,6 +2294,64 @@ Long-press a tab to rename it.
         JSONObject(prefs.getString("profile", "") ?: "").takeIf { it.optString("email").isNotEmpty() }
     } catch (e: Exception) { null }
 
+
+    // ---------- YouTube: one identity per visitor (Google sign-in, no password ever reaches TermWin) ----------
+    private class YtCtx(val sid: String, val token: String, val host: Boolean)
+    private val ytCtx = ThreadLocal<YtCtx?>()
+    private fun ytUsers(): JSONObject = try { JSONObject(prefs.getString("yt_users", "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
+    private fun ytSess(): JSONObject = try { JSONObject(prefs.getString("yt_sessions", "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
+    /** Profile of whoever made THIS request: the phone owner (only from the phone itself) or the visitor's Google session. */
+    private fun reqProfile(): JSONObject? {
+        val c = ytCtx.get() ?: return profile()
+        if (c.host) return profile()
+        val email = ytSess().optString(c.sid)
+        return if (email.isEmpty()) null else ytUsers().optJSONObject(email)
+    }
+    private fun httpGetJson(url: String, bearer: String?): JSONObject? = try {
+        val cn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        cn.connectTimeout = 8000; cn.readTimeout = 8000
+        if (bearer != null) cn.setRequestProperty("Authorization", "Bearer $bearer")
+        if (cn.responseCode in 200..299) JSONObject(cn.inputStream.bufferedReader().readText()) else null
+    } catch (e: Exception) { null }
+
+    /** Checks the Google access token (must belong to OUR client id and a verified e-mail), reads the YouTube channel and saves the profile. The token itself is never stored. */
+    private fun googleLogin(tok: String): JSONObject {
+        val cid = prefs.getString("google_client_id", "") ?: ""
+        if (cid.isEmpty()) return JSONObject().put("err", "no-client-id")
+        if (tok.isEmpty()) return JSONObject().put("err", "no-token")
+        val ti = httpGetJson("https://oauth2.googleapis.com/tokeninfo?access_token=" + Uri.encode(tok), null) ?: return JSONObject().put("err", "invalid-token")
+        if (ti.optString("aud") != cid) return JSONObject().put("err", "wrong-client-id")
+        if (ti.optString("email_verified") != "true" || ti.optString("email").isEmpty()) return JSONObject().put("err", "email-not-verified")
+        val email = ti.optString("email").lowercase()
+        val ui = httpGetJson("https://www.googleapis.com/oauth2/v3/userinfo", tok)
+        val ch = httpGetJson("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", tok)
+        val c0 = ch?.optJSONArray("items")?.optJSONObject(0)
+        val sn = c0?.optJSONObject("snippet"); val th = sn?.optJSONObject("thumbnails")
+        val pic = if (c0 == null) "" else (th?.optJSONObject("medium")?.optString("url") ?: th?.optJSONObject("default")?.optString("url") ?: "")
+        var name = (sn?.optString("title") ?: "").ifEmpty { ui?.optString("name") ?: "" }.ifEmpty { email.substringBefore('@') }
+        val users = ytUsers()
+        val taken = (profile()?.optString("channel")?.equals(name, true) == true) ||
+            users.keys().asSequence().any { k -> k != email && users.getJSONObject(k).optString("channel").equals(name, true) }
+        if (taken) name = name + " (" + email.substringBefore('@') + ")"
+        val prof = JSONObject().put("email", email).put("channel", name).put("name", name).put("pic", pic)
+            .put("channelId", c0?.optString("id") ?: "").put("hasChannel", c0 != null)
+            .put("created", users.optJSONObject(email)?.optLong("created", 0L)?.takeIf { it > 0 } ?: System.currentTimeMillis())
+        users.put(email, prof); prefs.edit().putString("yt_users", users.toString()).apply()
+        return prof
+    }
+
+    private fun googleCmd(t: TabData, rest: String) {
+        val a = rest.trim(); val cur = prefs.getString("google_client_id", "") ?: ""
+        when {
+            a.isEmpty() -> append(t, tr(
+                "Google sign-in for the YouTube template (status: ${if (cur.isEmpty()) "OFF" else "ON"})\n1) console.cloud.google.com → new project → enable 'YouTube Data API v3'\n2) OAuth consent screen: External, add scope youtube.readonly, then Publish app\n3) Credentials → OAuth client ID → Web application → 'Authorized JavaScript origins' = the public https address of your server\n4) run: google YOUR_ID.apps.googleusercontent.com\nFor people anywhere in the world the server needs a public address, e.g. in Termux: cloudflared tunnel --url http://localhost:PORT\n",
+                "Login Google no modelo YouTube (situação: ${if (cur.isEmpty()) "DESLIGADO" else "LIGADO"})\n1) console.cloud.google.com → novo projeto → ative 'YouTube Data API v3'\n2) Tela de consentimento OAuth: Externo, adicione o escopo youtube.readonly e Publique o app\n3) Credenciais → ID do cliente OAuth → Aplicativo da Web → 'Origens JavaScript autorizadas' = endereço público https do seu servidor\n4) rode: google SEU_ID.apps.googleusercontent.com\nPara gente do mundo todo o servidor precisa de endereço público, ex. no Termux: cloudflared tunnel --url http://localhost:PORTA\n"))
+            a == "clear" || a == "limpar" -> { prefs.edit().remove("google_client_id").apply(); append(t, tr("Google sign-in turned off\n", "Login Google desligado\n")) }
+            a.endsWith(".apps.googleusercontent.com") -> { prefs.edit().putString("google_client_id", a).apply(); append(t, tr("Google sign-in saved. Restart the YouTube server.\n", "Login Google salvo. Reinicie o servidor do YouTube.\n")) }
+            else -> err(t, tr("usage: google YOUR_ID.apps.googleusercontent.com | google clear", "uso: google SEU_ID.apps.googleusercontent.com | google limpar"))
+        }
+    }
+
     private fun showProfile() {
         val pr = profile()
         val p = panel(tr("Profile", "Perfil"), 0.55f)
@@ -2493,7 +2554,7 @@ Long-press a tab to rename it.
         synchronized(vlock) { try { File(vidDir(), n).writeText(a.toString()) } catch (e: Exception) { logError("video", e.message ?: "write") } }
     }
     private fun addPost(text: String): Boolean {
-        val me = profile() ?: return false
+        val me = reqProfile() ?: return false
         val t = text.trim().take(500)
         if (t.isEmpty()) return false
         synchronized(vlock) {
@@ -2505,7 +2566,7 @@ Long-press a tab to rename it.
         return true
     }
     private fun addComment(vid: String, text: String): Boolean {
-        val me = profile() ?: return false
+        val me = reqProfile() ?: return false
         val t = text.trim().take(300)
         if (t.isEmpty() || vid.isEmpty()) return false
         synchronized(vlock) {
@@ -2560,7 +2621,7 @@ Long-press a tab to rename it.
         when {
             path == "/api/chsubs" -> jsonOut(o, chSubsRead())
             path == "/api/posts" -> {
-                val a = jaRead("posts.json"); val me = profile()?.optString("channel") ?: ""; val out = JSONArray()
+                val a = jaRead("posts.json"); val me = reqProfile()?.optString("channel") ?: ""; val out = JSONArray()
                 for (i in a.length() - 1 downTo 0) { val x = a.getJSONObject(i)
                     out.put(JSONObject().put("id", x.optString("id")).put("channel", x.optString("channel")).put("text", x.optString("text"))
                         .put("ts", x.optLong("ts")).put("likes", x.optInt("likes")).put("my", x.optInt("my"))
@@ -2576,7 +2637,7 @@ Long-press a tab to rename it.
                 jaWrite("posts.json", a); jsonOut(o, res)
             }
             path == "/api/postdel" -> synchronized(vlock) {
-                val a = jaRead("posts.json"); val id = qp("id"); val me = profile()?.optString("channel") ?: ""; val out = JSONArray()
+                val a = jaRead("posts.json"); val id = qp("id"); val me = reqProfile()?.optString("channel") ?: ""; val out = JSONArray()
                 for (i in 0 until a.length()) { val x = a.getJSONObject(i)
                     if (!(x.optString("id") == id && me.isNotEmpty() && me.equals(x.optString("channel"), true))) out.put(x) }
                 jaWrite("posts.json", out); jsonOut(o, JSONObject().put("ok", true))
@@ -2608,13 +2669,30 @@ Long-press a tab to rename it.
                 for (i in a.length() - 1 downTo 0) out.put(pubVid(a.getJSONObject(i)))
                 jsonOut(o, out)
             }
-            path == "/api/me" -> jsonOut(o, JSONObject().put("name", profile()?.optString("channel") ?: ""))
+            path == "/api/me" -> { val me = reqProfile()
+                jsonOut(o, JSONObject().put("name", me?.optString("channel") ?: "").put("pic", me?.optString("pic") ?: "").put("clientId", prefs.getString("google_client_id", "") ?: "")) }
+            path == "/api/avatars" -> { val u = ytUsers(); val out = JSONObject()
+                u.keys().forEach { k -> val x = u.getJSONObject(k); if (x.optString("pic").isNotEmpty()) out.put(x.optString("channel").lowercase(), x.optString("pic")) }
+                jsonOut(o, out) }
+            path == "/api/glogin" -> {
+                val prof = googleLogin(ytCtx.get()?.token ?: "")
+                if (prof.has("err")) jsonOut(o, JSONObject().put("ok", false).put("err", prof.optString("err")))
+                else {
+                    val rnd = java.security.SecureRandom(); val sid = ByteArray(16).also { rnd.nextBytes(it) }.joinToString("") { "%02x".format(it) }
+                    val ss = ytSess(); ss.put(sid, prof.optString("email")); prefs.edit().putString("yt_sessions", ss.toString()).apply()
+                    send(o, "application/json; charset=utf-8", JSONObject().put("ok", true).put("name", prof.optString("channel")).put("hasChannel", prof.optBoolean("hasChannel")).toString().toByteArray(),
+                        "200 OK", "Set-Cookie: tws=$sid; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax\r\n")
+                }
+            }
+            path == "/api/logout" -> { val sid = ytCtx.get()?.sid ?: ""
+                if (sid.isNotEmpty()) { val ss = ytSess(); ss.remove(sid); prefs.edit().putString("yt_sessions", ss.toString()).apply() }
+                send(o, "application/json; charset=utf-8", "{\"ok\":true}".toByteArray(), "200 OK", "Set-Cookie: tws=; Path=/; Max-Age=0\r\n") }
             path == "/api/channel" -> {
                 val name = qp("name")
                 val a = vidsRead(); val list = JSONArray(); var views = 0L; var first = Long.MAX_VALUE
                 for (i in a.length() - 1 downTo 0) { val e = a.getJSONObject(i)
                     if (e.optString("channel").equals(name, true)) { list.put(pubVid(e)); views += e.optInt("views"); first = minOf(first, e.optLong("ts")) } }
-                val me = profile()
+                val me = reqProfile()
                 val own = me != null && me.optString("channel").equals(name, true)
                 val since = if (own) me!!.optLong("created", if (first == Long.MAX_VALUE) System.currentTimeMillis() else first) else if (first == Long.MAX_VALUE) 0L else first
                 jsonOut(o, JSONObject().put("exists", own || list.length() > 0).put("name", name).put("own", own)
@@ -3003,6 +3081,8 @@ Long-press a tab to rename it.
         val ext = Environment.getExternalStorageDirectory()
         val bases = mutableListOf<Pair<File, String>>()
         val low = s0.lowercase()
+        if (low == "copied") return copiedDir()
+        if (low.startsWith("copied/")) File(copiedDir(), s0.drop(7)).takeIf { it.exists() }?.let { return it }
         when {
             s0.startsWith("~/") -> bases.add(filesDir to s0.drop(2))
             s0.startsWith("/") -> bases.add(File("/") to s0.drop(1))
@@ -3162,9 +3242,63 @@ Long-press a tab to rename it.
         } else { try { src.copyTo(dst, true); cnt[0]++ } catch (e: Exception) { cnt[1]++ } }
     }
 
+
+    // ---------- copy from other apps (Termux...) through Android's folder picker ----------
+    private var copyTab: TabData? = null
+
+    private fun pickCopy(t: TabData) {
+        copyTab = t
+        append(t, tr("Opening Android's folder picker… tap ☰ (top left), choose \"Termux\" (or another app), open the folder you want (e.g. TermWin) and tap \"Use this folder\".\n",
+            "Abrindo o seletor de pastas do Android… toque em ☰ (canto de cima), escolha \"Termux\" (ou outro app), entre na pasta que quer (ex.: TermWin) e toque em \"Usar esta pasta\".\n"))
+        try { @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 80) } catch (e: Exception) { err(t, "copy: " + (e.message ?: "")) }
+    }
+
+    private fun copyTree(tree: Uri, docId: String, dst: File, cnt: IntArray, depth: Int) {
+        if (depth > 40) return
+        val dc = android.provider.DocumentsContract
+        val kids = dc.buildChildDocumentsUriUsingTree(tree, docId)
+        val cols = arrayOf(dc.Document.COLUMN_DOCUMENT_ID, dc.Document.COLUMN_DISPLAY_NAME, dc.Document.COLUMN_MIME_TYPE)
+        val rows = mutableListOf<Triple<String, String, String>>()
+        contentResolver.query(kids, cols, null, null, null)?.use { c -> while (c.moveToNext()) rows.add(Triple(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: "")) }
+        for ((id, nm, mime) in rows) {
+            val clean = safe(nm)
+            if (id.isEmpty() || nm == "." || nm == "..") continue
+            val out = File(dst, clean)
+            if (mime == dc.Document.MIME_TYPE_DIR) { out.mkdirs(); copyTree(tree, id, out, cnt, depth + 1) }
+            else try {
+                contentResolver.openInputStream(dc.buildDocumentUriUsingTree(tree, id))!!.use { i -> out.outputStream().use { o -> i.copyTo(o) } }
+                cnt[0]++
+            } catch (e: Exception) { cnt[1]++ }
+        }
+    }
+
+    private fun copyFromTree(tree: Uri) {
+        val t = copyTab ?: tabs.firstOrNull() ?: return
+        busy(1)
+        thread {
+            try {
+                val dc = android.provider.DocumentsContract
+                val rootId = dc.getTreeDocumentId(tree)
+                val nm = contentResolver.query(dc.buildDocumentUriUsingTree(tree, rootId), arrayOf(dc.Document.COLUMN_DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: rootId.substringAfterLast('/')
+                val base = safe(nm.ifEmpty { "Copied" })
+                var dst = File(copiedDir(), base); var i = 2
+                while (dst.exists()) { dst = File(copiedDir(), base + "_" + i); i++ }
+                dst.mkdirs()
+                val cnt = intArrayOf(0, 0)
+                copyTree(tree, rootId, dst, cnt, 0)
+                ui.post {
+                    append(t, tr("copied ${cnt[0]} file(s) to ", "copiados ${cnt[0]} arquivo(s) para ") + short(dst.path) + (if (cnt[1] > 0) tr("  (${cnt[1]} failed)", "  (${cnt[1]} falharam)") else "") + "\n" +
+                        tr("go there with: cd copied/${dst.name}\n", "entre nela com: cd copied/${dst.name}\n"))
+                }
+            } catch (e: Exception) { ui.post { err(t, "copy: ${e.message}") } }
+            ui.post { busy(-1) }
+        }
+    }
+
     private fun copyCmd(t: TabData, nameRaw: String) {
         val name = nameRaw.trim().removeSurrounding("\"").removeSurrounding("'")
-        if (name.isEmpty()) { err(t, tr("usage: copy FolderName   (searches the whole phone and copies to Files/Copied)", "uso: copy NomeDaPasta   (procura no celular todo e copia para Files/Copied)")); return }
+        if (name.isEmpty() || name.lowercase() in listOf("pick", "-p", "escolher", "app", "apps")) { pickCopy(t); return }
         append(t, tr("searching \"$name\" on the phone…\n", "procurando \"$name\" no celular…\n"))
         busy(1)
         thread {
@@ -3172,9 +3306,9 @@ Long-press a tab to rename it.
                 val src = findAnywhere(name, t)
                 if (src == null) {
                     ui.post {
-                        err(t, tr("copy: \"$name\" not found.", "copy: \"$name\" não encontrado.") +
-                            (if (!storageOk()) tr(" Turn on storage in ⚙ Settings.", " Ligue o armazenamento em ⚙ Configurações.") else "") +
-                            tr(" (Termux's private home can't be read by other apps — copy it to shared storage first, e.g. cp -r ~/TermWin ~/storage/shared/)", " (a home privada do Termux não pode ser lida por outros apps — copie antes para o armazenamento, ex.: cp -r ~/TermWin ~/storage/shared/)"))
+                        append(t, tr("\"$name\" is not in shared storage — Android hides other apps' files (like Termux). Use the picker:\n", "\"$name\" não está no armazenamento — o Android esconde os arquivos de outros apps (como o Termux). Use o seletor:\n") +
+                            (if (!storageOk()) tr("(tip: turn on storage in ⚙ Settings)\n", "(dica: ligue o armazenamento em ⚙ Configurações)\n") else ""))
+                        pickCopy(t)
                     }
                 } else {
                     var dst = File(copiedDir(), src.name)
@@ -3228,6 +3362,7 @@ Long-press a tab to rename it.
         when (c) {
             "creat", "create" -> creatCmd(t, if (rest.isEmpty()) emptyList() else rest.split("//").map { it.trim() }.filter { it.isNotEmpty() })
             "copy", "copiar" -> copyCmd(t, rest)
+            "google" -> googleCmd(t, rest)
             "cd" -> {
                 val tg = when { rest.isEmpty() -> filesDir; rest == "-" -> File(t.prev.ifEmpty { t.cwd }); else -> resolvePath(t, rest) }
                 if (tg != null && tg.isDirectory) { t.prev = t.cwd; t.cwd = tg.path }
@@ -3593,8 +3728,8 @@ find() {
         serversRefresh?.invoke()
     }
 
-    private fun send(o: OutputStream, ctype: String, data: ByteArray, status: String = "200 OK") {
-        o.write("HTTP/1.1 $status\r\nContent-Type: $ctype\r\nContent-Length: ${data.size}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n".toByteArray())
+    private fun send(o: OutputStream, ctype: String, data: ByteArray, status: String = "200 OK", extra: String = "") {
+        o.write("HTTP/1.1 $status\r\nContent-Type: $ctype\r\nContent-Length: ${data.size}\r\nAccess-Control-Allow-Origin: *\r\n${extra}Connection: close\r\n\r\n".toByteArray())
         o.write(data)
     }
 
@@ -3609,8 +3744,19 @@ find() {
             val r = c.getInputStream().bufferedReader()
             val first = r.readLine() ?: return
             var range: String? = null
+            var cookie = ""; var gtok = ""; var fwd = false; var hostH = ""
             var l = r.readLine()
-            while (l != null && l.isNotEmpty()) { if (l.startsWith("Range:", true)) range = l.substringAfter(":").trim(); l = r.readLine() }
+            while (l != null && l.isNotEmpty()) {
+                if (l.startsWith("Range:", true)) range = l.substringAfter(":").trim()
+                else if (l.startsWith("Cookie:", true)) cookie = l.substringAfter(":").trim()
+                else if (l.startsWith("X-G-Token:", true)) gtok = l.substringAfter(":").trim()
+                else if (l.startsWith("Host:", true)) hostH = l.substringAfter(":").trim().substringBefore(":").lowercase()
+                else if (l.startsWith("X-Forwarded", true) || l.startsWith("Forwarded:", true) || l.startsWith("CF-Connecting-IP", true) || l.startsWith("X-Real-IP", true) || l.startsWith("True-Client-IP", true)) fwd = true
+                l = r.readLine()
+            }
+            // "host" = the phone owner, only when the request comes from the phone itself and NOT through a tunnel/proxy
+            val isHost = c.inetAddress.isLoopbackAddress && !fwd && (hostH == "localhost" || hostH == "127.0.0.1" || hostH.isEmpty())
+            if (s.type == "tpl-youtube") ytCtx.set(YtCtx(Regex("(?:^|;\\s*)tws=([0-9a-f]{32})").find(cookie)?.groupValues?.get(1) ?: "", gtok, isHost))
             val path = Uri.decode((first.split(" ").getOrNull(1) ?: "/").substringBefore("?"))
             val o = c.getOutputStream()
             when (s.type) {
@@ -3632,6 +3778,7 @@ find() {
             o.flush()
         } catch (e: Exception) {
         } finally {
+            ytCtx.remove()
             try { c.close() } catch (e: Exception) { }
         }
     }

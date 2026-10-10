@@ -196,7 +196,13 @@ function fmt(ms){var s=Math.max(0,Math.round(ms/1000)),h=Math.floor(s/3600),m=Ma
 function ago(t){var d=(Date.now()-t)/1000;if(d<60)return'agora há pouco';if(d<3600)return'há '+Math.floor(d/60)+' min';if(d<86400)return'há '+Math.floor(d/3600)+' h';return'há '+Math.floor(d/86400)+' dias'}
 function nv(n){n=n||0;return n>=1e6?(n/1e6).toFixed(1).replace('.',',')+' mi':n>=1000?(n/1000).toFixed(1).replace('.',',')+' mil':n}
 function col(n){var h=0;for(var i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))%360;return'hsl('+h+',55%,45%)'}
-function av(n,c){return'<b class="av '+(c||'')+'" style="background:'+col(n)+'" data-ch="'+e(n)+'">'+e((n||'?').charAt(0).toUpperCase())+'</b>'}
+var pics={};function pu(p){return'url(\''+encodeURI(p).replace(/'/g,'%27')+'\') center/cover'}
+function av(n,c){var p=pics[(n||'').toLowerCase()];return'<b class="av '+(c||'')+'" style="background:'+(p?pu(p):col(n))+'" data-ch="'+e(n)+'">'+(p?'':e((n||'?').charAt(0).toUpperCase()))+'</b>'}
+var gcid='',gtc=null;
+function gload(cb){if(window.google&&google.accounts&&google.accounts.oauth2){cb();return}var s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.async=true;s.onload=cb;document.head.appendChild(s)}
+function ginit(){if(gtc||!gcid||!(window.google&&google.accounts&&google.accounts.oauth2))return;gtc=google.accounts.oauth2.initTokenClient({client_id:gcid,scope:'openid email profile https://www.googleapis.com/auth/youtube.readonly',callback:function(r){if(!r||!r.access_token){tt('Login cancelado');return}
+  fetch('/api/glogin',{headers:{'X-G-Token':r.access_token}}).then(function(x){return x.json()}).then(function(j){if(j.ok){tt('Bem-vindo, '+j.name+(j.hasChannel?'':' (sem canal no YouTube)'));setTimeout(function(){location.reload()},900)}else tt('Não deu para entrar ('+(j.err||'erro')+')')}).catch(function(){tt('Falha na conexão')})}})}
+function gsign(){if(!gcid){tt('Login com Google ainda não foi ligado neste servidor');return}if(gtc){gtc.requestAccessToken();return}gload(function(){ginit();if(gtc)gtc.requestAccessToken()})}
 function im(v){return'<img loading="lazy" src="/t/'+encodeURIComponent(v.id)+'" alt="">'}
 function get(id){return vids.filter(function(x){return x.id==id})[0]}
 function sc(n){return cs[n.toLowerCase()]||0}
@@ -248,7 +254,7 @@ function react(id,r,n){var v=get(id);if(!v)return;var nr=v.my==r?0:r;fetch('/api
   var a=$('bl'),b=$('bd');if(a&&id==curId&&cur=='wp'){a.className='pl'+(v.my==1?' on':'');a.lastChild.textContent=nv(v.likes);b.className='pl dis'+(v.my==-1?' on':'');b.lastChild.textContent=nv(v.dislikes)}
   var s=document.querySelector('.sv[data-v="'+id+'"]');if(s){var x1=s.querySelector('[data-a=like]'),x2=s.querySelector('[data-a=dis]');x1.className=v.my==1?'on':'';x1.lastChild.textContent=nv(v.likes);x2.className='dis'+(v.my==-1?' on':'')}})}
 function tt(m){var x=$('tt');x.textContent=m;x.className='on';clearTimeout(tt.h);tt.h=setTimeout(function(){x.className=''},2200)}
-function needProf(){tt('Entre com seu perfil antes (botão 👤)');if(window.TW&&TW.profile)TW.profile()}
+function needProf(){tt('Entre com sua conta antes');if(window.TW&&TW.profile)TW.profile();else gsign()}
 function openS(id){var l=vids.filter(function(v){return v.short}),el=$('shv'),ix=0;sN=l.length;
   if(!l.length){el.innerHTML='<div class="emp">Ainda não há Shorts.<br>Vídeos verticais de até 3 min viram Shorts quando você publica.</div>';show('shv');return}
   el.innerHTML='<div class="trk" id="trk">'+l.map(function(v,i){if(v.id==id)ix=i;var hd='@'+e(v.channel.toLowerCase().replace(/[^a-z0-9]/g,''));
@@ -307,7 +313,7 @@ function dados(c){var vs=c.videos,L=0,D=0;vs.forEach(function(v){L+=v.likes||0;D
   (top?'<div class="s" style="padding:0 16px 24px">Mais assistido: <b>'+e(top.title)+'</b> — '+nv(top.views)+' visualizações. Barras = visualizações dos seus últimos vídeos.</div>':'')}
 function rCh(){var c=chan;if(!c.exists){$('ch').innerHTML='<div class="emp">Este canal ainda não tem vídeos.</div>';return}
   var l=c.videos.filter(function(v){return ctab=='s'?!!v.short:!v.short});
-  $('ch').innerHTML='<div style="height:84px;background:linear-gradient(120deg,'+col(c.name)+',#1a1b1f)"></div><div class="row" style="padding:14px 16px;gap:16px">'+av(c.name,'big')+'<div style="flex:1;min-width:140px"><div style="font-size:22px;font-weight:700">'+e(c.name)+'</div><div class="s">'+e(c.handle)+' • '+nv(c.subs)+' inscritos • '+c.videos.length+' vídeos • '+nv(c.views)+' visualizações</div></div>'+(c.own?'<button class="btn" data-a="pub">Publicar vídeo</button><button class="btn al" data-a="pst">Novo post</button>':sbtn(c.name))+'</div>'+
+  $('ch').innerHTML='<div style="height:84px;background:linear-gradient(120deg,'+col(c.name)+',#1a1b1f)"></div><div class="row" style="padding:14px 16px;gap:16px">'+av(c.name,'big')+'<div style="flex:1;min-width:140px"><div style="font-size:22px;font-weight:700">'+e(c.name)+'</div><div class="s">'+e(c.handle)+' • '+nv(c.subs)+' inscritos • '+c.videos.length+' vídeos • '+nv(c.views)+' visualizações</div></div>'+(c.own?(window.TW?'<button class="btn" data-a="pub">Publicar vídeo</button>':'')+'<button class="btn al" data-a="pst">Novo post</button>'+(window.TW?'':'<button class="btn al" data-a="out">Sair</button>'):sbtn(c.name))+'</div>'+
   '<div class="chips" style="border-bottom:1px solid var(--c2)"><button class="chip'+(ctab=='v'?' on':'')+'" data-tab="v">Vídeos</button><button class="chip'+(ctab=='s'?' on':'')+'" data-tab="s">Shorts</button><button class="chip'+(ctab=='p'?' on':'')+'" data-tab="p">Posts</button>'+(c.own?'<button class="chip'+(ctab=='d'?' on':'')+'" data-tab="d">Dados do canal</button>':'')+'</div>'+
   (ctab=='p'?'<div id="chp"><div class="emp">Carregando…</div></div>':ctab=='d'&&c.own?dados(c):(l.length?(ctab=='s'?'<div class="shl" style="flex-wrap:wrap">'+l.map(sct).join('')+'</div>':'<div class="gr">'+l.map(card).join('')+'</div>'):'<div class="emp">Nada aqui ainda.</div>'));if(ctab=='p')loadChP(c.name)}
 function you(){fetch('/api/me').then(function(r){return r.json()}).then(function(m){if(m.name){ctab='v';openChannel(m.name);return}
@@ -335,7 +341,8 @@ function act(a,n){var id=(n&&n.getAttribute('data-sh'))||curId,d=$('vd');
   else if(a=='wcsend')sendCm($('wcin'),curId,function(){loadWc(curId)});
   else if(a=='mute'){shMute=!shMute;[].forEach.call(document.querySelectorAll('.sf video'),function(x){x.muted=shMute});[].forEach.call(document.querySelectorAll('[data-a=mute]'),function(b){b.innerHTML=ic(shMute?'mute':'vol',20)})}
   else if(a=='sfs'){document.body.classList.toggle('sfs');setTimeout(lay,80)}
-  else if(a=='prof'){if(window.TW&&TW.profile)TW.profile()}
+  else if(a=='prof'){if(window.TW&&TW.profile)TW.profile();else gsign()}
+  else if(a=='out'){fetch('/api/logout').then(function(){location.reload()})}
   else if(a=='back')show(pr==cur?'home':pr);
   else if(a=='like')react(id,1,n);
   else if(a=='dis')react(id,-1,n);
@@ -364,11 +371,11 @@ document.addEventListener('click',function(ev){var t=ev.target;
 $('q').oninput=function(){find(this.value)};
 $('q').onkeydown=function(ev){if(ev.key=='Enter')this.blur()};
 function load(){var j=function(u,f){return fetch(u).then(function(r){return r.json()}).catch(function(){return f})};
-  Promise.all([j('/api/videos',[]),j('/api/subs',[]),j('/api/chsubs',{})]).then(function(a){vids=a[0];subs=a[1];cs=a[2];
+  Promise.all([j('/api/videos',[]),j('/api/subs',[]),j('/api/chsubs',{}),j('/api/avatars',{})]).then(function(a){vids=a[0];subs=a[1];cs=a[2];pics=a[3]||{};
   var cn={};vids.forEach(function(v){cn[v.channel]=(cn[v.channel]||0)+1});vids.forEach(function(v){v.channelVideos=cn[v.channel]});badge();
   if(cur=='home')rHome();else if(cur=='sbv')rSubs();else if(cur=='rs')rRes();else if(cur=='shv'&&!$('shv').querySelector('.sv'))openS()})}
 icons();
-fetch('/api/me').then(function(r){return r.json()}).then(function(m){if(m.name){$('hav').textContent=m.name.charAt(0).toUpperCase();$('hav').style.background=col(m.name)}}).catch(function(){});
+fetch('/api/me').then(function(r){return r.json()}).then(function(m){gcid=m.clientId||'';if(gcid&&!window.TW)gload(ginit);if(m.name){if(m.pic){$('hav').textContent='';$('hav').style.background=pu(m.pic)}else{$('hav').textContent=m.name.charAt(0).toUpperCase();$('hav').style.background=col(m.name)}}}).catch(function(){});
 rHome();load();
 setTimeout(function(){var s=$('sp');s.style.opacity=0;setTimeout(function(){s.remove()},450)},1300);
 </script>
