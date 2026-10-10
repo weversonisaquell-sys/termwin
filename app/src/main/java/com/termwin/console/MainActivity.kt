@@ -607,7 +607,7 @@ Long-press a tab to rename it.
     override fun onStop() { super.onStop(); bg = true; keepAlive() }
     override fun onResume() { super.onResume(); settingsSync?.invoke(); ensureStorageLinks() }
     override fun onPause() { super.onPause(); save() }
-    override fun onDestroy() { if (instance === this) instance = null; super.onDestroy() }
+    override fun onDestroy() { if (instance === this) instance = null; try { instRx?.let { unregisterReceiver(it) } } catch (e: Exception) { }; instRx = null; super.onDestroy() }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
@@ -3841,13 +3841,16 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     private fun openApk(t: TabData, f: File) {
         val pm = packageManager
         val info = try { pm.getPackageArchiveInfo(f.path, 0)?.also { it.applicationInfo?.sourceDir = f.path; it.applicationInfo?.publicSourceDir = f.path } } catch (e: Exception) { null }
-        if (info == null) { err(t, tr("not a valid apk: ${f.name}", "apk inválido: ${f.name}")); return }
+        if (info == null) {
+            if (isBundle(f)) openBundle(t, f) else err(t, tr("not a valid apk: ${f.name}", "apk inválido: ${f.name}"))
+            return
+        }
         val pkg = info.packageName
         val label = try { info.applicationInfo?.loadLabel(pm)?.toString() } catch (e: Exception) { null } ?: f.nameWithoutExtension
         append(t, "$label  ($pkg)\n${short(f.path)}\n")
         // the APK's folder goes to Files/App data/<name>
         val dir = File(appDataDir(), safeSeg(f.nameWithoutExtension))
-        if (dir.isDirectory && (dir.list()?.isNotEmpty() == true)) append(t, tr("app data: ${short(dir.path)}\n", "app data: ${short(dir.path)}\n"))
+        if (dir.isDirectory && (dir.list()?.any { !it.equals(f.name, true) } == true)) append(t, tr("app data: ${short(dir.path)}\n", "app data: ${short(dir.path)}\n"))
         else thread {
             try {
                 dir.mkdirs()
@@ -3855,19 +3858,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                 ui.post { append(t, tr("app data: $n files → ${short(dir.path)}\n", "app data: $n arquivos → ${short(dir.path)}\n")) }
             } catch (e: Exception) { ui.post { err(t, "app data: ${e.message}") } }
         }
-        val launch = pm.getLaunchIntentForPackage(pkg)
-        if (launch != null) {
-            try {
-                val dm = resources.displayMetrics
-                val w = (dm.widthPixels * 0.88).toInt(); val h = (dm.heightPixels * 0.86).toInt()
-                val l = (dm.widthPixels - w) / 2; val tp = (dm.heightPixels - h) / 2
-                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                val opts = ActivityOptions.makeBasic().setLaunchBounds(android.graphics.Rect(l, tp, l + w, tp + h))
-                startActivity(launch, opts.toBundle())
-                append(t, tr("opening $label in a window…\n", "abrindo $label em uma janela…\n"))
-            } catch (e: Exception) { err(t, "apk: ${e.message}") }
-            return
-        }
+        if (launchPkg(t, pkg, label)) return
         if (Build.VERSION.SDK_INT >= 26 && !pm.canRequestPackageInstalls()) {
             append(t, tr("Allow TermWin to install apps, then run the command again.\n", "Permita o TermWin instalar apps e rode o comando de novo.\n"))
             try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) } catch (e: Exception) { }
@@ -3878,6 +3869,141 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
             append(t, tr("$label is not installed: installer opened. After installing, run the command again to open it.\n", "$label não está instalado: abri o instalador. Depois de instalar, rode o comando de novo para abrir.\n"))
         } catch (e: Exception) { err(t, "apk install: ${e.message}") }
+    }
+
+    /** Opens an installed app in a window-sized launch (real floating window only where the phone supports it). */
+    private fun launchPkg(t: TabData, pkg: String, label: String): Boolean {
+        val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        try {
+            val dm = resources.displayMetrics
+            val w = (dm.widthPixels * 0.88).toInt(); val h = (dm.heightPixels * 0.86).toInt()
+            val l = (dm.widthPixels - w) / 2; val tp = (dm.heightPixels - h) / 2
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val opts = ActivityOptions.makeBasic().setLaunchBounds(android.graphics.Rect(l, tp, l + w, tp + h))
+            startActivity(launch, opts.toBundle())
+            append(t, tr("opening $label in a window…\n", "abrindo $label em uma janela…\n"))
+        } catch (e: Exception) { err(t, "apk: ${e.message}") }
+        return true
+    }
+
+    // ---------- APKMirror bundles (.apkm renamed to .apk): base.apk + split_config.*.apk ----------
+    private fun isBundle(f: File): Boolean = try {
+        java.util.zip.ZipFile(f).use { z -> z.entries().asSequence().any { !it.isDirectory && it.name.endsWith(".apk", true) } }
+    } catch (e: Exception) { false }
+
+    /** base.apk + the splits that fit this phone (its CPU, screen density and language). */
+    private fun pickSplits(dir: File): List<File> {
+        val apks = dir.walkTopDown().filter { it.isFile && it.extension.equals("apk", true) }.toList()
+        val abis = Build.SUPPORTED_ABIS.map { it.replace('-', '_').lowercase() }
+        val abiAll = setOf("arm64_v8a", "armeabi_v7a", "armeabi", "x86", "x86_64", "mips", "mips64")
+        val dpiAll = listOf("ldpi", "mdpi", "tvdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi", "nodpi")
+        val d = resources.displayMetrics.densityDpi
+        val myDpi = when { d <= 120 -> "ldpi"; d <= 160 -> "mdpi"; d <= 213 -> "tvdpi"; d <= 240 -> "hdpi"; d <= 320 -> "xhdpi"; d <= 480 -> "xxhdpi"; else -> "xxxhdpi" }
+        val lang = java.util.Locale.getDefault().language.lowercase()
+        val rLang = Regex("^[a-z]{2,3}(_[a-z0-9]+)?$")
+        val abi = abis.firstOrNull { a -> apks.any { it.name.lowercase().contains("." + a + ".") || it.name.lowercase().endsWith("." + a + ".apk") } }
+        val out = mutableListOf<File>()
+        for (a in apks) {
+            val n = a.name.lowercase().removeSuffix(".apk")
+            val tok = Regex("^split_config\\.(.+)$").matchEntire(n)?.groupValues?.get(1)
+            when {
+                n == "base" || tok == null -> out.add(a)
+                tok in abiAll -> if (tok == abi) out.add(a)
+                tok in dpiAll -> if (tok == myDpi) out.add(a)
+                rLang.matches(tok) -> if (tok.substringBefore('_') == lang || tok == "en") out.add(a)
+                else -> out.add(a)
+            }
+        }
+        val base = out.firstOrNull { it.name.equals("base.apk", true) } ?: apks.firstOrNull { it.name.equals("base.apk", true) }
+        return if (base != null && base !in out) listOf(base) + out else out
+    }
+
+    private fun openBundle(t: TabData, f: File) {
+        append(t, tr("bundle (split APKs): extracting…\n", "pacote (APKs divididos): extraindo…\n"))
+        thread {
+            try {
+                val dir = File(appDataDir(), safeSeg(f.nameWithoutExtension)).apply { mkdirs() }
+                if (dir.walkTopDown().none { it.isFile && it.extension.equals("apk", true) && !it.equals(f) }) unzipApk(f, dir)
+                val files = pickSplits(dir).filter { it.canonicalPath != f.canonicalPath }
+                val base = files.firstOrNull { it.name.equals("base.apk", true) } ?: files.firstOrNull()
+                @Suppress("DEPRECATION")
+                val info = base?.let { b -> packageManager.getPackageArchiveInfo(b.path, 0)?.also { it.applicationInfo?.sourceDir = b.path; it.applicationInfo?.publicSourceDir = b.path } }
+                if (base == null || info == null) { ui.post { err(t, tr("could not read base.apk inside ${f.name}", "não consegui ler o base.apk dentro de ${f.name}")) }; return@thread }
+                val label = try { info.applicationInfo?.loadLabel(packageManager)?.toString() } catch (e: Exception) { null } ?: f.nameWithoutExtension
+                ui.post {
+                    append(t, "$label  (${info.packageName})\napp data: ${short(dir.path)}  (${files.size} apk)\n")
+                    if (launchPkg(t, info.packageName, label)) return@post
+                    installSplits(t, info.packageName, label, files)
+                }
+            } catch (e: Exception) { ui.post { err(t, "apk: ${e.message}") } }
+        }
+    }
+
+    private var instRx: android.content.BroadcastReceiver? = null
+    private var instTab: TabData? = null
+    private var instPkg = ""
+    private var instLabel = ""
+
+    private fun ensureInstallReceiver() {
+        if (instRx != null) return
+        val rx = object : android.content.BroadcastReceiver() {
+            @Suppress("DEPRECATION")
+            override fun onReceive(c: Context, i: Intent) {
+                val st = i.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -1)
+                val t = instTab ?: tabs.getOrNull(cur) ?: return
+                when (st) {
+                    android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                        val ni = if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java) else i.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                        try { ni?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); if (ni != null) startActivity(ni) } catch (e: Exception) { err(t, "install: ${e.message}") }
+                    }
+                    android.content.pm.PackageInstaller.STATUS_SUCCESS -> {
+                        append(t, tr("installed ✔\n", "instalado ✔\n"))
+                        if (!launchPkg(t, instPkg, instLabel)) append(t, tr("run the command again to open it\n", "rode o comando de novo para abrir\n"))
+                    }
+                    else -> {
+                        val m = i.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "status $st"
+                        err(t, tr("install failed: $m", "falha na instalação: $m"))
+                    }
+                }
+            }
+        }
+        val flt = IntentFilter("com.termwin.INSTALL_RESULT")
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(rx, flt, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rx, flt)
+        instRx = rx
+    }
+
+    /** Installs base.apk + splits in one PackageInstaller session. */
+    private fun installSplits(t: TabData, pkg: String, label: String, files: List<File>) {
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            append(t, tr("Allow TermWin to install apps, then run the command again.\n", "Permita o TermWin instalar apps e rode o comando de novo.\n"))
+            try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) } catch (e: Exception) { }
+            return
+        }
+        append(t, tr("$label is not installed: installing ${files.size} part(s)…\n", "$label não está instalado: instalando ${files.size} parte(s)…\n"))
+        instTab = t; instPkg = pkg; instLabel = label
+        thread {
+            try {
+                ensureInstallReceiverOnUi()
+                val pi = packageManager.packageInstaller
+                val params = android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                params.setAppPackageName(pkg)
+                val sid = pi.createSession(params)
+                pi.openSession(sid).use { sess ->
+                    files.forEach { f ->
+                        f.inputStream().use { i -> sess.openWrite(f.name, 0, f.length()).use { o -> i.copyTo(o); sess.fsync(o) } }
+                    }
+                    val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+                    val pend = PendingIntent.getBroadcast(this, sid, Intent("com.termwin.INSTALL_RESULT").setPackage(packageName), flags)
+                    sess.commit(pend.intentSender)
+                }
+            } catch (e: Exception) { ui.post { err(t, "install: ${e.message}") } }
+        }
+    }
+
+    private fun ensureInstallReceiverOnUi() {
+        val l = java.util.concurrent.CountDownLatch(1)
+        ui.post { try { ensureInstallReceiver() } finally { l.countDown() } }
+        l.await()
     }
 
     private fun findAnywhere(name: String, t: TabData): File? {
