@@ -52,7 +52,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "1.9"
+const val VERSION = "2.0"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -215,10 +215,8 @@ class MainActivity : Activity() {
   creat//Projeto//html//index.html   cria o arquivo em Files/Projects/Projeto e abre o editor (py, js, css, json…)
   open//Projeto//index.html  abre o arquivo no editor
   copy NomePasta             procura no celular todo e copia para Files/Copied/NomePasta
+  🛡 PROTEÇÃO: rm, mv, find -delete etc. só funcionam dentro da pasta do app (~). Fora dela (Download, fotos…) são bloqueados.
   projetos                   lista os projetos
-  git init|clone|add|commit|push|pull|status|log   git embutido (git login SEU_TOKEN guarda o token do GitHub)
-  cmd1 && cmd2 && cmd3       encadeia comandos (para se um falhar); aceita ${'$'}VAR, ~ e unzip
-  ~/storage/downloads        atalho para a pasta Download (também shared, dcim, documents…)
   ls storage                 mostra tudo de storage/emulated/0 com ícone de pasta (ls storage -r = com subpastas)
   cd qualquer/caminho        funciona com sdcard, storage/emulated/0/download, ~, .., maiúsculas/minúsculas
   alias ll='ls -la'          cria atalho | unalias ll
@@ -276,10 +274,8 @@ Toque e segure numa aba para renomear.
   creat//Project//html//index.html   create the file in Files/Projects/Project and open the editor (py, js, css, json…)
   open//Project//index.html  open the file in the editor
   copy FolderName            search the whole phone and copy to Files/Copied/FolderName
+  🛡 PROTECTION: rm, mv, find -delete etc. only work inside the app folder (~). Anywhere else (Downloads, photos…) they are blocked.
   projects                   list projects
-  git init|clone|add|commit|push|pull|status|log   built-in git (git login YOUR_TOKEN saves the GitHub token)
-  cmd1 && cmd2 && cmd3       chain commands (stops if one fails); supports ${'$'}VAR, ~ and unzip
-  ~/storage/downloads        shortcut to the Download folder (also shared, dcim, documents…)
   ls storage                 show everything in storage/emulated/0 with folder icons (ls storage -r = with subfolders)
   cd any/path                works with sdcard, storage/emulated/0/download, ~, .., any letter case
   alias ll='ls -la'          create a shortcut | unalias ll
@@ -448,6 +444,7 @@ Long-press a tab to rename it.
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         load()
         System.setProperty("user.home", filesDir.path)
+        try { projectsDir(); copiedDir() } catch (e: Exception) { }
         ensureStorageLinks()
         ensureChannels(this)
         root = FrameLayout(this)
@@ -1698,7 +1695,7 @@ Long-press a tab to rename it.
 
     /** Opens the page inside a Windows-style window (WebView) instead of the phone's browser. */
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
-    private fun openWebWindow(title: String, url: String, yt: Boolean = false, ai: Boolean = false) {
+    private fun openWebWindow(title: String, url: String, yt: Boolean = false, ai: Boolean = false, gh: Boolean = false) {
         val dm = resources.displayMetrics
         val ov = FrameLayout(this)
         ov.setBackgroundColor(0x99000000.toInt())
@@ -1717,6 +1714,7 @@ Long-press a tab to rename it.
         tb.addView(tv("   ▣   $title — $url", 13f, Color.WHITE).apply { gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }, LinearLayout.LayoutParams(0, dp(40), 1f))
         if (yt) tb.addView(capBtn("＋", false, 46) { wv.evaluateJavascript("if(window.mk)mk()", null) })
         if (ai) tb.addView(capBtn("🔑", false, 46) { showProviderKey() })
+        if (gh) tb.addView(capBtn("💾", false, 46) { if (saveGhTokenFromClipboard()) p.close() })
         tb.addView(capBtn("🖱", false, 46) {
             if (prefs.getBoolean("mouse_all", false)) { toggleGlobalMouse() }
             else {
@@ -2740,6 +2738,9 @@ Long-press a tab to rename it.
     private fun chain(t: TabData, line: String) {
         if (t.proc != null) { err(t, tr("A command is already running (use ^C)", "Já existe um comando rodando (use ^C)")); return }
         val segs = splitChain(line)
+        ghTab = t
+        val needsGh = segs.any { sg -> sg.trim().split(Regex("\\s+")).let { it.getOrNull(0) == "git" && it.getOrNull(1) in listOf("push", "pull", "clone") } }
+        if (needsGh && gitCreds() == null) { askGithub(t); return }
         busy(1)
         thread {
             var ok = true
@@ -2756,12 +2757,18 @@ Long-press a tab to rename it.
                         }
                         a[0] == "cd" -> {
                             val tg = if (a.size < 2) filesDir else if (a[1] == "-") File(t.prev.ifEmpty { cwd.path }) else resolveIn(cwd.path, a[1])
-                            if (tg != null && tg.isDirectory) { cwd = tg; true } else { out("cd: ${a.getOrNull(1) ?: ""}: " + tr("No such file or directory", "Arquivo ou diretório inexistente") + "\n"); false }
+                            val tg2 = tg ?: a.getOrNull(1)?.let { x ->
+                                val c = (if (x.startsWith("/")) File(x) else File(cwd, x)).canonicalFile
+                                if (c.path.startsWith(filesDir.canonicalPath) && c.mkdirs()) c else null
+                            }
+                            if (tg2 != null && tg2.isDirectory) { cwd = tg2; true } else { out("cd: ${a.getOrNull(1) ?: ""}: " + tr("No such file or directory", "Arquivo ou diretório inexistente") + "\n"); false }
                         }
                         a[0] == "git" -> gitRun(a.drop(1), cwd, ::out)
                         a[0] == "unzip" -> unzipRun(a.drop(1), cwd, ::out)
                         else -> {
-                            val pb = ProcessBuilder("sh", "-c", seg).directory(cwd).redirectErrorStream(true)
+                            val blocked = guardCheck(seg, cwd)
+                            if (blocked != null) { out(blocked + "\n"); logError(t.name, "BLOCKED: $seg"); false } else {
+                            val pb = safePb(seg, cwd)
                             pb.environment()["HOME"] = filesDir.path; pb.environment()["TMPDIR"] = cacheDir.path
                             envVars.forEach { (k, v) -> pb.environment()[k] = v }
                             vars.forEach { (k, v) -> pb.environment()[k] = v }
@@ -2773,6 +2780,7 @@ Long-press a tab to rename it.
                             val code = pr.waitFor(); t.proc = null
                             if (code != 0) out("↳ exit $code\n")
                             code == 0
+                            }
                         }
                     }
                 } catch (e: Exception) { out("${a[0]}: ${e.message}\n"); false }
@@ -2799,16 +2807,39 @@ Long-press a tab to rename it.
         val zf = resolveIn(cwd.path, zip)?.takeIf { it.isFile } ?: run { out("unzip: $zip: " + tr("No such file or directory", "Arquivo inexistente") + "\n"); return false }
         val dd = if (dest == null) cwd else (if (dest.startsWith("/")) File(dest) else File(cwd, dest)).apply { mkdirs() }
         val base = dd.canonicalFile
-        var n = 0
+        var n = 0; var skipped = 0
         java.util.zip.ZipInputStream(zf.inputStream().buffered()).use { zin ->
             while (true) {
                 val e = zin.nextEntry ?: break
                 val f = File(base, e.name).canonicalFile
                 if (!f.path.startsWith(base.path)) continue
-                if (e.isDirectory) f.mkdirs() else { f.parentFile?.mkdirs(); f.outputStream().use { o -> zin.copyTo(o) }; n++ }
+                if (e.isDirectory) { if (inSafe(f) || !f.exists()) f.mkdirs() }
+                else if (f.exists() && !inSafe(f)) { skipped++ }
+                else { f.parentFile?.mkdirs(); f.outputStream().use { o -> zin.copyTo(o) }; n++ }
             }
         }
+        if (skipped > 0) out(tr("protection: $skipped existing file(s) outside the app folder were NOT overwritten\n", "proteção: $skipped arquivo(s) que já existiam fora da pasta do app NÃO foram sobrescritos\n"))
         if (!quiet) out(tr("extracted $n file(s)\n", "extraídos $n arquivo(s)\n"))
+        return true
+    }
+
+    private var ghTab: TabData? = null
+
+    /** No GitHub token saved yet: opens GitHub inside the app (no Chrome) so the token can be created and saved with the 💾 button. */
+    private fun askGithub(t: TabData?) {
+        if (t != null) append(t, tr("GitHub login needed. Opened GitHub here: create the token (Generate token), copy it and tap 💾. Then run the command again.\n",
+            "Precisa entrar no GitHub. Abri o GitHub aqui: crie o token (Generate token), copie e toque em 💾. Depois rode o comando de novo.\n"))
+        openWebWindow("GitHub", "https://github.com/settings/tokens/new?scopes=repo&description=TermWin", false, false, true)
+    }
+
+    private fun saveGhTokenFromClipboard(): Boolean {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val tk = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+        if (!(tk.startsWith("ghp_") || tk.startsWith("github_pat_") || tk.startsWith("gho_"))) {
+            toast(tr("Copy the token first (it starts with ghp_)", "Copie o token primeiro (começa com ghp_)")); return false
+        }
+        apiPut("_github", tk)
+        toast(tr("Token saved ✔ — run the command again", "Token salvo ✔ — rode o comando de novo"))
         return true
     }
 
@@ -2845,7 +2876,12 @@ Long-press a tab to rename it.
                     c.call().close(); out(tr("cloned into $name\n", "clonado em $name\n")); return true
                 }
             }
-            val gd = org.eclipse.jgit.storage.file.FileRepositoryBuilder().findGitDir(cwd).gitDir
+            var gd = org.eclipse.jgit.storage.file.FileRepositoryBuilder().findGitDir(cwd).gitDir
+            if (gd == null && sub == "add") {
+                org.eclipse.jgit.api.Git.init().setDirectory(cwd).setInitialBranch("main").call().close()
+                out(tr("repository initialized\n", "repositório iniciado\n"))
+                gd = org.eclipse.jgit.storage.file.FileRepositoryBuilder().findGitDir(cwd).gitDir
+            }
             if (gd == null) { out("fatal: " + tr("not a git repository (use git init or git clone)", "não é um repositório git (use git init ou git clone)") + "\n"); return false }
             val root = gd.parentFile ?: cwd
             val git = org.eclipse.jgit.api.Git.open(root)
@@ -2934,6 +2970,9 @@ Long-press a tab to rename it.
         } catch (e: Exception) {
             val m = e.message ?: e.toString()
             out("git: $m\n")
+            if (m.contains("remote", true) && (m.contains("specified", true) || m.contains("origin", true) || m.contains("not found", true)))
+                out(tr("tip: git remote add origin https://github.com/user/repo\n", "dica: git remote add origin https://github.com/usuario/repo\n"))
+            if (m.contains("auth", true) || m.contains("401") || m.contains("403")) ui.post { askGithub(ghTab) }
             if (m.contains("auth", true) || m.contains("401") || m.contains("403")) out(tr("tip: git login YOUR_GITHUB_TOKEN\n", "dica: git login SEU_TOKEN_DO_GITHUB\n"))
             return false
         }
@@ -3320,15 +3359,120 @@ Long-press a tab to rename it.
         }
     }
 
+
+    // ================= SAFETY: nothing outside the app's own folders can be deleted / moved / overwritten =================
+    // Layer 1 (guardCheck): refuses dangerous command lines before they start (wrong folder, wrappers that dodge the checks).
+    // Layer 2 (SAFE_PRE): rm/rmdir/mv/unlink/shred/truncate/dd/find are replaced inside the shell by versions that check
+    //                     the REAL path of every target (after variables, globs and symlinks) and refuse anything outside.
+    private fun safeRoots(): List<String> {
+        val l = mutableListOf<String>()
+        for (f in listOf(filesDir, cacheDir, dataDir())) {
+            try { l.add(f.path); l.add(f.canonicalPath) } catch (e: Exception) { }
+        }
+        return l.distinct()
+    }
+    private fun inSafe(f: File): Boolean {
+        val c = try { f.canonicalPath } catch (e: Exception) { return false }
+        return safeRoots().any { c == it || c.startsWith("$it/") }
+    }
+
+    private val RE_DESTR = Regex("""(^|[\s;&|(`{!])(rm|rmdir|unlink|shred|truncate|mv|dd)(\s|$|;|&|\|)""")
+    private val RE_FIND_DEL = Regex("""\s-(delete|exec|execdir|ok|okdir)(\s|$)""")
+    private val RE_BYPASS = Regex("""(^|[\s;&|(`{!])(xargs|eval|exec|env|busybox|toybox|su|sudo|nohup|setsid|nsenter|chroot)(\s|$)|\\(rm|rmdir|unlink|shred|truncate|mv|dd)(\s|$)|\S/(rm|rmdir|unlink|shred|truncate|mv|dd)(\s|$)""")
+    private val RE_NESTED = Regex("""(^|[\s;&|(`{!])(sh|bash|dash|ash|mksh|zsh)\s""")
+    private val RE_ESCAPE = Regex("""(^|[\s='"(:])(/sdcard|/storage|/mnt|/data/media|/system|/vendor|~/storage|storage/(shared|downloads|documents|dcim|pictures|music|movies))""", RegexOption.IGNORE_CASE)
+
+    private fun looksDestructive(s: String) = RE_DESTR.containsMatchIn(s) || RE_FIND_DEL.containsMatchIn(s)
+
+    /** Returns a message when the line must NOT run, or null when it may run. */
+    private fun guardCheck(line: String, cwd: File): String? {
+        // scripts: look inside before running them (a nested shell would not have the runtime checks)
+        val tk = line.trim().split(Regex("\\s+"))
+        val scriptName = when {
+            tk.isEmpty() -> null
+            tk[0] in listOf("sh", "bash", "dash", "ash", "mksh", "source", ".") -> tk.getOrNull(1)?.takeIf { !it.startsWith("-") }
+            tk[0].endsWith(".sh") || tk[0].startsWith("./") -> tk[0]
+            else -> null
+        }
+        if (scriptName != null) {
+            val sf = (if (scriptName.startsWith("/")) File(scriptName) else File(cwd, scriptName))
+            val body = try { if (sf.isFile && sf.length() < 300_000) sf.readText() else "" } catch (e: Exception) { "" }
+            if (body.isNotEmpty() && (looksDestructive(body) || RE_BYPASS.containsMatchIn(body)))
+                return tr("TermWin protection: $scriptName contains delete/move commands (rm, mv, find -delete…) and scripts are not checked. Run those commands one by one instead.",
+                    "Proteção do TermWin: $scriptName tem comandos de apagar/mover (rm, mv, find -delete…) e scripts não são verificados. Rode esses comandos um por um.")
+        }
+        if (!looksDestructive(line)) return null
+        val why = tr("TermWin protection: deleting, moving or overwriting is only allowed inside the app's own folder (~). For anything else use your phone's Files app.",
+            "Proteção do TermWin: apagar, mover ou sobrescrever só é permitido dentro da pasta do próprio app (~). Para o resto use o app Arquivos do celular.")
+        if (RE_BYPASS.containsMatchIn(line)) return why + tr("\n(blocked: this form dodges the safety checks)", "\n(bloqueado: essa forma foge das verificações de segurança)")
+        if (!inSafe(cwd)) return why + tr("\n(blocked: you are in ${cwd.path}. Run 'cd ~' first)", "\n(bloqueado: você está em ${cwd.path}. Rode 'cd ~' antes)")
+        if (RE_NESTED.containsMatchIn(line)) return why + tr("\n(blocked: sh/bash -c hides the command from the checks)", "\n(bloqueado: sh/bash -c esconde o comando das verificações)")
+        if (RE_ESCAPE.containsMatchIn(line)) return why
+        return null
+    }
+
+    private val SAFE_PRE = """
+__tw_ok() {
+  __p="${'$'}1"; [ -z "${'$'}__p" ] && return 1
+  if [ -d "${'$'}__p" ]; then __r=${'$'}(cd -P -- "${'$'}__p" 2>/dev/null && pwd -P) || return 1
+  else
+    __d="${'$'}{__p%/*}"; [ "${'$'}__d" = "${'$'}__p" ] && __d=.; [ -z "${'$'}__d" ] && __d=/
+    __b="${'$'}{__p##*/}"
+    case "${'$'}__b" in ..|.) return 1;; esac
+    __r=${'$'}(cd -P -- "${'$'}__d" 2>/dev/null && pwd -P) || return 1
+    __r="${'$'}__r/${'$'}__b"
+  fi
+  for __s in ${'$'}TW_SAFE; do case "${'$'}__r" in "${'$'}__s"|"${'$'}__s"/*) return 0;; esac; done
+  return 1
+}
+__tw_chk() {
+  __n="${'$'}1"; shift; __e=0
+  for __a in "${'$'}@"; do
+    if [ "${'$'}__e" = 0 ]; then case "${'$'}__a" in --) __e=1; continue;; of=*) __a="${'$'}{__a#of=}";; -*) continue;; esac; fi
+    __tw_ok "${'$'}__a" || { echo "TermWin: ${'$'}__n blocked - '${'$'}__a' is outside the app folder / fica fora da pasta do app" >&2; return 1; }
+  done
+  return 0
+}
+rm() { __tw_chk rm "${'$'}@" && command rm "${'$'}@"; }
+rmdir() { __tw_chk rmdir "${'$'}@" && command rmdir "${'$'}@"; }
+unlink() { __tw_chk unlink "${'$'}@" && command unlink "${'$'}@"; }
+shred() { __tw_chk shred "${'$'}@" && command shred "${'$'}@"; }
+truncate() { __tw_chk truncate "${'$'}@" && command truncate "${'$'}@"; }
+mv() { __tw_chk mv "${'$'}@" && command mv "${'$'}@"; }
+dd() { __tw_chk dd "${'$'}@" && command dd "${'$'}@"; }
+find() {
+  __c=0
+  for __a in "${'$'}@"; do case "${'$'}__a" in -delete|-exec|-execdir|-ok|-okdir) __c=1;; esac; done
+  if [ "${'$'}__c" = 1 ]; then
+    __any=0
+    for __a in "${'$'}@"; do
+      case "${'$'}__a" in -L|-H) echo "TermWin: find ${'$'}__a with delete/exec blocked / bloqueado" >&2; return 1;; -P|-D*|-O*) continue;; -*|"("|")"|"!"|",") break;; esac
+      __any=1
+      __tw_ok "${'$'}__a" || { echo "TermWin: find blocked - '${'$'}__a' is outside the app folder / fica fora da pasta do app" >&2; return 1; }
+    done
+    if [ "${'$'}__any" = 0 ]; then __tw_ok . || { echo "TermWin: find blocked - current folder is outside the app folder / pasta atual fora da pasta do app" >&2; return 1; }; fi
+  fi
+  command find "${'$'}@"
+}
+"""
+
+    /** Builds the ProcessBuilder for every shell command (terminal, chains and command-servers). */
+    private fun safePb(line: String, dir: File): ProcessBuilder {
+        val pb = ProcessBuilder("sh", "-c", SAFE_PRE + "\n" + line).directory(dir).redirectErrorStream(true)
+        pb.environment()["TW_SAFE"] = safeRoots().joinToString(" ")
+        return pb
+    }
+
     private fun shell(t: TabData, line: String) {
         if (t.proc != null) { err(t, tr("A command is already running (use ^C)", "Já existe um comando rodando (use ^C)")); return }
+        guardCheck(line, File(t.cwd))?.let { err(t, it); logError(t.name, "BLOCKED: $line"); return }
         busy(1)
         thread {
             var ok = false
             var info = ""
             val tail = StringBuilder()
             try {
-                val pb = ProcessBuilder("sh", "-c", line).directory(File(t.cwd)).redirectErrorStream(true)
+                val pb = safePb(line, File(t.cwd))
                 pb.environment()["HOME"] = filesDir.path
                 pb.environment()["TMPDIR"] = cacheDir.path
                 envVars.forEach { (k, v) -> pb.environment()[k] = v }
@@ -3406,7 +3550,9 @@ Long-press a tab to rename it.
             thread {
                 var ok = false
                 try {
-                    val pr = ProcessBuilder("sh", "-c", s.cmd).directory(filesDir).redirectErrorStream(true).start()
+                    val blockedSrv = guardCheck(s.cmd, filesDir)
+                    if (blockedSrv != null) throw Exception(blockedSrv)
+                    val pr = safePb(s.cmd, filesDir).start()
                     s.proc = pr
                     ui.post { sayCur(tr("[${s.name}] started\n", "[${s.name}] iniciado\n")) }
                     pr.inputStream.bufferedReader().forEachLine { l -> ui.post { sayCur("[${s.name}] $l\n") } }
