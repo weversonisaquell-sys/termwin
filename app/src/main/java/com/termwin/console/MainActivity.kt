@@ -53,7 +53,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "2.2"
+const val VERSION = "2.3"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -3553,7 +3553,7 @@ __tw_ok() {
     __d="${'$'}{__p%/*}"; [ "${'$'}__d" = "${'$'}__p" ] && __d=.; [ -z "${'$'}__d" ] && __d=/
     __b="${'$'}{__p##*/}"
     case "${'$'}__b" in ..|.) return 1;; esac
-    __r=${'$'}(cd -P -- "${'$'}__d" 2>/dev/null && pwd -P) || return 1
+    __r=${'$'}(cd -P -- "${'$'}__d" 2>/dev/null && pwd -P) || return 0
     __r="${'$'}__r/${'$'}__b"
   fi
   for __s in ${'$'}TW_SAFE; do case "${'$'}__r" in "${'$'}__s"|"${'$'}__s"/*) return 0;; esac; done
