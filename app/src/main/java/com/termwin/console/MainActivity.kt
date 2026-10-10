@@ -2114,16 +2114,7 @@ Long-press a tab to rename it.
         }
         val cookie = try { android.webkit.CookieManager.getInstance().getCookie(url) } catch (e: Exception) { null }
         toast(tr("downloading $name…", "baixando $name…"))
-        try {
-            val rq = DownloadManager.Request(Uri.parse(url))
-            if (!mime.isNullOrEmpty()) rq.setMimeType(mime)
-            if (!cookie.isNullOrEmpty()) rq.addRequestHeader("Cookie", cookie)
-            if (!ua.isNullOrEmpty()) rq.addRequestHeader("User-Agent", ua)
-            rq.setTitle(name)
-            rq.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            rq.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
-            getSystemService(DownloadManager::class.java).enqueue(rq)
-        } catch (e: Exception) { fallbackDownload(url, ua, cookie, name) }
+        fallbackDownload(url, ua, cookie, name) // always our own downloader, so the file lands in the "Downloaded" folder
     }
 
     /** Own downloader (follows redirects, sends the page's cookies) used when the system DownloadManager is not allowed to write. */
@@ -3804,7 +3795,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     private fun apkCmd(t: TabData, line: String): Boolean {
         val m = RE_APK.matchEntire(line.trim()) ?: return false
         var name = m.groupValues[1].trim().trim('"')
-        if (!name.endsWith(".apk", true)) name += ".apk"
+        if (listOf(".apk", ".apkm", ".xapk", ".apks").none { name.endsWith(it, true) }) name += ".apk"
         append(t, tr("searching $name …\n", "procurando $name …\n"))
         thread {
             val f = try { findApk(name, t) } catch (e: Exception) { null }
@@ -3818,8 +3809,9 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         val base = name.substringAfterLast('/')
         val roots = listOf(downloadsDir(), filesRoot(), dataDir())
         for (r in roots) r.walkTopDown().maxDepth(8).firstOrNull { it.isFile && it.name.equals(base, true) }?.let { return it }
-        val part = base.removeSuffix(".apk").removeSuffix(".APK")
-        for (r in roots) r.walkTopDown().maxDepth(8).firstOrNull { it.isFile && it.extension.equals("apk", true) && it.name.contains(part, true) }?.let { return it }
+        val part = base.substringBeforeLast('.', base)
+        val exts = setOf("apk", "apkm", "xapk", "apks")
+        for (r in roots) r.walkTopDown().maxDepth(8).firstOrNull { it.isFile && it.extension.lowercase() in exts && it.name.contains(part, true) }?.let { return it }
         return findAnywhere(base, t)?.takeIf { it.isFile }
     }
 
