@@ -247,6 +247,7 @@ class MainActivity : Activity() {
   abrir youtube.com          abre no navegador
   historico                  comandos usados
   botão 📜 Savedata           comandos recentes (Files/Savedata.wintext); toque para executar
+  apk//open//nome.apk        procura o APK, abre o app em uma janela e guarda a pasta dele em Files/App data
   dados                      onde seus arquivos ficam salvos
   erros                      mostra os erros salvos (erros limpar)
   pkg listar                 lista pacotes (pkg instalar cowsay | pkg remover cowsay | pkg atualizar)
@@ -311,6 +312,7 @@ Toque e segure numa aba para renomear.
   open youtube.com           open in the browser
   history                    commands used
   📜 Savedata button         recent commands (Files/Savedata.wintext); tap one to run it
+  apk//open//name.apk        find the APK, open the app in a window and keep its folder in Files/App data
   data                       where your files are saved
   errors                     show saved errors (errors clear)
   pkg list                   list packages (pkg install cowsay | pkg remove cowsay | pkg upgrade)
@@ -505,7 +507,7 @@ Long-press a tab to rename it.
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         load()
         System.setProperty("user.home", filesDir.path)
-        try { projectsDir(); copiedDir(); createdDir() } catch (e: Exception) { }
+        try { projectsDir(); copiedDir(); createdDir(); downloadsDir(); photosSentDir(); appDataDir() } catch (e: Exception) { }
         ensureStorageLinks()
         ensureChannels(this)
         root = FrameLayout(this)
@@ -619,7 +621,13 @@ Long-press a tab to rename it.
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
         if (req == 78) { val cb = pendingAuth; pendingAuth = null; if (res == RESULT_OK) cb?.invoke() else toast(tr("Not authenticated", "Não autenticado")); return }
-        if (req == 81) { val cb = fileCb; fileCb = null; cb?.onReceiveValue(android.webkit.WebChromeClient.FileChooserParams.parseResult(res, data)); return }
+        if (req == 81) {
+            val cb = fileCb; fileCb = null
+            val uris = android.webkit.WebChromeClient.FileChooserParams.parseResult(res, data)
+            cb?.onReceiveValue(uris)
+            uris?.forEach { savePhotoSent(it) }
+            return
+        }
         if (req == 79) { if (res == RESULT_OK) data?.data?.let { showPublish(it) }; return }
         if (req == 80) { if (res == RESULT_OK) data?.data?.let { copyFromTree(it) } else copyTab?.let { append(it, tr("copy cancelled\n", "cópia cancelada\n")) }; return }
         if (req != 77 || res != RESULT_OK) return
@@ -1079,8 +1087,9 @@ Long-press a tab to rename it.
     }
 
     @Suppress("DEPRECATION")
-    // ---------- paste an image (IMG) into a text field: it is saved in Files/Pasted and its path is typed ----------
-    private fun pastedDir() = File(filesRoot(), "Pasted").apply { mkdirs() }
+    // ---------- paste an image (IMG) into a text field: it is saved in Files/Photos sent and its path is typed ----------
+    private fun pastedDir() = photosSentDir()
+    private fun photosSentDir() = File(filesRoot(), "Photos sent").apply { mkdirs() }
 
     private fun enableImagePaste(et: EditText) {
         if (Build.VERSION.SDK_INT < 31) return
@@ -1107,7 +1116,7 @@ Long-press a tab to rename it.
             contentResolver.openInputStream(u)!!.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
             val at = et.selectionStart.coerceAtLeast(0)
             et.text.insert(at, f.path)
-            toast(tr("Image pasted → saved in Files/Pasted", "Imagem colada → salva em Files/Pasted"))
+            toast(tr("Image pasted → saved in Files/Photos sent", "Imagem colada → salva em Files/Photos sent"))
         } catch (e: Exception) {
             val m = tr("Could not paste the image: ${e.message}", "Não foi possível colar a imagem: ${e.message}")
             toast(m); logError("paste", m)
@@ -1115,6 +1124,25 @@ Long-press a tab to rename it.
     }
 
     private var fileCb: android.webkit.ValueCallback<Array<Uri>>? = null
+
+    /** Any photo you send through a site (upload button) is also copied to Files/Photos sent. */
+    private fun savePhotoSent(u: Uri) {
+        thread {
+            try {
+                if ((contentResolver.getType(u) ?: "").startsWith("image/").not()) return@thread
+                val raw = try {
+                    contentResolver.query(u, null, null, null, null)?.use { c ->
+                        val ix = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (c.moveToFirst() && ix >= 0) c.getString(ix) else null
+                    }
+                } catch (e: Exception) { null } ?: ("photo_" + System.currentTimeMillis() + ".jpg")
+                var f = File(photosSentDir(), safeSeg(raw))
+                var n = 1
+                while (f.exists()) { f = File(photosSentDir(), safeSeg(raw.substringBeforeLast('.')) + "_" + n + (if (raw.contains('.')) "." + raw.substringAfterLast('.') else "")); n++ }
+                contentResolver.openInputStream(u)!!.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+            } catch (e: Exception) { logError("photos", e.message ?: "copy") }
+        }
+    }
 
     private fun pickFile() {
         val i = Intent(Intent.ACTION_GET_CONTENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE)
@@ -1487,6 +1515,7 @@ Long-press a tab to rename it.
     private fun exec(t: TabData, rawLine: String, single: Boolean = false) {
         if (rawLine.isEmpty()) return
         val line = expandAlias(rawLine)
+        if (apkCmd(t, line)) { saveSoon(); return }
         if (!single) {
             val n = chainOps(line)
             if (n > MAX_AND) { err(t, tr("&& limit exceeded: at most $MAX_AND (you used $n). Nothing was run.", "limite de && excedido: no máximo $MAX_AND (você usou $n). Nada foi executado.")); return }
@@ -2031,7 +2060,7 @@ Long-press a tab to rename it.
     }
 
     // ---------- downloads from the in-app web windows ----------
-    private fun downloadsDir() = File(filesRoot(), "Downloads").apply { mkdirs() }
+    private fun downloadsDir() = File(dataDir(), "Downloaded").apply { mkdirs() }
     @Volatile private var blobOkUntil = 0L
     @Volatile private var blobName = ""
 
@@ -2048,11 +2077,7 @@ Long-press a tab to rename it.
     }
 
     private fun dlTargetDir(): File {
-        if (storageOk()) try {
-            val pub = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS); pub.mkdirs()
-            if (pub.canWrite()) return pub
-        } catch (e: Exception) { }
-        return downloadsDir()
+        return downloadsDir() // every download goes to the "Downloaded" folder next to Files
     }
 
     private fun uniqueDlFile(name: String): File {
@@ -3770,6 +3795,89 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             return
         }
         if (f.isDirectory) append(t, short(f.path) + "\n" + (f.listFiles()?.sortedBy { it.name }?.joinToString("") { "  " + it.name + (if (it.isDirectory) "/" else "") + "\n" } ?: "")) else openEditor(t, f)
+    }
+
+    // ---------- apk//open//name.apk : find the APK, open the app in a window, keep its folder in Files/App data ----------
+    private val RE_APK = Regex("^(?:apk|akp)\\s*//\\s*(?:open|onpen|abrir)\\s*//\\s*(.+)$", RegexOption.IGNORE_CASE)
+    private fun appDataDir() = File(filesRoot(), "App data").apply { mkdirs() }
+
+    private fun apkCmd(t: TabData, line: String): Boolean {
+        val m = RE_APK.matchEntire(line.trim()) ?: return false
+        var name = m.groupValues[1].trim().trim('"')
+        if (!name.endsWith(".apk", true)) name += ".apk"
+        append(t, tr("searching $name …\n", "procurando $name …\n"))
+        thread {
+            val f = try { findApk(name, t) } catch (e: Exception) { null }
+            ui.post { if (f == null) err(t, tr("apk not found: $name", "apk não encontrado: $name")) else openApk(t, f) }
+        }
+        return true
+    }
+
+    private fun findApk(name: String, t: TabData): File? {
+        if (name.contains('/')) resolvePath(t, name)?.let { if (it.isFile) return it }
+        val base = name.substringAfterLast('/')
+        val roots = listOf(downloadsDir(), filesRoot(), dataDir())
+        for (r in roots) r.walkTopDown().maxDepth(8).firstOrNull { it.isFile && it.name.equals(base, true) }?.let { return it }
+        val part = base.removeSuffix(".apk").removeSuffix(".APK")
+        for (r in roots) r.walkTopDown().maxDepth(8).firstOrNull { it.isFile && it.extension.equals("apk", true) && it.name.contains(part, true) }?.let { return it }
+        return findAnywhere(base, t)?.takeIf { it.isFile }
+    }
+
+    private fun unzipApk(f: File, dir: File): Int {
+        var n = 0
+        val base = dir.canonicalPath + File.separator
+        java.util.zip.ZipFile(f).use { z ->
+            for (e in z.entries().asSequence()) {
+                val out = File(dir, e.name)
+                if (!out.canonicalPath.startsWith(base)) continue
+                if (e.isDirectory) out.mkdirs()
+                else { out.parentFile?.mkdirs(); z.getInputStream(e).use { i -> out.outputStream().use { o -> i.copyTo(o) } }; n++ }
+            }
+        }
+        return n
+    }
+
+    @Suppress("DEPRECATION")
+    private fun openApk(t: TabData, f: File) {
+        val pm = packageManager
+        val info = try { pm.getPackageArchiveInfo(f.path, 0)?.also { it.applicationInfo?.sourceDir = f.path; it.applicationInfo?.publicSourceDir = f.path } } catch (e: Exception) { null }
+        if (info == null) { err(t, tr("not a valid apk: ${f.name}", "apk inválido: ${f.name}")); return }
+        val pkg = info.packageName
+        val label = try { info.applicationInfo?.loadLabel(pm)?.toString() } catch (e: Exception) { null } ?: f.nameWithoutExtension
+        append(t, "$label  ($pkg)\n${short(f.path)}\n")
+        // the APK's folder goes to Files/App data/<name>
+        val dir = File(appDataDir(), safeSeg(f.nameWithoutExtension))
+        if (dir.isDirectory && (dir.list()?.isNotEmpty() == true)) append(t, tr("app data: ${short(dir.path)}\n", "app data: ${short(dir.path)}\n"))
+        else thread {
+            try {
+                dir.mkdirs()
+                val n = unzipApk(f, dir)
+                ui.post { append(t, tr("app data: $n files → ${short(dir.path)}\n", "app data: $n arquivos → ${short(dir.path)}\n")) }
+            } catch (e: Exception) { ui.post { err(t, "app data: ${e.message}") } }
+        }
+        val launch = pm.getLaunchIntentForPackage(pkg)
+        if (launch != null) {
+            try {
+                val dm = resources.displayMetrics
+                val w = (dm.widthPixels * 0.88).toInt(); val h = (dm.heightPixels * 0.86).toInt()
+                val l = (dm.widthPixels - w) / 2; val tp = (dm.heightPixels - h) / 2
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val opts = ActivityOptions.makeBasic().setLaunchBounds(android.graphics.Rect(l, tp, l + w, tp + h))
+                startActivity(launch, opts.toBundle())
+                append(t, tr("opening $label in a window…\n", "abrindo $label em uma janela…\n"))
+            } catch (e: Exception) { err(t, "apk: ${e.message}") }
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 26 && !pm.canRequestPackageInstalls()) {
+            append(t, tr("Allow TermWin to install apps, then run the command again.\n", "Permita o TermWin instalar apps e rode o comando de novo.\n"))
+            try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) } catch (e: Exception) { }
+            return
+        }
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fp", f)
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+            append(t, tr("$label is not installed: installer opened. After installing, run the command again to open it.\n", "$label não está instalado: abri o instalador. Depois de instalar, rode o comando de novo para abrir.\n"))
+        } catch (e: Exception) { err(t, "apk install: ${e.message}") }
     }
 
     private fun findAnywhere(name: String, t: TabData): File? {

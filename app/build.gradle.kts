@@ -43,4 +43,5 @@ android {
 dependencies {
     implementation("org.eclipse.jgit:org.eclipse.jgit:5.13.3.202401111512-r")
     implementation("org.slf4j:slf4j-nop:1.7.36")
+    implementation("androidx.core:core:1.12.0")
 }
