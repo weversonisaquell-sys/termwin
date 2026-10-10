@@ -9,8 +9,8 @@ android {
         applicationId = "com.termwin.console"
         minSdk = 28          // Android 9+
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.7"
+        versionCode = 9
+        versionName = "1.8"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

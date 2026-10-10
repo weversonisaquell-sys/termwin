@@ -52,7 +52,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "1.7"
+const val VERSION = "1.8"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -404,7 +404,7 @@ Long-press a tab to rename it.
 
         val bodyBox = LinearLayout(this)
         bodyBox.orientation = LinearLayout.VERTICAL
-        bodyBox.setPadding(dp(20), dp(10), dp(20), dp(16))
+        bodyBox.setPadding(dp(16), dp(6), dp(16), dp(10))
         val sc = MaxScroll(this, (dm.heightPixels * 0.6).toInt())
         sc.addView(bodyBox)
         card.addView(sc, LinearLayout.LayoutParams(MATCH, WRAP))
@@ -413,7 +413,7 @@ Long-press a tab to rename it.
         foot.orientation = LinearLayout.HORIZONTAL
         foot.gravity = Gravity.END or Gravity.CENTER_VERTICAL
         foot.setBackgroundColor(0xFF1A1A1A.toInt())
-        foot.setPadding(dp(16), dp(10), dp(16), dp(10))
+        foot.setPadding(dp(12), dp(6), dp(12), dp(6))
         card.addView(foot, LinearLayout.LayoutParams(MATCH, WRAP))
 
         ov.addView(card, FrameLayout.LayoutParams((dm.widthPixels * frac).toInt(), WRAP, Gravity.CENTER))
@@ -689,6 +689,9 @@ Long-press a tab to rename it.
             f.writeText(sb.toString())
         } catch (e: Exception) { }
     }
+
+    private val saver = Runnable { save() }
+    private fun saveSoon() { ui.removeCallbacks(saver); ui.postDelayed(saver, 1500) }
 
     private fun save() {
         tabs.forEach { writeWinv(it) }
@@ -990,22 +993,38 @@ Long-press a tab to rename it.
         row.addView(hs, LinearLayout.LayoutParams(0, dp(38), 1f))
         fun rb(t: String, wd: Int, accent: Boolean = false, click: () -> Unit) = row.addView(
             capBtn(t, false, wd, click).apply { textSize = if (wd > 50) 12f else 15f; if (accent) setTextColor(ACCENT); layoutParams = LinearLayout.LayoutParams(dp(wd), dp(38)) })
-        rb("＋", 40) { addTab() }
-        rb(tr("Servers", "Servidores"), 88) { showServers() }
-        rb(tr("＋ Server", "＋ Servidor"), 88, true) { createServerDialog() }
-        rb(tr("📂 Load", "📂 Carregar"), 92, true) { showLoad() }
-        rb(tr("🎨 Templates", "🎨 Modelos"), 104, true) { showTemplates() }
-        rb("⚙", 40) { showSettings() }
-        rb("ⓘ", 40) { showCredits() }
-        rb("📝", 40) { showDados() }
-        rb("🔑", 40) { showApiKeys() }
-        rb("👤", 40) { showProfile() }
+        rb("＋", 36) { addTab() }
+        rb("🎨", 36, true) { showTemplates() }
+        rb("🔑", 36) { showApiKeys() }
+        rb("👤", 36) { showProfile() }
+        rb("⋯", 36) { showMenu() }
         w.addView(row, LinearLayout.LayoutParams(MATCH, dp(38)))
 
         body = FrameLayout(this)
         w.addView(body, LinearLayout.LayoutParams(MATCH, 0, 1f))
         refreshTabs()
         showTab()
+    }
+
+    private fun showMenu() {
+        val p = panel(tr("Menu", "Menu"), 0.5f)
+        val items = listOf(
+            tr("🖥  Servers", "🖥  Servidores") to { showServers() },
+            tr("＋  New server", "＋  Novo servidor") to { createServerDialog() },
+            tr("📂  Load file", "📂  Carregar arquivo") to { showLoad() },
+            tr("📝  Data file", "📝  Arquivo de dados") to { showDados() },
+            tr("⚙  Settings", "⚙  Configurações") to { showSettings() },
+            tr("ⓘ  Credits", "ⓘ  Créditos") to { showCredits() })
+        items.chunked(2).forEach { pair ->
+            val r = LinearLayout(this)
+            r.orientation = LinearLayout.HORIZONTAL
+            pair.forEach { (label, act) ->
+                r.addView(pill(label, false) { p.close(); act() }.apply { gravity = Gravity.CENTER_VERTICAL or Gravity.START },
+                    LinearLayout.LayoutParams(0, WRAP, 1f).apply { topMargin = dp(8); rightMargin = dp(6) })
+            }
+            p.body.addView(r, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
+        p.button(tr("Close", "Fechar"), true) { p.close() }
     }
 
     private fun minimize() { win?.visibility = View.GONE; taskbar.visibility = View.VISIBLE }
@@ -1087,7 +1106,7 @@ Long-press a tab to rename it.
         out.textSize = 12.5f
         out.setTextColor(0xFFCCCCCC.toInt())
         out.setPadding(dp(10), dp(8), dp(10), dp(8))
-        out.setTextIsSelectable(true)
+        out.setOnLongClickListener { out.setTextIsSelectable(true); false }
         out.text = styled(t.log.toString())
         sc.addView(out)
         col.addView(sc, LinearLayout.LayoutParams(MATCH, 0, 1f))
@@ -1188,7 +1207,7 @@ Long-press a tab to rename it.
     private fun exec(t: TabData, rawLine: String) {
         if (rawLine.isEmpty()) return
         val line = expandAlias(rawLine)
-        if (t.tpl.isNotEmpty()) { tplExec(t, line); save(); return }
+        if (t.tpl.isNotEmpty()) { tplExec(t, line); saveSoon(); return }
         val p = line.split(" ").filter { it.isNotEmpty() }
         when (cmd(p[0])) {
             "help" -> append(t, help())
@@ -1299,7 +1318,7 @@ Long-press a tab to rename it.
             }
             else -> if (!apiCmd(t, p)) shell(t, line)
         }
-        save()
+        saveSoon()
     }
 
 
@@ -1479,7 +1498,7 @@ Long-press a tab to rename it.
         val card = LinearLayout(this)
         card.orientation = LinearLayout.VERTICAL
         card.background = rounded(0xFF202020.toInt(), dp(10), 0xFF3A3A3A.toInt())
-        card.clipToOutline = true
+        card.clipToOutline = false
         val wv = android.webkit.WebView(this)
         lateinit var p: Panel
         val tb = LinearLayout(this)
@@ -1518,8 +1537,8 @@ Long-press a tab to rename it.
             "status" to "mostra estado e porta", "clear" to "limpa a tela", "exit" to "fecha esta aba")
         val rows = (if (pt) br else en).joinToString("") { "  " + it.first.padEnd(18) + it.second + "\n" }
         val yt = if (name != "youtube") "" else if (pt) "  publicar          escolhe um vídeo do aparelho e publica (também o botão ＋)\n  (entre antes com o botão 👤 Perfil)\n" else "  publish           pick a video from your phone and publish it (or the ＋ button)\n  (sign in first with the 👤 Profile button)\n"
-        val ai = if (name != "ai") yt else if (pt) "  ia//pergunta//app   gera resposta ou código (app é opcional)\n  ia//faça um jogo//GDScript   exemplo (também: ai// e aí//)\n  ia key SUA_CHAVE   chave de provedor (opcional, p/ respostas completas; limpar apaga)\n"
-            else "  ai//question//app   answer or code (app is optional)\n  ai//make a game//GDScript   example (also: ia// and aí//)\n  ai key YOUR_KEY   provider key (optional, for full answers; clear deletes it)\n"
+        val ai = if (name != "ai") yt else if (pt) "  ia//pergunta//app   gera resposta ou código (app é opcional)\n  ia//faça um jogo//GDScript   exemplo (também: ai// e aí//)\n  ia key SUA_CHAVE   API do provedor (Gemini/Groq/Anthropic/OpenAI…; ia key limpar apaga)\n  ia model NOME      troca o modelo\n"
+            else "  ai//question//app   answer or code (app is optional)\n  ai//make a game//GDScript   example (also: ia// and aí//)\n  ai key YOUR_KEY   provider API (Gemini/Groq/Anthropic/OpenAI…; ai key clear deletes it)\n  ai model NAME      change the model\n"
         return tr("$label server — $st, port ${s.port}\n", "Servidor $label — $st, porta ${s.port}\n") + rows + ai
     }
 
@@ -1560,7 +1579,62 @@ Long-press a tab to rename it.
             "py" to "for i in range(1, 11):\n    print(i)",
             "gd" to "func _ready():\n    for i in range(1, 11):\n        print(i)",
             "lua" to "for i = 1, 10 do\n  print(i)\nend",
-            "js" to "for (let i = 1; i <= 10; i++) console.log(i);")
+            "js" to "for (let i = 1; i <= 10; i++) console.log(i);"),
+        "fact" to mapOf(
+            "py" to "def fact(n):\n    r = 1\n    for i in range(2, n + 1):\n        r *= i\n    return r\n\nprint(fact(5))",
+            "gd" to "func fact(n: int) -> int:\n    var r = 1\n    for i in range(2, n + 1):\n        r *= i\n    return r",
+            "lua" to "local function fact(n)\n  local r = 1\n  for i = 2, n do r = r * i end\n  return r\nend\nprint(fact(5))",
+            "js" to "function fact(n) {\n  let r = 1;\n  for (let i = 2; i <= n; i++) r *= i;\n  return r;\n}\nconsole.log(fact(5));"),
+        "rev" to mapOf(
+            "py" to "def reverse(t):\n    return t[::-1]\n\nprint(reverse(\"TermWin\"))",
+            "gd" to "func reverse(t: String) -> String:\n    var r = \"\"\n    for i in range(t.length() - 1, -1, -1):\n        r += t[i]\n    return r",
+            "lua" to "local function reverse(t)\n  return t:reverse()\nend\nprint(reverse(\"TermWin\"))",
+            "js" to "const reverse = t => t.split(\"\").reverse().join(\"\");\nconsole.log(reverse(\"TermWin\"));"),
+        "pal" to mapOf(
+            "py" to "def is_palindrome(t):\n    t = \"\".join(c for c in t.lower() if c.isalnum())\n    return t == t[::-1]\n\nprint(is_palindrome(\"Arara\"))",
+            "gd" to "func is_palindrome(t: String) -> bool:\n    t = t.to_lower()\n    for i in t.length() / 2:\n        if t[i] != t[t.length() - 1 - i]:\n            return false\n    return true",
+            "lua" to "local function isPalindrome(t)\n  t = t:lower():gsub(\"%W\", \"\")\n  return t == t:reverse()\nend\nprint(isPalindrome(\"Arara\"))",
+            "js" to "const isPalindrome = t => {\n  t = t.toLowerCase().replace(/[^a-z0-9]/g, \"\");\n  return t === [...t].reverse().join(\"\");\n};\nconsole.log(isPalindrome(\"Arara\"));"),
+        "bsearch" to mapOf(
+            "py" to "def binary_search(a, x):\n    lo, hi = 0, len(a) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if a[mid] == x:\n            return mid\n        if a[mid] < x:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1",
+            "gd" to "func binary_search(a: Array, x) -> int:\n    var lo = 0\n    var hi = a.size() - 1\n    while lo <= hi:\n        var mid = (lo + hi) / 2\n        if a[mid] == x:\n            return mid\n        if a[mid] < x:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1",
+            "lua" to "local function binarySearch(a, x)\n  local lo, hi = 1, #a\n  while lo <= hi do\n    local mid = (lo + hi) // 2\n    if a[mid] == x then return mid end\n    if a[mid] < x then lo = mid + 1 else hi = mid - 1 end\n  end\n  return -1\nend",
+            "js" to "function binarySearch(a, x) {\n  let lo = 0, hi = a.length - 1;\n  while (lo <= hi) {\n    const mid = (lo + hi) >> 1;\n    if (a[mid] === x) return mid;\n    if (a[mid] < x) lo = mid + 1; else hi = mid - 1;\n  }\n  return -1;\n}"),
+        "bubble" to mapOf(
+            "py" to "def bubble_sort(a):\n    for i in range(len(a)):\n        for j in range(len(a) - i - 1):\n            if a[j] > a[j + 1]:\n                a[j], a[j + 1] = a[j + 1], a[j]\n    return a",
+            "gd" to "func bubble_sort(a: Array) -> Array:\n    for i in a.size():\n        for j in range(a.size() - i - 1):\n            if a[j] > a[j + 1]:\n                var t = a[j]\n                a[j] = a[j + 1]\n                a[j + 1] = t\n    return a",
+            "lua" to "local function bubbleSort(a)\n  for i = 1, #a do\n    for j = 1, #a - i do\n      if a[j] > a[j + 1] then a[j], a[j + 1] = a[j + 1], a[j] end\n    end\n  end\n  return a\nend",
+            "js" to "function bubbleSort(a) {\n  for (let i = 0; i < a.length; i++)\n    for (let j = 0; j < a.length - i - 1; j++)\n      if (a[j] > a[j + 1]) [a[j], a[j + 1]] = [a[j + 1], a[j]];\n  return a;\n}"),
+        "rand" to mapOf(
+            "py" to "import random\n\nprint(random.randint(1, 100))",
+            "gd" to "func _ready():\n    randomize()\n    print(randi_range(1, 100))",
+            "lua" to "math.randomseed(os.time())\nprint(math.random(1, 100))",
+            "js" to "const n = Math.floor(Math.random() * 100) + 1;\nconsole.log(n);"),
+        "save" to mapOf(
+            "py" to "import json\n\ndata = {\"nome\": \"Ana\", \"pontos\": 10}\nwith open(\"save.json\", \"w\") as f:\n    json.dump(data, f)\nwith open(\"save.json\") as f:\n    print(json.load(f))",
+            "gd" to "func save_game(data: Dictionary):\n    var f = FileAccess.open(\"user://save.json\", FileAccess.WRITE)\n    f.store_string(JSON.stringify(data))\n\nfunc load_game() -> Dictionary:\n    if not FileAccess.file_exists(\"user://save.json\"):\n        return {}\n    return JSON.parse_string(FileAccess.get_file_as_string(\"user://save.json\"))",
+            "lua" to "local HttpService = game:GetService(\"HttpService\")\nlocal DS = game:GetService(\"DataStoreService\"):GetDataStore(\"Save\")\nlocal function save(player, data)\n  DS:SetAsync(player.UserId, HttpService:JSONEncode(data))\nend",
+            "js" to "localStorage.setItem(\"save\", JSON.stringify({ nome: \"Ana\", pontos: 10 }));\nconsole.log(JSON.parse(localStorage.getItem(\"save\")));"),
+        "timer" to mapOf(
+            "py" to "import time\n\nfor i in range(5, 0, -1):\n    print(i)\n    time.sleep(1)\nprint(\"Pronto!\")",
+            "gd" to "func _ready():\n    var t = Timer.new()\n    t.wait_time = 2.0\n    t.one_shot = true\n    add_child(t)\n    t.timeout.connect(func(): print(\"Pronto!\"))\n    t.start()",
+            "lua" to "for i = 5, 1, -1 do\n  print(i)\n  task.wait(1)\nend\nprint(\"Pronto!\")",
+            "js" to "let i = 5;\nconst t = setInterval(() => {\n  console.log(i--);\n  if (i < 0) { clearInterval(t); console.log(\"Pronto!\"); }\n}, 1000);"),
+        "health" to mapOf(
+            "py" to "class Player:\n    def __init__(self):\n        self.hp = 100\n\n    def damage(self, n):\n        self.hp = max(0, self.hp - n)\n        if self.hp == 0:\n            print(\"Game over\")",
+            "gd" to "var hp = 100\n\nfunc damage(n: int):\n    hp = max(0, hp - n)\n    if hp == 0:\n        print(\"Game over\")",
+            "lua" to "local hp = 100\nlocal function damage(n)\n  hp = math.max(0, hp - n)\n  if hp == 0 then print(\"Game over\") end\nend",
+            "js" to "let hp = 100;\nfunction damage(n) {\n  hp = Math.max(0, hp - n);\n  if (hp === 0) console.log(\"Game over\");\n}"),
+        "click" to mapOf(
+            "py" to "import tkinter as tk\n\nn = 0\ndef click():\n    global n\n    n += 1\n    btn.config(text=\"Cliques: %d\" % n)\n\nroot = tk.Tk()\nbtn = tk.Button(root, text=\"Clique\", command=click)\nbtn.pack(padx=40, pady=40)\nroot.mainloop()",
+            "gd" to "extends Button\n\nvar n = 0\n\nfunc _pressed():\n    n += 1\n    text = \"Cliques: \" + str(n)",
+            "lua" to "local button = script.Parent\nlocal n = 0\nbutton.MouseButton1Click:Connect(function()\n  n += 1\n  button.Text = \"Cliques: \" .. n\nend)",
+            "js" to "let n = 0;\nconst btn = document.querySelector(\"button\");\nbtn.addEventListener(\"click\", () => { btn.textContent = \"Cliques: \" + (++n); });"),
+        "sum" to mapOf(
+            "py" to "nums = [3, 7, 1, 9]\nprint(sum(nums), max(nums), min(nums))",
+            "gd" to "var nums = [3, 7, 1, 9]\nvar total = 0\nfor n in nums:\n    total += n\nprint(total, nums.max(), nums.min())",
+            "lua" to "local nums = {3, 7, 1, 9}\nlocal total = 0\nfor _, n in ipairs(nums) do total = total + n end\nprint(total)",
+            "js" to "const nums = [3, 7, 1, 9];\nconsole.log(nums.reduce((a, b) => a + b, 0), Math.max(...nums), Math.min(...nums));")
     )
 
     private fun offlineAi(q: String, spec: String): String {
@@ -1574,8 +1648,19 @@ Long-press a tab to rename it.
         }
         val topic = when {
             has("fibonacci") -> "fib"
+            has("fatorial|factorial") -> "fact"
+            has("palindromo|palíndromo|palindrome") -> "pal"
+            has("inverter (o )?(texto|string|palavra)|reverse") -> "rev"
+            has("busca bin|binary search|bsearch") -> "bsearch"
+            has("bubble|bolha") -> "bubble"
             has("ordenar|sort|selection") -> "sort"
             has("primo|prime") -> "prime"
+            has("aleat|random|sorteio|sortear") -> "rand"
+            has("salvar|save|carregar jogo|json") -> "save"
+            has("timer|temporizador|cooldown|contagem regressiva|countdown") -> "timer"
+            has("vida|dano|health|damage|\\bhp\\b") -> "health"
+            has("bot[ãa]o|button|clique|click") -> "click"
+            has("soma|somar|m[áa]ximo|maior valor|sum\\b|lista de n") -> "sum"
             has("pul(o|ar)|jump") -> "jump"
             has("mover|andar|move|player|jogador|personagem|walk") -> "move"
             has("contador|counter|contar|count") -> "count"
@@ -1584,8 +1669,8 @@ Long-press a tab to rename it.
         }
         val head = tr("(offline mode — add a provider key with: ai key YOUR_KEY for full answers)\n", "(modo offline — para respostas completas adicione uma chave de provedor: ia key SUA_CHAVE)\n")
         if (topic == null) return head + tr(
-            "I only know a few snippets offline: hello world, fibonacci, sort, prime, jump, move, counter (Python, GDScript, Lua, JS).",
-            "Offline eu só sei alguns trechos: hello world, fibonacci, ordenar, primo, pulo, mover, contador (Python, GDScript, Lua, JS).")
+            "Offline I only know simple snippets: hello world, fibonacci, factorial, sorting, search, prime, palindrome, random, save/load, timer, health/damage, button click, jump, move, counter (Python, GDScript, Lua, JS). For any other question, add a provider API in 🔑 (Google Gemini has a free plan).",
+            "Offline eu só sei trechos simples: hello world, fibonacci, fatorial, ordenar, busca, primo, palíndromo, aleatório, salvar/carregar, timer, vida/dano, clique de botão, pulo, mover, contador (Python, GDScript, Lua, JS). Para qualquer outra pergunta, coloque uma API de provedor em 🔑 (o Google Gemini tem plano grátis).")
         val name = mapOf("py" to "python", "gd" to "gdscript", "lua" to "lua", "js" to "javascript")[lang]
         return head + "```$name\n" + OFFLINE[topic]!![lang] + "\n```"
     }
@@ -1594,36 +1679,104 @@ Long-press a tab to rename it.
     private fun aiKey(): String = apiGet("_provider") ?: prefs.getString("aikey", "") ?: ""
     private val ownerToken = java.util.UUID.randomUUID().toString()
 
-    /** Blocking call to the Anthropic Messages API. Run it off the UI thread. */
+    // ---------- AI providers (Anthropic, Gemini, Groq, OpenRouter, OpenAI) ----------
+    private fun providerOf(k: String) = when {
+        k.startsWith("sk-ant-") -> "anthropic"
+        k.startsWith("AIza") -> "gemini"
+        k.startsWith("gsk_") -> "groq"
+        k.startsWith("sk-or-") -> "openrouter"
+        k.startsWith("sk-") -> "openai"
+        else -> ""
+    }
+    private fun providerLabel(p: String) = mapOf("anthropic" to "Anthropic", "gemini" to "Google Gemini", "groq" to "Groq", "openrouter" to "OpenRouter", "openai" to "OpenAI")[p] ?: p
+    private fun aiModel(p: String): String = prefs.getString("aimodel_$p", null) ?: mapOf("anthropic" to "claude-sonnet-5-5", "gemini" to "gemini-flash-latest",
+        "groq" to "llama-3.3-70b-versatile", "openrouter" to "openrouter/auto", "openai" to "gpt-4o-mini")[p] ?: ""
+
+    private fun httpPost(url: String, headers: Map<String, String>, body: String): Pair<Int, String> {
+        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        c.requestMethod = "POST"; c.connectTimeout = 15000; c.readTimeout = 120000; c.doOutput = true
+        headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
+        c.setRequestProperty("content-type", "application/json")
+        c.outputStream.use { it.write(body.toByteArray()) }
+        val code = c.responseCode
+        val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+        return code to txt
+    }
+
+    /** Returns (HTTP code, answer text or error message). */
+    private fun callAi(key: String, sys: String, msg: String, maxTok: Int): Pair<Int, String> {
+        val p = providerOf(key)
+        val model = aiModel(p)
+        val (code, txt) = when (p) {
+            "anthropic" -> httpPost("https://api.anthropic.com/v1/messages", mapOf("x-api-key" to key, "anthropic-version" to "2023-06-01"),
+                JSONObject().put("model", model).put("max_tokens", maxTok).put("system", sys)
+                    .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", msg))).toString())
+            "gemini" -> httpPost("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$key", emptyMap(),
+                JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", sys))))
+                    .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", msg)))))
+                    .put("generationConfig", JSONObject().put("maxOutputTokens", maxTok)).toString())
+            else -> httpPost(when (p) { "groq" -> "https://api.groq.com/openai/v1/chat/completions"; "openrouter" -> "https://openrouter.ai/api/v1/chat/completions"; else -> "https://api.openai.com/v1/chat/completions" },
+                mapOf("Authorization" to "Bearer $key"),
+                JSONObject().put("model", model).put("max_tokens", maxTok).put("messages", JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", sys)).put(JSONObject().put("role", "user").put("content", msg))).toString())
+        }
+        val j = try { JSONObject(txt) } catch (e: Exception) { null }
+        if (code !in 200..299) {
+            val m = j?.optJSONObject("error")?.optString("message") ?: j?.optString("error")?.takeIf { it.isNotEmpty() } ?: txt.take(200)
+            return code to m
+        }
+        return try {
+            when (p) {
+                "anthropic" -> { val a = j!!.getJSONArray("content"); code to (0 until a.length()).map { a.getJSONObject(it) }.filter { it.optString("type") == "text" }.joinToString("\n") { it.getString("text") } }
+                "gemini" -> { val a = j!!.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts"); code to (0 until a.length()).joinToString("") { a.getJSONObject(it).optString("text") } }
+                else -> code to j!!.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+            }
+        } catch (e: Exception) { 502 to tr("Unexpected answer from the provider", "Resposta inesperada do provedor") }
+    }
+
     private fun askAi(q: String, spec: String): String {
         val key = aiKey()
         if (key.isEmpty()) return offlineAi(q, spec)
+        val p = providerOf(key)
+        if (p.isEmpty()) return tr("The saved key is not from a known provider. Open 🔑 API and paste a valid key.", "A chave salva não é de um provedor conhecido. Abra 🔑 API e cole uma chave válida.")
         return try {
             val sys = "You are the AI inside a mobile terminal app. Answer in the user's language. " +
                 "If the user wants code, reply with working code in the requested language (Python, GDScript/GD, Kotlin, JS, Lua, C, etc.) in one fenced block and at most a few short lines of explanation. " +
                 "If a target app/engine is given, write the code for exactly that app. Keep it compact; no long introductions."
             val msg = if (spec.isBlank()) q else "$q\n\nTarget app/language: $spec"
-            val body = JSONObject().put("model", "claude-sonnet-5-5").put("max_tokens", 4000).put("system", sys)
-                .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", msg)))
-            val c = java.net.URL("https://api.anthropic.com/v1/messages").openConnection() as java.net.HttpURLConnection
-            c.requestMethod = "POST"; c.connectTimeout = 15000; c.readTimeout = 120000; c.doOutput = true
-            c.setRequestProperty("x-api-key", key); c.setRequestProperty("anthropic-version", "2023-06-01")
-            c.setRequestProperty("content-type", "application/json")
-            c.outputStream.use { it.write(body.toString().toByteArray()) }
-            val code = c.responseCode
-            val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-            val j = JSONObject(txt)
-            if (code !in 200..299) {
-                val m = j.optJSONObject("error")?.optString("message") ?: txt.take(200)
-                logError("ai", "HTTP $code: $m")
-                "[$code] $m"
-            } else {
-                val arr = j.getJSONArray("content")
-                (0 until arr.length()).map { arr.getJSONObject(it) }.filter { it.optString("type") == "text" }.joinToString("\n") { it.getString("text") }.trim()
+            val (code, ans) = callAi(key, sys, msg, 4000)
+            if (code in 200..299) ans.trim()
+            else {
+                logError("ai", "${providerLabel(p)} HTTP $code: $ans")
+                when (code) {
+                    401, 403 -> tr("${providerLabel(p)} rejected the key ($code). Open 🔑 API and paste the provider's key again.", "${providerLabel(p)} recusou a chave ($code). Abra 🔑 API e cole de novo a chave do provedor.")
+                    429 -> tr("${providerLabel(p)}: limit reached, try again in a minute. ($ans)", "${providerLabel(p)}: limite atingido, tente de novo em 1 minuto. ($ans)")
+                    404 -> tr("Model not found. Type: ai model NAME", "Modelo não encontrado. Digite: ia model NOME") + " ($ans)"
+                    else -> "[$code] $ans"
+                }
             }
         } catch (e: Exception) {
             logError("ai", e.toString())
             tr("Could not reach the AI: ${e.message} (check your internet)", "Não consegui falar com a IA: ${e.message} (veja a internet)")
+        }
+    }
+
+    /** Checks the key with the provider, then saves it. [done] runs on the UI thread with a message. */
+    private fun saveProviderKey(raw: String, done: (Boolean, String) -> Unit) {
+        val k = raw.trim().replace(Regex("\\s"), "")
+        if (k.startsWith("twk_")) { done(false, tr("That is a TermWin key (twk_…) — it only protects TermWin's own server. Paste the key from your AI provider.", "Essa é uma chave do TermWin (twk_…) — ela só protege o servidor do próprio TermWin. Cole a chave do seu provedor de IA.")); return }
+        val p = providerOf(k)
+        if (p.isEmpty()) { done(false, tr("Unknown key format. Supported: sk-ant-… (Anthropic), AIza… (Google Gemini), gsk_… (Groq), sk-or-… (OpenRouter), sk-… (OpenAI).", "Formato desconhecido. Aceito: sk-ant-… (Anthropic), AIza… (Google Gemini), gsk_… (Groq), sk-or-… (OpenRouter), sk-… (OpenAI).")); return }
+        thread {
+            val (code, m) = try { callAi(k, "Reply with the single word OK.", "ping", 8) } catch (e: Exception) { 0 to (e.message ?: "") }
+            ui.post {
+                if (code == 401 || code == 403 || code == 400 && m.contains("API key", true)) done(false, tr("${providerLabel(p)} rejected this key: $m", "${providerLabel(p)} recusou essa chave: $m"))
+                else {
+                    apiPut("_provider", k); prefs.edit().remove("aikey").apply()
+                    if (code in 200..299) done(true, tr("✔ Valid key — ${providerLabel(p)}", "✔ Chave válida — ${providerLabel(p)}"))
+                    else done(true, tr("Saved (${providerLabel(p)}), but I could not test it now: $m", "Salva (${providerLabel(p)}), mas não consegui testar agora: $m"))
+                }
+            }
         }
     }
 
@@ -1650,9 +1803,18 @@ Long-press a tab to rename it.
             val km = Regex("^(ai|ia|aí)\\s+(key|chave)\\s*(.*)$", RegexOption.IGNORE_CASE).find(raw)
             if (km != null) {
                 val v = km.groupValues[3].trim()
-                if (v.isEmpty()) append(t, if (aiKey().isEmpty()) tr("no key saved\n", "nenhuma chave salva\n") else tr("key saved (…${aiKey().takeLast(4)})\n", "chave salva (…${aiKey().takeLast(4)})\n"))
+                val cur2 = aiKey()
+                if (v.isEmpty()) append(t, if (cur2.isEmpty()) tr("no key saved\n", "nenhuma chave salva\n") else tr("key saved: ${providerLabel(providerOf(cur2))} (…${cur2.takeLast(4)}), model ${aiModel(providerOf(cur2))}\n", "chave salva: ${providerLabel(providerOf(cur2))} (…${cur2.takeLast(4)}), modelo ${aiModel(providerOf(cur2))}\n"))
                 else if (v == "clear" || v == "limpar") { prefs.edit().remove("aikey").apply(); apiRemove("_provider"); append(t, tr("key deleted\n", "chave apagada\n")) }
-                else { apiPut("_provider", v); prefs.edit().remove("aikey").apply(); append(t, tr("key saved (encrypted in API.winapi)\n", "chave salva\n")) }
+                else { append(t, tr("checking the key…\n", "testando a chave…\n")); saveProviderKey(v) { _, m -> append(t, m + "\n") } }
+                return
+            }
+            val mm = Regex("^(ai|ia|aí)\\s+(model|modelo)\\s*(.*)$", RegexOption.IGNORE_CASE).find(raw)
+            if (mm != null) {
+                val v = mm.groupValues[3].trim(); val p0 = providerOf(aiKey())
+                if (p0.isEmpty()) append(t, tr("save a key first\n", "salve uma chave primeiro\n"))
+                else if (v.isEmpty()) append(t, aiModel(p0) + "\n")
+                else { prefs.edit().putString("aimodel_$p0", v).apply(); append(t, tr("model set: $v\n", "modelo definido: $v\n")) }
                 return
             }
             if (low == "play ia") { tplExec(t, "play ai"); return }
@@ -2070,20 +2232,25 @@ Long-press a tab to rename it.
 
     private fun showProviderKey() {
         val p = panel(tr("AI provider API", "API do provedor da IA"), 0.62f)
-        p.body.addView(tv(tr("Paste the API key from your AI provider (for example console.anthropic.com). It is stored encrypted in API.winapi. Without it the AI answers offline with simple code only.",
-            "Cole aqui a chave de API do seu provedor de IA (por exemplo console.anthropic.com). Ela fica criptografada no API.winapi. Sem ela, a IA responde offline só com códigos simples."), 12f, 0xFF9AA5B1.toInt()))
+        p.body.addView(tv(tr("Paste the key from your AI provider. Accepted: Google Gemini (AIza…, has a free plan), Groq (gsk_…, free plan), Anthropic (sk-ant-…), OpenRouter (sk-or-…), OpenAI (sk-…). Free-plan limits may change. Get a free one at aistudio.google.com/apikey.",
+            "Cole a chave do seu provedor de IA. Aceito: Google Gemini (AIza…, tem plano grátis), Groq (gsk_…, plano grátis), Anthropic (sk-ant-…), OpenRouter (sk-or-…), OpenAI (sk-…). Limites do plano grátis podem mudar. Pegue uma grátis em aistudio.google.com/apikey."), 12f, 0xFF9AA5B1.toInt()))
         val saved = aiKey()
-        p.body.addView(tv(if (saved.isEmpty()) tr("Status: no key", "Status: sem chave") else tr("Status: key saved (…${saved.takeLast(4)})", "Status: chave salva (…${saved.takeLast(4)})"),
-            13f, if (saved.isEmpty()) 0xFFFFB454.toInt() else GREEN).apply { setPadding(0, dp(10), 0, 0) })
-        val kv = field(tr("API key", "Chave da API"))
+        p.body.addView(tv(if (saved.isEmpty()) tr("Status: no key — AI works offline (simple code only)", "Status: sem chave — a IA funciona offline (só códigos simples)")
+            else tr("Status: ${providerLabel(providerOf(saved))} key saved (…${saved.takeLast(4)})", "Status: chave ${providerLabel(providerOf(saved))} salva (…${saved.takeLast(4)})"),
+            13f, if (saved.isEmpty()) 0xFFFFB454.toInt() else GREEN).apply { setPadding(0, dp(8), 0, 0) })
+        val kv = field(tr("Provider API key", "Chave da API do provedor"))
         kv.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         p.body.addView(kv)
+        val msg = tv("", 12f, 0xFFFFB454.toInt()).apply { setPadding(0, dp(8), 0, 0) }
+        p.body.addView(msg)
         p.button(tr("Close", "Fechar")) { p.close() }
         if (saved.isNotEmpty()) p.button(tr("Remove", "Remover")) { apiRemove("_provider"); prefs.edit().remove("aikey").apply(); toast(tr("key removed", "chave removida")); p.close() }
-        p.button(tr("Save", "Salvar"), true) {
-            val k = kv.text.toString().trim()
-            if (k.isEmpty()) { toast(tr("Paste the key", "Cole a chave")); return@button }
-            apiPut("_provider", k); prefs.edit().remove("aikey").apply(); toast(tr("API saved ✔", "API salva ✔")); p.close()
+        p.button(tr("Test & save", "Testar e salvar"), true) {
+            if (kv.text.isNullOrBlank()) { msg.text = tr("Paste the key", "Cole a chave"); return@button }
+            msg.setTextColor(0xFF9AA5B1.toInt()); msg.text = tr("testing…", "testando…")
+            saveProviderKey(kv.text.toString()) { ok, m ->
+                if (ok) { toast(m); p.close() } else { msg.setTextColor(0xFFFF6B6B.toInt()); msg.text = m }
+            }
         }
     }
 

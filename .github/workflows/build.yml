@@ -1,32 +1,22 @@
-name: Build TermWin EXE
-
+name: Build APK
 on:
   push:
-    branches: ['**']
+    branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: read
-
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup .NET 8 SDK
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
-          dotnet-version: '8.0.x'
-
-      - name: Publish native Windows x64 EXE
-        run: dotnet publish windows/TermWin.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist
-
-      - name: Upload Windows EXE artifact
-        uses: actions/upload-artifact@v4
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v3
         with:
-          name: TermWin-Windows-x64
-          path: dist/**
-          if-no-files-found: error
-          retention-days: 14
+          gradle-version: 8.7
+      - run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TermWin-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
