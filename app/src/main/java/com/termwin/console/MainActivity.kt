@@ -3891,14 +3891,55 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         append(t, tr("opening $label…\n", "abrindo $label…\n"))
         thread {
             val ff = ensureFreeform()
+            if (ff == null) {
+                ui.post { append(t, tr("No root access: opening as a normal app.\n", "Sem acesso root: abrindo como app normal.\n")); launchPkg(t, pkg, label) }
+                return@thread
+            }
+            val feat = su("pm has-feature android.software.freeform_window_management").second.contains("true")
+            if (ff == false || !feat) {
+                ui.post { append(t, tr("Floating windows turned on with root. Reboot the phone once, then tap Open app again.\n", "Janelas flutuantes ativadas com root. Reinicie o celular uma vez e toque em Abrir app de novo.\n")) }
+                if (ff == false) return@thread
+            }
+            val res = rootFreeformLaunch(pkg)
             ui.post {
-                when (ff) {
-                    false -> append(t, tr("Floating windows turned on with root. Reboot the phone once, then tap Open app again.\n", "Janelas flutuantes ativadas com root. Reinicie o celular uma vez e toque em Abrir app de novo.\n"))
-                    null -> { append(t, tr("No root access: opening as a normal app.\n", "Sem acesso root: abrindo como app normal.\n")); launchPkg(t, pkg, label) }
-                    true -> launchPkg(t, pkg, label)
+                when (res) {
+                    "window" -> append(t, tr("opened $label in a floating window\n", "$label aberto em janela flutuante\n"))
+                    "full" -> append(t, tr("$label opened but Android kept it fullscreen. Feature freeform: $feat. If false, reboot once; if it stays false this ROM has no floating windows.\n", "$label abriu mas o Android manteve em tela cheia. Freeform no sistema: $feat. Se false, reinicie uma vez; se continuar false, essa ROM não tem janelas flutuantes.\n"))
+                    else -> { err(t, tr("root launch failed: $res", "falhou abrir com root: $res")); launchPkg(t, pkg, label) }
                 }
             }
         }
+    }
+
+    /** Root: starts the app in FREEFORM mode (5), finds its task and resizes it to a centered window. Returns "window", "full" or an error text. */
+    private fun rootFreeformLaunch(pkg: String): String {
+        val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return "no launcher activity"
+        val cn = launch.component?.flattenToShortString() ?: return "no component"
+        val dm = resources.displayMetrics
+        val sw = maxOf(dm.widthPixels, dm.heightPixels); val sh = minOf(dm.widthPixels, dm.heightPixels)
+        val w = (sw * 0.78).toInt(); val h = (sh * 0.80).toInt()
+        val l = (sw - w) / 2; val tp = (sh - h) / 2
+        su("am force-stop $pkg")
+        val st = su("am start --windowingMode 5 -n $cn")
+        if (st.second.contains("Error", true) || st.second.contains("Exception", true)) return st.second.take(200)
+        Thread.sleep(1500)
+        fun taskLine(): String? {
+            for (cmd in listOf("cmd activity stack list", "am stack list", "dumpsys activity activities")) {
+                val out = su(cmd).second
+                val ln = out.lines().firstOrNull { it.contains("taskId=") && it.contains("$pkg/") }
+                if (ln != null) return ln
+            }
+            return null
+        }
+        var ln = taskLine() ?: return "window" // started in freeform mode; could not read the task list
+        val id = Regex("taskId=(\\d+)").find(ln)?.groupValues?.get(1) ?: return "window"
+        for (cmd in listOf("am task resize $id $l $tp ${l + w} ${tp + h}", "cmd activity task resize $id $l $tp ${l + w} ${tp + h}")) {
+            if (su(cmd).first == 0) break
+        }
+        Thread.sleep(500)
+        ln = taskLine() ?: ln
+        val b = Regex("bounds=\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]").find(ln)?.groupValues?.drop(1)?.map { it.toInt() }
+        return if (b != null && (b[2] - b[0]) >= sw && (b[3] - b[1]) >= sh) "full" else "window"
     }
 
     /** apk//open// only finds the file and shows this window. Nothing is opened or installed until you tap a button. */
