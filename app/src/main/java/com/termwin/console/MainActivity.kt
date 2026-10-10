@@ -20,6 +20,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -3255,18 +3256,17 @@ Long-press a tab to rename it.
 
     private fun copyTree(tree: Uri, docId: String, dst: File, cnt: IntArray, depth: Int) {
         if (depth > 40) return
-        val dc = android.provider.DocumentsContract
-        val kids = dc.buildChildDocumentsUriUsingTree(tree, docId)
-        val cols = arrayOf(dc.Document.COLUMN_DOCUMENT_ID, dc.Document.COLUMN_DISPLAY_NAME, dc.Document.COLUMN_MIME_TYPE)
+        val kids = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
+        val cols = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
         val rows = mutableListOf<Triple<String, String, String>>()
         contentResolver.query(kids, cols, null, null, null)?.use { c -> while (c.moveToNext()) rows.add(Triple(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: "")) }
         for ((id, nm, mime) in rows) {
             val clean = safe(nm)
             if (id.isEmpty() || nm == "." || nm == "..") continue
             val out = File(dst, clean)
-            if (mime == dc.Document.MIME_TYPE_DIR) { out.mkdirs(); copyTree(tree, id, out, cnt, depth + 1) }
+            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) { out.mkdirs(); copyTree(tree, id, out, cnt, depth + 1) }
             else try {
-                contentResolver.openInputStream(dc.buildDocumentUriUsingTree(tree, id))!!.use { i -> out.outputStream().use { o -> i.copyTo(o) } }
+                contentResolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, id))!!.use { i -> out.outputStream().use { o -> i.copyTo(o) } }
                 cnt[0]++
             } catch (e: Exception) { cnt[1]++ }
         }
@@ -3277,9 +3277,8 @@ Long-press a tab to rename it.
         busy(1)
         thread {
             try {
-                val dc = android.provider.DocumentsContract
-                val rootId = dc.getTreeDocumentId(tree)
-                val nm = contentResolver.query(dc.buildDocumentUriUsingTree(tree, rootId), arrayOf(dc.Document.COLUMN_DISPLAY_NAME), null, null, null)
+                        val rootId = DocumentsContract.getTreeDocumentId(tree)
+                val nm = contentResolver.query(DocumentsContract.buildDocumentUriUsingTree(tree, rootId), arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)
                     ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: rootId.substringAfterLast('/')
                 val base = safe(nm.ifEmpty { "Copied" })
                 var dst = File(copiedDir(), base); var i = 2
