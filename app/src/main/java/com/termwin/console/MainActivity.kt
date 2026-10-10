@@ -3850,17 +3850,87 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                 ui.post { append(t, tr("app data: $n files → ${short(dir.path)}\n", "app data: $n arquivos → ${short(dir.path)}\n")) }
             } catch (e: Exception) { ui.post { err(t, "app data: ${e.message}") } }
         }
-        if (launchPkg(t, pkg, label)) return
-        if (Build.VERSION.SDK_INT >= 26 && !pm.canRequestPackageInstalls()) {
-            append(t, tr("Allow TermWin to install apps, then run the command again.\n", "Permita o TermWin instalar apps e rode o comando de novo.\n"))
+        showAppPanel(t, label, pkg, info, f, null)
+    }
+
+    /** Installs a single (non-split) APK through the system installer. */
+    private fun installSingle(t: TabData, label: String, f: File) {
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            append(t, tr("Allow TermWin to install apps, then tap Install again.\n", "Permita o TermWin instalar apps e toque em Instalar de novo.\n"))
             try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) } catch (e: Exception) { }
             return
         }
         try {
             val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fp", f)
             startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
-            append(t, tr("$label is not installed: installer opened. After installing, run the command again to open it.\n", "$label não está instalado: abri o instalador. Depois de instalar, rode o comando de novo para abrir.\n"))
+            append(t, tr("installer opened for $label\n", "instalador aberto para $label\n"))
         } catch (e: Exception) { err(t, "apk install: ${e.message}") }
+    }
+
+    // ---------- root: floating (freeform) windows ----------
+    private fun su(cmd: String): Pair<Int, String> = try {
+        val pr = ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
+        val out = pr.inputStream.bufferedReader().readText().trim()
+        val code = if (pr.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) pr.exitValue() else { pr.destroy(); -1 }
+        code to out
+    } catch (e: Exception) { -1 to (e.message ?: "") }
+
+    /** null = no root; true = floating windows already on; false = just turned on (needs one reboot). */
+    private fun ensureFreeform(): Boolean? {
+        val id = su("id")
+        if (id.first != 0 || !id.second.contains("uid=0")) return null
+        val a = su("settings get global enable_freeform_support").second
+        val b = su("settings get global force_resizable_activities").second
+        if (a == "1" && b == "1") return true
+        su("settings put global development_settings_enabled 1; settings put global enable_freeform_support 1; settings put global force_resizable_activities 1")
+        return false
+    }
+
+    /** Opens an installed app as a floating window (needs root once, to enable freeform windows). */
+    private fun openAsWindow(t: TabData, pkg: String, label: String) {
+        append(t, tr("opening $label…\n", "abrindo $label…\n"))
+        thread {
+            val ff = ensureFreeform()
+            ui.post {
+                when (ff) {
+                    false -> append(t, tr("Floating windows turned on with root. Reboot the phone once, then tap Open app again.\n", "Janelas flutuantes ativadas com root. Reinicie o celular uma vez e toque em Abrir app de novo.\n"))
+                    null -> { append(t, tr("No root access: opening as a normal app.\n", "Sem acesso root: abrindo como app normal.\n")); launchPkg(t, pkg, label) }
+                    true -> launchPkg(t, pkg, label)
+                }
+            }
+        }
+    }
+
+    /** apk//open// only finds the file and shows this window. Nothing is opened or installed until you tap a button. */
+    private fun showAppPanel(t: TabData, label: String, pkg: String, info: android.content.pm.PackageInfo, src: File, splits: List<File>?) {
+        val installed = try { packageManager.getPackageInfo(pkg, 0); true } catch (e: Exception) { false }
+        val p = panel("📦 $label", 0.6f)
+        val head = LinearLayout(this)
+        head.orientation = LinearLayout.HORIZONTAL
+        head.gravity = Gravity.CENTER_VERTICAL
+        try {
+            val ic = ImageView(this)
+            ic.setImageDrawable(info.applicationInfo?.loadIcon(packageManager))
+            head.addView(ic, LinearLayout.LayoutParams(dp(56), dp(56)).apply { rightMargin = dp(12) })
+        } catch (e: Exception) { }
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.addView(tv(label, 17f, Color.WHITE).apply { typeface = Typeface.DEFAULT_BOLD })
+        col.addView(tv(pkg, 12f, 0xFF9AA5B1.toInt()))
+        col.addView(tv(tr("version ", "versão ") + (info.versionName ?: "?") + (if (splits != null) "  •  ${splits.size} apk" else ""), 12f, 0xFF9AA5B1.toInt()))
+        head.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
+        p.body.addView(head)
+        p.body.addView(tv(tr("file: ", "arquivo: ") + short(src.path), 11f, 0xFF6B7785.toInt()).apply { setPadding(0, dp(8), 0, 0) })
+        p.body.addView(tv(tr("app data: ", "app data: ") + short(File(appDataDir(), safeSeg(src.nameWithoutExtension)).path), 11f, 0xFF6B7785.toInt()))
+        p.body.addView(tv(if (installed) tr("Installed on this phone.", "Instalado neste celular.") else tr("Not installed.", "Não instalado."), 13f, if (installed) GREEN else 0xFFFFB454.toInt()).apply { setPadding(0, dp(10), 0, dp(4)) })
+        p.body.addView(tv(tr("With root, TermWin turns on Android floating windows (one reboot the first time) and opens the app as a movable window you can play in.", "Com root, o TermWin liga as janelas flutuantes do Android (um reinício na primeira vez) e abre o app como uma janela movível em que você pode jogar."), 11f, 0xFF9AA5B1.toInt()))
+        p.button(tr("Close", "Fechar")) { p.close() }
+        p.button(if (installed) tr("Open app", "Abrir app") else tr("Install", "Instalar"), true) {
+            p.close()
+            if (installed) openAsWindow(t, pkg, label)
+            else if (splits != null) installSplits(t, pkg, label, splits)
+            else installSingle(t, label, src)
+        }
     }
 
     /** Opens an installed app in a window-sized launch (real floating window only where the phone supports it). */
@@ -3924,8 +3994,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                 val label = try { info.applicationInfo?.loadLabel(packageManager)?.toString() } catch (e: Exception) { null } ?: f.nameWithoutExtension
                 ui.post {
                     append(t, "$label  (${info.packageName})\napp data: ${short(dir.path)}  (${files.size} apk)\n")
-                    if (launchPkg(t, info.packageName, label)) return@post
-                    installSplits(t, info.packageName, label, files)
+                    showAppPanel(t, label, info.packageName, info, f, files)
                 }
             } catch (e: Exception) { ui.post { err(t, "apk: ${e.message}") } }
         }
