@@ -1777,7 +1777,8 @@ Long-press a tab to rename it.
                         try {
                             val out = File(t.cwd, fname)
                             java.net.URL(u).openStream().use { inp -> out.outputStream().use { o -> inp.copyTo(o) } }
-                            ui.post { append(t, tr("saved: ", "salvo: ") + short(out.path) + " (${out.length() / 1024} KiB)\n") }
+                            val vis = publishToDownloads(out)
+                            ui.post { append(t, tr("saved: ", "salvo: ") + short(out.path) + " (${out.length() / 1024} KiB)\n" + (if (vis != null) tr("also in: ", "também em: ") + vis + "\n" else tr("could not copy to Downloads (turn on all files access in Settings)\n", "não consegui copiar para Downloads (ligue o acesso a todos os arquivos em Configurações)\n"))) }
                         } catch (e: Exception) {
                             ui.post { err(t, "termwin-download: ${e.message}") }
                         }
@@ -2088,9 +2089,67 @@ Long-press a tab to rename it.
         return f
     }
 
-    private fun dlDone(f: File) = ui.post {
-        toast(tr("downloaded: ${f.name}", "baixado: ${f.name}"))
-        notifyDone(tr("✔ Download finished", "✔ Download concluído"), f.name + " — " + short(f.parent ?: ""), true)
+    /** Copies a finished download into the phone's public Downloads folder (Download/Downloaded), where the Files app can see it.
+     *  Returns the visible path, or null when it really could not be put there (nothing is ever deleted or overwritten). */
+    private fun publishToDownloads(f: File): String? {
+        val ext = f.extension.lowercase()
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+        // 1) direct copy: works on old Androids and when "all files access" is on; shows up in Files right away
+        if (Build.VERSION.SDK_INT < 29 || storageOk()) {
+            try {
+                val d = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Downloaded").apply { mkdirs() }
+                val dotExt = if (ext.isNotEmpty()) "." + f.extension else ""
+                var out = File(d, f.name); var i = 1
+                while (out.exists()) { out = File(d, f.nameWithoutExtension + " ($i)" + dotExt); i++ }
+                f.copyTo(out, false)
+                if (out.length() == f.length()) {
+                    try { android.media.MediaScannerConnection.scanFile(this, arrayOf(out.path), arrayOf(mime), null) } catch (e: Exception) { }
+                    return "Download/Downloaded/" + out.name
+                }
+                out.delete()
+            } catch (e: Exception) { logError("download", "direct copy: $e") }
+        }
+        // 2) MediaStore (no permission needed on Android 10+); try Download/Downloaded, then plain Download
+        if (Build.VERSION.SDK_INT >= 29) {
+            for (rel in listOf("Download/Downloaded", "Download")) {
+                var uri: Uri? = null
+                try {
+                    val cv = android.content.ContentValues()
+                    cv.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, f.name)
+                    cv.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
+                    cv.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, rel)
+                    cv.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+                    uri = contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv) ?: continue
+                    val ok = contentResolver.openOutputStream(uri)?.use { o -> f.inputStream().use { i -> i.copyTo(o) }; true } ?: false
+                    if (!ok) { contentResolver.delete(uri, null, null); continue }
+                    val done = android.content.ContentValues()
+                    done.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+                    contentResolver.update(uri, done, null, null)
+                    var shown = rel.trimEnd('/') + "/" + f.name
+                    contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, android.provider.MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) shown = (c.getString(1) ?: rel).trimEnd('/') + "/" + c.getString(0)
+                    }
+                    return shown
+                } catch (e: Exception) {
+                    logError("download", "mediastore $rel: $e")
+                    try { uri?.let { contentResolver.delete(it, null, null) } } catch (x: Exception) { }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun dlDone(f: File) {
+        val vis = publishToDownloads(f)
+        ui.post {
+            if (vis != null) {
+                toast(tr("downloaded: ${f.name}", "baixado: ${f.name}"))
+                notifyDone(tr("✔ Download finished", "✔ Download concluído"), f.name + " — " + vis, true)
+            } else {
+                toast(tr("could not copy to Downloads. Turn on \"all files access\" in Settings and download again.", "não consegui copiar para Downloads. Ligue \"acesso a todos os arquivos\" em Configurações e baixe de novo."))
+                notifyDone(tr("⚠ Download not in Downloads", "⚠ Download fora da pasta Downloads"), f.name + " — " + tr("saved only inside the app (Files/Downloaded)", "salvo só dentro do app (Files/Downloaded)"), false)
+            }
+        }
     }
 
     private fun saveBytes(name: String, bytes: ByteArray) {
@@ -3819,7 +3878,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     private fun findApk(name: String, t: TabData): File? {
         if (name.contains('/')) resolvePath(t, name)?.let { if (it.isFile) return it }
         val base = name.substringAfterLast('/')
-        val roots = listOf(downloadsDir(), filesRoot(), dataDir())
+        val roots = listOf(downloadsDir(), filesRoot(), dataDir(), File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Downloaded"), Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)).filter { it.isDirectory }
         for (r in roots) r.walkTopDown().maxDepth(8).firstOrNull { it.isFile && it.name.equals(base, true) }?.let { return it }
         val part = base.substringBeforeLast('.', base)
         val exts = setOf("apk", "apkm", "xapk", "apks")
