@@ -53,7 +53,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "2.3"
+const val VERSION = "2.4"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -76,32 +76,61 @@ fun ensureChannels(c: Context) {
     nm.createNotificationChannel(NotificationChannel("run", "Running", NotificationManager.IMPORTANCE_LOW))
 }
 
-/** Keeps TermWin alive in the background while a command/server is running. */
+/** Keeps TermWin alive in the background while a command/server is running, and for 1h22 after you leave the app. */
 class TermService : Service() {
+    private val h = Handler(Looper.getMainLooper())
+    private var lock: PowerManager.WakeLock? = null
+    private val expire = Runnable {
+        MainActivity.keepUntil = 0L
+        releaseLock()
+        if (MainActivity.instance?.isBusy() != true) { try { stopForeground(Service.STOP_FOREGROUND_REMOVE) } catch (e: Exception) { }; stopSelf() }
+    }
+    private fun releaseLock() { try { if (lock?.isHeld == true) lock?.release() } catch (e: Exception) { }; lock = null }
     override fun onBind(i: Intent?): IBinder? = null
+    override fun onDestroy() { h.removeCallbacks(expire); releaseLock(); super.onDestroy() }
     override fun onStartCommand(i: Intent?, flags: Int, id: Int): Int {
         if (i?.action == "com.termwin.OFF") {
+            h.removeCallbacks(expire); releaseLock(); MainActivity.keepUntil = 0L
             val a = MainActivity.instance
             if (a != null) a.turnOffAll() else { stopSelf(); android.os.Process.killProcess(android.os.Process.myPid()) }
             return START_NOT_STICKY
         }
+        if (i?.action == "com.termwin.KEEP_OFF") {
+            h.removeCallbacks(expire); releaseLock(); MainActivity.keepUntil = 0L
+            if (MainActivity.instance?.isBusy() != true) { try { stopForeground(Service.STOP_FOREGROUND_REMOVE) } catch (e: Exception) { }; stopSelf() }
+            return START_NOT_STICKY
+        }
+        val keep = i?.action == "com.termwin.KEEP"
         ensureChannels(this)
+        val pt = getSharedPreferences("termwin", 0).getBoolean("pt", false)
         val pf = android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         val off = android.app.PendingIntent.getService(this, 11, Intent(this, TermService::class.java).setAction("com.termwin.OFF"), pf)
         val enter = android.app.PendingIntent.getActivity(this, 12, Intent(this, MainActivity::class.java).setAction("com.termwin.ENTER")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT), pf)
         val ic = android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_stat_termwin)
+        val text = if (keep) (if (pt) "Aberto por até 1h22 depois que você saiu…" else "Staying open for up to 1h22 after you left…")
+                   else "Running commands / servers…"
         val n = Notification.Builder(this, "run")
             .setSmallIcon(R.drawable.ic_stat_termwin)
             .setLargeIcon(android.graphics.BitmapFactory.decodeResource(resources, R.drawable.ic_notif_large))
             .setContentTitle("TermWin")
-            .setContentText("Running commands / servers…")
+            .setContentText(text)
             .setContentIntent(enter)
             .addAction(Notification.Action.Builder(ic, "turn off", off).build())
             .addAction(Notification.Action.Builder(ic, "enter", enter).build())
             .setOngoing(true).build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         else startForeground(1, n)
+        if (keep) {
+            MainActivity.keepUntil = System.currentTimeMillis() + MainActivity.KEEP_MS
+            h.removeCallbacks(expire)
+            h.postDelayed(expire, MainActivity.KEEP_MS)
+            releaseLock()
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TermWin::keep").also { it.acquire(MainActivity.KEEP_MS) }
+            } catch (e: Exception) { }
+        }
         return START_NOT_STICKY
     }
 }
@@ -111,7 +140,12 @@ class MaxScroll(c: Context, private val maxH: Int) : ScrollView(c) {
 }
 
 class MainActivity : Activity() {
-    companion object { @Volatile var instance: MainActivity? = null }
+    companion object {
+        @Volatile var instance: MainActivity? = null
+        /** 1 h 22 min: how long the app stays alive after you leave it. */
+        const val KEEP_MS = 82L * 60L * 1000L
+        @Volatile var keepUntil = 0L
+    }
     private val ui = Handler(Looper.getMainLooper())
     private val tabs = mutableListOf<TabData>()
     private val servers = mutableListOf<Srv>()
@@ -212,6 +246,7 @@ class MainActivity : Activity() {
   notificar oi               envia uma notificação com o texto "oi"
   abrir youtube.com          abre no navegador
   historico                  comandos usados
+  botão 📜 Savedata           comandos recentes (Files/Savedata.wintext); toque para executar
   dados                      onde seus arquivos ficam salvos
   erros                      mostra os erros salvos (erros limpar)
   pkg listar                 lista pacotes (pkg instalar cowsay | pkg remover cowsay | pkg atualizar)
@@ -275,6 +310,7 @@ Toque e segure numa aba para renomear.
   notify hello               send a notification with the text "hello"
   open youtube.com           open in the browser
   history                    commands used
+  📜 Savedata button         recent commands (Files/Savedata.wintext); tap one to run it
   data                       where your files are saved
   errors                     show saved errors (errors clear)
   pkg list                   list packages (pkg install cowsay | pkg remove cowsay | pkg upgrade)
@@ -382,6 +418,7 @@ Long-press a tab to rename it.
     }
 
     private fun field(hint: String, init: String = "", multi: Boolean = false) = EditText(this).apply {
+        enableImagePaste(this)
         setText(init); this.hint = hint
         setTextColor(Color.WHITE); setHintTextColor(0xFF777777.toInt()); textSize = 14f
         background = rounded(0xFF2D2D2D.toInt(), dp(6), 0xFF454545.toInt())
@@ -515,6 +552,11 @@ Long-press a tab to rename it.
         btns.addView(pill("🔑  API Keys", false) { showApiKeys() }, gap())
         btns.addView(pill(tr("👤  Profile", "👤  Perfil"), false) { showProfile() }, gap())
         home.addView(btns, LinearLayout.LayoutParams(WRAP, WRAP))
+        val btns2 = LinearLayout(this)
+        btns2.orientation = LinearLayout.HORIZONTAL
+        btns2.gravity = Gravity.CENTER
+        btns2.addView(pill("📜  Savedata", false) { showSavedata() })
+        home.addView(btns2, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(10) })
         root.addView(home, FrameLayout.LayoutParams(MATCH, MATCH))
 
         val mb = pill(mouseLabel(), false) { toggleGlobalMouse() }
@@ -554,9 +596,13 @@ Long-press a tab to rename it.
     }
 
     @Suppress("DEPRECATION")
-    override fun onBackPressed() { if (panels.isNotEmpty()) panels.last().close() else super.onBackPressed() }
-    override fun onStart() { super.onStart(); bg = false }
-    override fun onStop() { super.onStop(); bg = true }
+    override fun onBackPressed() {
+        if (panels.isNotEmpty()) panels.last().close()
+        else { keepAlive(); moveTaskToBack(true) } // leaving does not close the app: it stays open for 1h22
+    }
+    override fun onStart() { super.onStart(); bg = false; keepOff() }
+    override fun onUserLeaveHint() { super.onUserLeaveHint(); keepAlive() }
+    override fun onStop() { super.onStop(); bg = true; keepAlive() }
     override fun onResume() { super.onResume(); settingsSync?.invoke(); ensureStorageLinks() }
     override fun onPause() { super.onPause(); save() }
     override fun onDestroy() { if (instance === this) instance = null; super.onDestroy() }
@@ -573,6 +619,7 @@ Long-press a tab to rename it.
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
         if (req == 78) { val cb = pendingAuth; pendingAuth = null; if (res == RESULT_OK) cb?.invoke() else toast(tr("Not authenticated", "Não autenticado")); return }
+        if (req == 81) { val cb = fileCb; fileCb = null; cb?.onReceiveValue(android.webkit.WebChromeClient.FileChooserParams.parseResult(res, data)); return }
         if (req == 79) { if (res == RESULT_OK) data?.data?.let { showPublish(it) }; return }
         if (req == 80) { if (res == RESULT_OK) data?.data?.let { copyFromTree(it) } else copyTab?.let { append(it, tr("copy cancelled\n", "cópia cancelada\n")) }; return }
         if (req != 77 || res != RESULT_OK) return
@@ -795,6 +842,7 @@ Long-press a tab to rename it.
         try { scanFolders() } catch (e: Exception) { }
         try { seedVideos() } catch (e: Exception) { }
         writeIndex()
+        try { loadRecent(); writeRecent() } catch (e: Exception) { }
         if (tabs.isEmpty()) tabs.add(newTabData("Terminal 1"))
         cur = cur.coerceIn(0, tabs.size - 1)
     }
@@ -858,8 +906,27 @@ Long-press a tab to rename it.
         else err(t, tr("Could not send the notification", "Não foi possível enviar a notificação"))
     }
 
+    fun isBusy() = busyN > 0
+
+    /** Leaving the app: keep it alive (foreground service + wake lock) for 1h22 before it can close. */
+    private fun keepAlive() {
+        if (keepUntil > System.currentTimeMillis()) return
+        try {
+            keepUntil = System.currentTimeMillis() + KEEP_MS
+            startForegroundService(Intent(this, TermService::class.java).setAction("com.termwin.KEEP"))
+        } catch (e: Exception) { keepUntil = 0L; logError("keep", e.message ?: "start") }
+    }
+
+    /** Back in the app: the keep-alive is not needed any more. */
+    private fun keepOff() {
+        if (keepUntil == 0L) return
+        keepUntil = 0L
+        try { startService(Intent(this, TermService::class.java).setAction("com.termwin.KEEP_OFF")) } catch (e: Exception) { }
+    }
+
     /** Notification button "turn off": stops every server and running command, then the background service. */
     fun turnOffAll() {
+        keepUntil = 0L
         ui.post {
             servers.filter { it.running }.forEach { try { stopServer(it) } catch (e: Exception) { } }
             tabs.forEach { try { it.proc?.destroy() } catch (e: Exception) { } }
@@ -883,7 +950,7 @@ Long-press a tab to rename it.
         busyN = (busyN + d).coerceAtLeast(0)
         try {
             if (before == 0 && busyN > 0) startForegroundService(Intent(this, TermService::class.java))
-            else if (before > 0 && busyN == 0) stopService(Intent(this, TermService::class.java))
+            else if (before > 0 && busyN == 0 && keepUntil <= System.currentTimeMillis()) stopService(Intent(this, TermService::class.java))
         } catch (e: Exception) { }
     }
 
@@ -1012,6 +1079,41 @@ Long-press a tab to rename it.
     }
 
     @Suppress("DEPRECATION")
+    // ---------- paste an image (IMG) into a text field: it is saved in Files/Pasted and its path is typed ----------
+    private fun pastedDir() = File(filesRoot(), "Pasted").apply { mkdirs() }
+
+    private fun enableImagePaste(et: EditText) {
+        if (Build.VERSION.SDK_INT < 31) return
+        try {
+            et.setOnReceiveContentListener(arrayOf("image/*", "text/*")) { v, payload ->
+                val (imgs, rest) = payload.partition { item ->
+                    val u = item.uri
+                    u != null && (contentResolver.getType(u) ?: "").startsWith("image/")
+                }
+                val clip = imgs?.clip
+                if (clip != null) for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let { savePastedImage(it, v as? EditText ?: et) }
+                rest
+            }
+        } catch (e: Exception) { logError("paste", e.message ?: "listener") }
+    }
+
+    private fun savePastedImage(u: Uri, et: EditText) {
+        try {
+            val mime = contentResolver.getType(u) ?: "image/png"
+            val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "png"
+            val f = File(pastedDir(), "image_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date()) + "." + ext)
+            contentResolver.openInputStream(u)!!.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+            val at = et.selectionStart.coerceAtLeast(0)
+            et.text.insert(at, f.path)
+            toast(tr("Image pasted → saved in Files/Pasted", "Imagem colada → salva em Files/Pasted"))
+        } catch (e: Exception) {
+            val m = tr("Could not paste the image: ${e.message}", "Não foi possível colar a imagem: ${e.message}")
+            toast(m); logError("paste", m)
+        }
+    }
+
+    private var fileCb: android.webkit.ValueCallback<Array<Uri>>? = null
+
     private fun pickFile() {
         val i = Intent(Intent.ACTION_GET_CONTENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE)
         try { startActivityForResult(Intent.createChooser(i, null), 77) }
@@ -1074,6 +1176,7 @@ Long-press a tab to rename it.
             capBtn(t, false, wd, click).apply { textSize = if (wd > 50) 12f else 15f; if (accent) setTextColor(ACCENT); layoutParams = LinearLayout.LayoutParams(dp(wd), dp(38)) })
         rb("＋", 36) { addTab() }
         rb("🎨", 36, true) { showTemplates() }
+        rb("📜", 36) { showSavedata() }
         rb("🔑", 36) { showApiKeys() }
         rb("👤", 36) { showProfile() }
         rb("⋯", 36) { showMenu() }
@@ -1092,6 +1195,7 @@ Long-press a tab to rename it.
             tr("＋  New server", "＋  Novo servidor") to { createServerDialog() },
             tr("📂  Load file", "📂  Carregar arquivo") to { showLoad() },
             tr("📝  Data file", "📝  Arquivo de dados") to { showDados() },
+            tr("📜  Savedata (recent commands)", "📜  Savedata (comandos recentes)") to { showSavedata() },
             tr("⚙  Settings", "⚙  Configurações") to { showSettings() },
             tr("ⓘ  Credits", "ⓘ  Créditos") to { showCredits() })
         items.chunked(2).forEach { pair ->
@@ -1206,6 +1310,7 @@ Long-press a tab to rename it.
         et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         et.imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
         et.setOnEditorActionListener { _, _, _ -> submit(et); true }
+        enableImagePaste(et)
         inp.addView(et, LinearLayout.LayoutParams(0, dp(44), 1f))
         inp.addView(capBtn("⇥", false, 44) { tabComplete(et) }.apply { layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)) })
         inp.addView(capBtn("↑", false, 44) { histMove(et, -1) }.apply { layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)) })
@@ -1244,9 +1349,102 @@ Long-press a tab to rename it.
         val c = et.text.toString().trim()
         et.setText("")
         hIdx = -1
+        runIn(t, c)
+    }
+
+    private fun runIn(t: TabData, c: String) {
         append(t, "${short(t.cwd)} \$ $c\n")
-        if (c.isNotEmpty()) history.add(c)
+        if (c.isNotEmpty()) { history.add(c); recordCmd(t, c) }
         exec(t, c)
+    }
+
+    // ---------- Savedata.wintext (Files folder): every recent command ----------
+    private class SavedCmd(val server: Boolean, val tab: String, val cmd: String)
+    private val recent = mutableListOf<SavedCmd>() // newest first
+    private val SAVE_MAX = 300
+    private val RE_SAVED = Regex("^\\[([NS])\\]\\s+(.*?)\\s+::\\s+(.*)$")
+    private fun saveFile() = File(filesRoot(), "Savedata.wintext")
+    private fun isSrvTab(t: TabData) = t.tpl.isNotEmpty() || t.srvName.isNotEmpty()
+
+    private fun loadRecent() {
+        recent.clear()
+        try {
+            val f = saveFile()
+            if (f.exists()) f.readLines().forEach { l ->
+                val m = RE_SAVED.matchEntire(l.trim()) ?: return@forEach
+                recent.add(SavedCmd(m.groupValues[1] == "S", m.groupValues[2], m.groupValues[3]))
+            }
+        } catch (e: Exception) { }
+    }
+
+    private fun writeRecent() {
+        try {
+            val sb = StringBuilder()
+            sb.append("WINTEXT 1\n# TermWin - Savedata.wintext (recent commands, newest first)\n")
+            sb.append("# [N] = normal terminal, [S] = server tab.   Format: [N] tab :: command\n")
+            sb.append("# Tap the Savedata button in TermWin to run a line again.\n\n[Commands]\n")
+            recent.take(SAVE_MAX).forEach { sb.append(if (it.server) "[S] " else "[N] ").append(it.tab).append(" :: ").append(it.cmd).append('\n') }
+            saveFile().writeText(sb.toString())
+        } catch (e: Exception) { logError("savedata", e.message ?: "write") }
+    }
+
+    private fun recordCmd(t: TabData, c: String) {
+        val line = c.replace('\n', ' ').trim()
+        if (line.isEmpty()) return
+        loadRecent() // keeps edits you made to the file by hand
+        val srv = isSrvTab(t)
+        recent.removeAll { it.server == srv && it.tab == t.name && it.cmd == line }
+        recent.add(0, SavedCmd(srv, t.name, line))
+        while (recent.size > SAVE_MAX) recent.removeAt(recent.size - 1)
+        writeRecent()
+    }
+
+    /** Runs a saved command: normal ones in the normal terminal, server ones in the server tab. */
+    private fun runSaved(sc: SavedCmd) {
+        restore()
+        val idx: Int
+        if (sc.server) {
+            idx = tabs.indexOfFirst { isSrvTab(it) && it.name.equals(sc.tab, true) }.takeIf { it >= 0 }
+                ?: tabs.indexOfFirst { isSrvTab(it) && it.srvName.equals(sc.tab, true) }
+            if (idx < 0) {
+                val m = tr("Server tab '${sc.tab}' is not open. Open the server first, then tap the command again.", "A aba do servidor '${sc.tab}' não está aberta. Abra o servidor primeiro e toque no comando de novo.")
+                toast(m); sayCur(m + "\n"); logError("savedata", m); return
+            }
+        } else {
+            idx = tabs.indexOfFirst { !isSrvTab(it) && it.name.equals(sc.tab, true) }.takeIf { it >= 0 }
+                ?: (if (!isSrvTab(tabs[cur.coerceIn(0, tabs.size - 1)])) cur else tabs.indexOfFirst { !isSrvTab(it) })
+            if (idx < 0) { tabs.add(newTabData(nextTabName())); cur = tabs.size - 1; refreshTabs(); showTab(); runIn(tabs[cur], sc.cmd); return }
+        }
+        cur = idx
+        refreshTabs(); showTab()
+        runIn(tabs[idx], sc.cmd)
+    }
+
+    private fun showSavedata() {
+        loadRecent()
+        val p = panel("📜 Savedata.wintext", 0.8f)
+        p.body.addView(tv(tr("Recent commands. Tap one to run it: normal ones run in the normal terminal, server ones run in their server.", "Comandos recentes. Toque em um para executar: os normais rodam no terminal normal, os de servidor rodam no servidor."), 12f, 0xFF9AA5B1.toInt()))
+        p.body.addView(tv(short(saveFile().path), 11f, 0xFF6B7785.toInt()).apply { setPadding(0, dp(2), 0, dp(4)) })
+        if (recent.isEmpty()) p.body.addView(tv(tr("(no commands yet)", "(nenhum comando ainda)"), 13f, 0xFFAAAAAA.toInt()).apply { setPadding(dp(4), dp(8), 0, dp(4)) })
+        recent.toList().forEach { sc ->
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.background = pressBg(0xFF2A2A2A.toInt())
+            row.setPadding(dp(12), dp(8), dp(12), dp(8))
+            row.addView(tv(if (sc.server) "SERVER" else "NORMAL", 10f, if (sc.server) 0xFFFFB454.toInt() else GREEN).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, 0, dp(10), 0) })
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            col.addView(tv(sc.cmd, 14f, Color.WHITE).apply { typeface = Typeface.MONOSPACE })
+            col.addView(tv(sc.tab, 10f, 0xFF8899AA.toInt()))
+            row.addView(col, LinearLayout.LayoutParams(0, WRAP, 1f))
+            row.addView(tv("▶", 14f, ACCENT))
+            row.setOnClickListener { p.close(); runSaved(sc) }
+            p.body.addView(row, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) })
+        }
+        p.button(tr("Clear", "Limpar")) { recent.clear(); writeRecent(); p.close(); showSavedata() }
+        p.button(tr("Edit file", "Editar arquivo")) { p.close(); writeRecent(); openEditor(tabs[cur.coerceIn(0, tabs.size - 1)], saveFile()) }
+        p.button(tr("Close", "Fechar"), true) { p.close() }
     }
 
     private fun neofetch(t: TabData) {
@@ -1785,12 +1983,24 @@ Long-press a tab to rename it.
         wv.settings.domStorageEnabled = true
         wv.settings.mediaPlaybackRequiresUserGesture = false
         wv.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        wv.settings.allowFileAccess = true
+        wv.settings.allowContentAccess = true
         wv.addJavascriptInterface(TwBridge(wv), "TW")
         if (yt) pubWv = wv
         wv.webViewClient = android.webkit.WebViewClient()
         wv.settings.setSupportMultipleWindows(true)
         wv.addJavascriptInterface(TwDl(), "TWDL")
         wv.webChromeClient = object : android.webkit.WebChromeClient() {
+            // the site's "add file" / upload button (e.g. attaching a file to an AI chat) opens the phone's file picker
+            @Suppress("DEPRECATION")
+            override fun onShowFileChooser(view: android.webkit.WebView, cb: android.webkit.ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                fileCb?.onReceiveValue(null)
+                fileCb = cb
+                val i = try { params.createIntent() } catch (e: Exception) { Intent(Intent.ACTION_GET_CONTENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE) }
+                try { startActivityForResult(i, 81) }
+                catch (e: Exception) { fileCb = null; cb.onReceiveValue(null); toast(tr("No file picker found", "Nenhum seletor de arquivos encontrado")) }
+                return true
+            }
             // links with target=_blank open in this same window (so their downloads work too)
             override fun onCreateWindow(view: android.webkit.WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
                 val tmp = android.webkit.WebView(this@MainActivity)
