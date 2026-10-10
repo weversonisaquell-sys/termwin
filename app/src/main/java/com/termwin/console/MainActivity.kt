@@ -212,6 +212,15 @@ class MainActivity : Activity() {
   botão 🎨 Modelos           modelos de servidor (YouTube, Windows 10, IA): play, port, turn off
   botão 📝 Dados             edita o arquivo dados.wintext
   nano arquivo.txt           editor de texto (também: edit, vi)
+  creat//Projeto//html//index.html   cria o arquivo em Files/Projects/Projeto e abre o editor (py, js, css, json…)
+  open//Projeto//index.html  abre o arquivo no editor
+  copy NomePasta             procura no celular todo e copia para Files/Copied/NomePasta
+  projetos                   lista os projetos
+  git init|clone|add|commit|push|pull|status|log   git embutido (git login SEU_TOKEN guarda o token do GitHub)
+  cmd1 && cmd2 && cmd3       encadeia comandos (para se um falhar); aceita ${'$'}VAR, ~ e unzip
+  ~/storage/downloads        atalho para a pasta Download (também shared, dcim, documents…)
+  ls storage                 mostra tudo de storage/emulated/0 com ícone de pasta (ls storage -r = com subpastas)
+  cd qualquer/caminho        funciona com sdcard, storage/emulated/0/download, ~, .., maiúsculas/minúsculas
   alias ll='ls -la'          cria atalho | unalias ll
   export NOME=valor          variável de ambiente | env | unset NOME
   cd -                       volta para a pasta anterior (cd ~/pasta também)
@@ -264,6 +273,15 @@ Toque e segure numa aba para renomear.
   🎨 Templates button        server templates (YouTube, Windows 10, AI): play, port, turn off
   📝 Data button             edit the dados.wintext file
   nano file.txt              text editor (also: edit, vi)
+  creat//Project//html//index.html   create the file in Files/Projects/Project and open the editor (py, js, css, json…)
+  open//Project//index.html  open the file in the editor
+  copy FolderName            search the whole phone and copy to Files/Copied/FolderName
+  projects                   list projects
+  git init|clone|add|commit|push|pull|status|log   built-in git (git login YOUR_TOKEN saves the GitHub token)
+  cmd1 && cmd2 && cmd3       chain commands (stops if one fails); supports ${'$'}VAR, ~ and unzip
+  ~/storage/downloads        shortcut to the Download folder (also shared, dcim, documents…)
+  ls storage                 show everything in storage/emulated/0 with folder icons (ls storage -r = with subfolders)
+  cd any/path                works with sdcard, storage/emulated/0/download, ~, .., any letter case
   alias ll='ls -la'          create a shortcut | unalias ll
   export NAME=value          environment variable | env | unset NAME
   cd -                       go back to the previous folder (cd ~/folder too)
@@ -429,6 +447,8 @@ Long-press a tab to rename it.
         super.onCreate(b)
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         load()
+        System.setProperty("user.home", filesDir.path)
+        ensureStorageLinks()
         ensureChannels(this)
         root = FrameLayout(this)
         root.setBackgroundColor(0xFF0B0F14.toInt())
@@ -515,7 +535,7 @@ Long-press a tab to rename it.
     override fun onBackPressed() { if (panels.isNotEmpty()) panels.last().close() else super.onBackPressed() }
     override fun onStart() { super.onStart(); bg = false }
     override fun onStop() { super.onStop(); bg = true }
-    override fun onResume() { super.onResume(); settingsSync?.invoke() }
+    override fun onResume() { super.onResume(); settingsSync?.invoke(); ensureStorageLinks() }
     override fun onPause() { super.onPause(); save() }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
@@ -1223,6 +1243,8 @@ Long-press a tab to rename it.
         if (rawLine.isEmpty()) return
         val line = expandAlias(rawLine)
         if (t.tpl.isNotEmpty()) { tplExec(t, line); saveSoon(); return }
+        if (needsChain(line)) { chain(t, line); saveSoon(); return }
+        if (fileCmd(t, line)) { saveSoon(); return }
         val p = line.split(" ").filter { it.isNotEmpty() }
         when (cmd(p[0])) {
             "help" -> append(t, help())
@@ -1733,10 +1755,10 @@ Long-press a tab to rename it.
         val st = if (s.running) "ON" else "OFF"
         val en = listOf("help" to "this help", "play $name" to "turn the server on and open the page",
             "port 4089" to "set the port (then open localhost:4089)", "turn off" to "turn the server off",
-            "status" to "show state and port", "clear" to "clear the screen", "exit" to "close this tab")
+            "status" to "show state and port", "creat//Proj//html//index.html" to "create a file in Files/Projects and edit it", "open//Proj//index.html" to "open a file in the editor", "copy Folder" to "copy a folder from the phone to Files/Copied", "cd path" to "change folder (any path)", "clear" to "clear the screen", "exit" to "close this tab")
         val br = listOf("help" to "esta ajuda", "play $name" to "liga o servidor e abre a página",
             "port 4089" to "define a porta (depois abra localhost:4089)", "turn off" to "desliga o servidor",
-            "status" to "mostra estado e porta", "clear" to "limpa a tela", "exit" to "fecha esta aba")
+            "status" to "mostra estado e porta", "creat//Proj//html//index.html" to "cria um arquivo em Files/Projects e edita", "open//Proj//index.html" to "abre um arquivo no editor", "copy Pasta" to "copia uma pasta do celular para Files/Copied", "cd caminho" to "muda de pasta (qualquer caminho)", "clear" to "limpa a tela", "exit" to "fecha esta aba")
         val rows = (if (pt) br else en).joinToString("") { "  " + it.first.padEnd(18) + it.second + "\n" }
         val yt = if (name != "youtube") "" else if (pt) "  publicar          escolhe um vídeo do aparelho e publica (também o botão ＋)\n  post seu texto    publica um post de texto no seu canal (ou ＋ → Post)\n  (entre antes com o botão 👤 Perfil)\n" else "  publish           pick a video from your phone and publish it (or the ＋ button)\n  post your text    publish a text post on your channel (or ＋ → Post)\n  (sign in first with the 👤 Profile button)\n"
         val ai = if (name != "ai") yt else if (pt) "  ia//pergunta//app   gera resposta ou código (app é opcional)\n  ia//faça um jogo//GDScript   exemplo (também: ai// e aí//)\n  ia key SUA_CHAVE   API do provedor (Gemini/Groq/Anthropic/OpenAI…; ia key limpar apaga)\n  ia model NOME      troca o modelo\n"
@@ -1992,6 +2014,7 @@ Long-press a tab to rename it.
         val label = when (t.tpl) { "youtube" -> "YouTube"; "ai" -> "AI"; else -> "Windows 10" }
         val l = line.trim().lowercase().split(" ").filter { it.isNotEmpty() }.joinToString(" ")
         if (l.isEmpty()) return
+        if (fileCmd(t, line)) return
         if (l == "clear" || l == "limpar") { t.log.setLength(0); outView?.text = ""; return }
         if (l == "exit") { val i = tabs.indexOf(t); if (tabs.size <= 1) closeWindow() else closeTab(i); return }
         if (t.tpl == "ai") {
@@ -2658,9 +2681,543 @@ Long-press a tab to rename it.
     }
 
     /** Built-in text editor (nano/edit/vi): opens a panel with the file's text. */
+    // ---------- shell chains (&&), $VAR, ~, git (JGit), unzip, ~/storage links ----------
+    private fun ensureStorageLinks() {
+        try {
+            if (!storageOk()) return
+            val ext = Environment.getExternalStorageDirectory()
+            val dir = File(filesDir, "storage").apply { mkdirs() }
+            val m = mapOf("shared" to ext, "downloads" to File(ext, "Download"), "documents" to File(ext, "Documents"),
+                "dcim" to File(ext, "DCIM"), "pictures" to File(ext, "Pictures"), "music" to File(ext, "Music"), "movies" to File(ext, "Movies"))
+            for ((n, tg) in m) {
+                val l = File(dir, n)
+                if (!java.nio.file.Files.isSymbolicLink(l.toPath()) && !l.exists()) android.system.Os.symlink(tg.path, l.path)
+            }
+        } catch (e: Exception) { }
+    }
+
+    private fun splitChain(line: String): List<String> {
+        val out = mutableListOf<String>(); val sb = StringBuilder(); var q = '\u0000'; var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            if (q != '\u0000') { sb.append(c); if (c == q) q = '\u0000' }
+            else if (c == '"' || c == '\'') { q = c; sb.append(c) }
+            else if (c == '&' && i + 1 < line.length && line[i + 1] == '&') { out.add(sb.toString().trim()); sb.setLength(0); i++ }
+            else sb.append(c)
+            i++
+        }
+        out.add(sb.toString().trim())
+        return out.filter { it.isNotEmpty() }
+    }
+
+    private fun expandVars(s: String, vars: Map<String, String>): String {
+        var r = s
+        if (r == "~" || r.startsWith("~/")) r = filesDir.path + r.drop(1)
+        return Regex("\\$(\\w+|\\{\\w+\\})").replace(r) { m ->
+            val n = m.groupValues[1].trim('{', '}')
+            vars[n] ?: envVars[n] ?: when (n) { "HOME" -> filesDir.path; "TMPDIR" -> cacheDir.path; else -> System.getenv(n) ?: "" }
+        }
+    }
+
+    private fun splitArgs(s: String, vars: Map<String, String>): List<String> {
+        val out = mutableListOf<String>(); val sb = StringBuilder(); var q = '\u0000'; var has = false
+        fun flush() { if (has) { out.add(expandVars(sb.toString(), vars)); sb.setLength(0); has = false } }
+        for (c in s) {
+            if (q != '\u0000') { if (c == q) q = '\u0000' else sb.append(c) }
+            else if (c == '"' || c == '\'') { q = c; has = true }
+            else if (c.isWhitespace()) flush()
+            else { sb.append(c); has = true }
+        }
+        flush()
+        return out
+    }
+
+    private fun needsChain(line: String): Boolean {
+        val f = line.trim().split(Regex("\\s+"))[0].lowercase()
+        return f == "git" || f == "unzip" || splitChain(line).size > 1
+    }
+
+    private fun chain(t: TabData, line: String) {
+        if (t.proc != null) { err(t, tr("A command is already running (use ^C)", "Já existe um comando rodando (use ^C)")); return }
+        val segs = splitChain(line)
+        busy(1)
+        thread {
+            var ok = true
+            var cwd = File(t.cwd)
+            val vars = mutableMapOf<String, String>()
+            fun out(s: String) { ui.post { append(t, s) } }
+            for (seg in segs) {
+                val a = splitArgs(seg, vars)
+                if (a.isEmpty()) continue
+                val good: Boolean = try {
+                    when {
+                        a.size == 1 && Regex("^[A-Za-z_][A-Za-z0-9_]*=").containsMatchIn(seg.trim()) -> {
+                            vars[seg.trim().substringBefore('=')] = expandVars(seg.trim().substringAfter('=').removeSurrounding("\"").removeSurrounding("'"), vars); true
+                        }
+                        a[0] == "cd" -> {
+                            val tg = if (a.size < 2) filesDir else if (a[1] == "-") File(t.prev.ifEmpty { cwd.path }) else resolveIn(cwd.path, a[1])
+                            if (tg != null && tg.isDirectory) { cwd = tg; true } else { out("cd: ${a.getOrNull(1) ?: ""}: " + tr("No such file or directory", "Arquivo ou diretório inexistente") + "\n"); false }
+                        }
+                        a[0] == "git" -> gitRun(a.drop(1), cwd, ::out)
+                        a[0] == "unzip" -> unzipRun(a.drop(1), cwd, ::out)
+                        else -> {
+                            val pb = ProcessBuilder("sh", "-c", seg).directory(cwd).redirectErrorStream(true)
+                            pb.environment()["HOME"] = filesDir.path; pb.environment()["TMPDIR"] = cacheDir.path
+                            envVars.forEach { (k, v) -> pb.environment()[k] = v }
+                            vars.forEach { (k, v) -> pb.environment()[k] = v }
+                            val pr = pb.start(); t.proc = pr
+                            pr.inputStream.bufferedReader().use { r ->
+                                val buf = CharArray(1024)
+                                while (true) { val n = r.read(buf); if (n < 0) break; out(String(buf, 0, n)) }
+                            }
+                            val code = pr.waitFor(); t.proc = null
+                            if (code != 0) out("↳ exit $code\n")
+                            code == 0
+                        }
+                    }
+                } catch (e: Exception) { out("${a[0]}: ${e.message}\n"); false }
+                if (!good) { ok = false; out("✖ " + tr("stopped at: ", "parou em: ") + seg + "\n"); break }
+            }
+            ui.post {
+                if (cwd.isDirectory) { t.prev = t.cwd; t.cwd = cwd.path }
+                t.proc = null; busy(-1)
+                if (ok) append(t, "✔\n")
+                notifyDone(if (ok) tr("✔ Command finished", "✔ Comando concluído") else tr("✖ Command failed", "✖ Comando falhou"), line.take(80), ok)
+            }
+        }
+    }
+
+    private fun unzipRun(args: List<String>, cwd: File, out: (String) -> Unit): Boolean {
+        var zip: String? = null; var dest: String? = null; var i = 0; var quiet = false
+        while (i < args.size) {
+            val x = args[i]
+            if (x == "-d") { dest = args.getOrNull(i + 1); i++ } else if (x == "-q" || x == "-qq") quiet = true
+            else if (x.startsWith("-")) { } else if (zip == null) zip = x
+            i++
+        }
+        if (zip == null) { out("usage: unzip file.zip [-d folder]\n"); return false }
+        val zf = resolveIn(cwd.path, zip)?.takeIf { it.isFile } ?: run { out("unzip: $zip: " + tr("No such file or directory", "Arquivo inexistente") + "\n"); return false }
+        val dd = if (dest == null) cwd else (if (dest.startsWith("/")) File(dest) else File(cwd, dest)).apply { mkdirs() }
+        val base = dd.canonicalFile
+        var n = 0
+        java.util.zip.ZipInputStream(zf.inputStream().buffered()).use { zin ->
+            while (true) {
+                val e = zin.nextEntry ?: break
+                val f = File(base, e.name).canonicalFile
+                if (!f.path.startsWith(base.path)) continue
+                if (e.isDirectory) f.mkdirs() else { f.parentFile?.mkdirs(); f.outputStream().use { o -> zin.copyTo(o) }; n++ }
+            }
+        }
+        if (!quiet) out(tr("extracted $n file(s)\n", "extraídos $n arquivo(s)\n"))
+        return true
+    }
+
+    private fun gitCreds() = apiGet("_github")?.takeIf { it.isNotBlank() }?.let { org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider(it, "") }
+    private fun gitIdent() = org.eclipse.jgit.lib.PersonIdent(
+        (prefs.getString("git_name", "") ?: "").ifBlank { "TermWin" }, (prefs.getString("git_email", "") ?: "").ifBlank { "termwin@localhost" })
+
+    /** Built-in git (JGit): init, clone, add, commit, push, pull, status, log, remote, branch, checkout, config, login. */
+    private fun gitRun(args: List<String>, cwd: File, out: (String) -> Unit): Boolean {
+        val sub = args.getOrNull(0)
+        if (sub == null || sub == "help") { out("git: init | clone URL | add -A | commit -m \"msg\" | push | pull | status | log | remote add NAME URL | remote -v | branch | checkout [-b] NAME | config user.name X | login TOKEN\n"); return sub != null }
+        System.setProperty("user.home", filesDir.path)
+        try {
+            when (sub) {
+                "version", "--version" -> { out("git (JGit, TermWin)\n"); return true }
+                "login", "token" -> {
+                    val tk = args.getOrNull(1)
+                    if (tk == null) { out(if (gitCreds() != null) tr("token saved\n", "token salvo\n") else tr("usage: git login YOUR_GITHUB_TOKEN\n", "uso: git login SEU_TOKEN_DO_GITHUB\n")); return true }
+                    if (tk == "clear" || tk == "limpar") { apiRemove("_github"); out(tr("token deleted\n", "token apagado\n")) } else { apiPut("_github", tk); out(tr("token saved\n", "token salvo\n")) }
+                    return true
+                }
+                "config" -> {
+                    val k = args.drop(1).filter { !it.startsWith("--") }
+                    if (k.size >= 2) { when (k[0]) { "user.name" -> prefs.edit().putString("git_name", k[1]).apply(); "user.email" -> prefs.edit().putString("git_email", k[1]).apply() } }
+                    else out("user.name=" + (prefs.getString("git_name", "") ?: "") + "\nuser.email=" + (prefs.getString("git_email", "") ?: "") + "\n")
+                    return true
+                }
+                "init" -> { org.eclipse.jgit.api.Git.init().setDirectory(cwd).setInitialBranch("main").call().close(); out(tr("repository initialized\n", "repositório iniciado\n")); return true }
+                "clone" -> {
+                    val url = args.getOrNull(1) ?: run { out("usage: git clone URL [folder]\n"); return false }
+                    val name = args.getOrNull(2) ?: url.trimEnd('/').substringAfterLast('/').removeSuffix(".git")
+                    val c = org.eclipse.jgit.api.Git.cloneRepository().setURI(url).setDirectory(File(cwd, name))
+                    gitCreds()?.let { c.setCredentialsProvider(it) }
+                    c.call().close(); out(tr("cloned into $name\n", "clonado em $name\n")); return true
+                }
+            }
+            val gd = org.eclipse.jgit.storage.file.FileRepositoryBuilder().findGitDir(cwd).gitDir
+            if (gd == null) { out("fatal: " + tr("not a git repository (use git init or git clone)", "não é um repositório git (use git init ou git clone)") + "\n"); return false }
+            val root = gd.parentFile ?: cwd
+            val git = org.eclipse.jgit.api.Git.open(root)
+            try {
+                fun pat(p: String): String {
+                    if (p == ".") { val r = cwd.canonicalFile.relativeTo(root.canonicalFile).path; return if (r.isEmpty()) "." else r }
+                    val f = (if (p.startsWith("/")) File(p) else File(cwd, p)).canonicalFile
+                    val r = f.relativeTo(root.canonicalFile).path
+                    return if (r.isEmpty()) "." else r
+                }
+                when (sub) {
+                    "add" -> {
+                        val ps = args.drop(1).filter { !it.startsWith("-") }.ifEmpty { if (args.any { it == "-A" || it == "--all" || it == "-u" }) listOf(".") else emptyList() }
+                        if (ps.isEmpty()) { out("Nothing specified, nothing added.\n"); return false }
+                        for (p in ps) { val x = pat(p); git.add().addFilepattern(x).call(); git.add().setUpdate(true).addFilepattern(x).call() }
+                        return true
+                    }
+                    "commit" -> {
+                        var msg: String? = null; var all = false; var i = 1
+                        while (i < args.size) {
+                            val x = args[i]
+                            if (x == "-m" || x == "--message") { msg = args.getOrNull(i + 1); i++ }
+                            else if (x == "-am") { all = true; msg = args.getOrNull(i + 1); i++ }
+                            else if (x == "-a" || x == "--all") all = true
+                            i++
+                        }
+                        if (msg.isNullOrBlank()) { out("usage: git commit -m \"message\"\n"); return false }
+                        if (all) git.add().setUpdate(true).addFilepattern(".").call()
+                        val st = git.status().call()
+                        val n = st.added.size + st.changed.size + st.removed.size
+                        if (n == 0) { out("nothing to commit, working tree clean\n"); return false }
+                        val id = git.commit().setAuthor(gitIdent()).setCommitter(gitIdent()).setMessage(msg).call()
+                        out("[${git.repository.branch} ${id.name.take(7)}] $msg\n  $n " + tr("file(s) changed\n", "arquivo(s) alterado(s)\n"))
+                        return true
+                    }
+                    "push" -> {
+                        val pos = args.drop(1).filter { !it.startsWith("-") }
+                        val remote = pos.getOrNull(0) ?: "origin"; val br = pos.getOrNull(1) ?: git.repository.branch
+                        val force = args.any { it == "-f" || it == "--force" }
+                        val c = git.push().setRemote(remote).setRefSpecs(org.eclipse.jgit.transport.RefSpec("refs/heads/$br:refs/heads/$br")).setForce(force)
+                        gitCreds()?.let { c.setCredentialsProvider(it) }
+                        var ok = true
+                        for (r in c.call()) for (u in r.remoteUpdates) {
+                            val st = u.status
+                            if (st == org.eclipse.jgit.transport.RemoteRefUpdate.Status.OK) out(tr("pushed $br → $remote\n", "enviado $br → $remote\n"))
+                            else if (st == org.eclipse.jgit.transport.RemoteRefUpdate.Status.UP_TO_DATE) out("Everything up-to-date\n")
+                            else { ok = false; out("✖ push: $st ${u.message ?: ""}\n") }
+                        }
+                        return ok
+                    }
+                    "pull" -> {
+                        val c = git.pull(); gitCreds()?.let { c.setCredentialsProvider(it) }
+                        val r = c.call(); out(if (r.isSuccessful) "ok\n" else "✖ pull: ${r.mergeResult?.mergeStatus ?: "failed"}\n"); return r.isSuccessful
+                    }
+                    "status" -> {
+                        val st = git.status().call()
+                        val sb = StringBuilder("branch ${git.repository.branch}\n")
+                        st.added.forEach { sb.append("  A  $it\n") }; st.changed.forEach { sb.append("  M  $it\n") }; st.removed.forEach { sb.append("  D  $it\n") }
+                        st.modified.forEach { sb.append("  m  $it\n") }; st.missing.forEach { sb.append("  d  $it\n") }; st.untracked.forEach { sb.append("  ?  $it\n") }
+                        if (st.isClean) sb.append("nothing to commit, working tree clean\n")
+                        out(sb.toString()); return true
+                    }
+                    "log" -> {
+                        val n = args.drop(1).firstNotNullOfOrNull { it.removePrefix("-n").removePrefix("-").toIntOrNull() } ?: 10
+                        val sb = StringBuilder(); try { for (c in git.log().setMaxCount(n).call()) sb.append(c.name.take(7)).append(' ').append(c.shortMessage).append('\n') } catch (e: Exception) { }
+                        out(if (sb.isEmpty()) tr("no commits yet\n", "nenhum commit ainda\n") else sb.toString()); return true
+                    }
+                    "remote" -> {
+                        val cfg = git.repository.config
+                        if (args.getOrNull(1) == "add" || args.getOrNull(1) == "set-url") {
+                            val n = args.getOrNull(2); val u = args.getOrNull(3)
+                            if (n == null || u == null) { out("usage: git remote add origin URL\n"); return false }
+                            cfg.setString("remote", n, "url", u); cfg.setString("remote", n, "fetch", "+refs/heads/*:refs/remotes/$n/*"); cfg.save(); return true
+                        }
+                        cfg.getSubsections("remote").forEach { out("$it\t${cfg.getString("remote", it, "url")}\n") }; return true
+                    }
+                    "branch" -> { val cur = git.repository.branch; git.branchList().call().forEach { val n = it.name.removePrefix("refs/heads/"); out((if (n == cur) "* " else "  ") + n + "\n") }; return true }
+                    "checkout" -> {
+                        val nb = args.getOrNull(1) == "-b"; val n = if (nb) args.getOrNull(2) else args.getOrNull(1)
+                        if (n == null) { out("usage: git checkout [-b] name\n"); return false }
+                        git.checkout().setName(n).setCreateBranch(nb).call(); out("branch $n\n"); return true
+                    }
+                    else -> { out("git: '$sub' " + tr("not supported here. Try: git help\n", "não suportado aqui. Tente: git help\n")); return false }
+                }
+            } finally { git.close() }
+        } catch (e: Exception) {
+            val m = e.message ?: e.toString()
+            out("git: $m\n")
+            if (m.contains("auth", true) || m.contains("401") || m.contains("403")) out(tr("tip: git login YOUR_GITHUB_TOKEN\n", "dica: git login SEU_TOKEN_DO_GITHUB\n"))
+            return false
+        }
+    }
+
+    // ---------- Files / Projects / Copied, creat, open//, copy, smart cd ----------
+    private fun filesRoot() = File(dataDir(), "Files").apply { mkdirs() }
+    private fun projectsDir() = File(filesRoot(), "Projects").apply { mkdirs() }
+    private fun copiedDir() = File(filesRoot(), "Copied").apply { mkdirs() }
+
+    private fun walkCI(base: File, segs: List<String>): File? {
+        var cur = base
+        for (sg in segs) {
+            if (sg == "." || sg.isEmpty()) continue
+            if (sg == "..") { cur = cur.parentFile ?: cur; continue }
+            val ex = File(cur, sg)
+            if (ex.exists()) { cur = ex; continue }
+            cur = cur.listFiles()?.firstOrNull { it.name.equals(sg, true) } ?: return null
+        }
+        return cur
+    }
+
+    /** Resolves any path: absolute, relative to the current folder, ~, sdcard, storage/emulated/0/..., ignoring upper/lower case. */
+    private fun resolvePath(t: TabData, raw: String): File? = resolveIn(t.cwd, raw)
+    private fun resolveIn(cwdPath: String, raw: String): File? {
+        val s0 = raw.trim().removeSurrounding("\"").removeSurrounding("'")
+        if (s0.isEmpty() || s0 == "~") return filesDir
+        val ext = Environment.getExternalStorageDirectory()
+        val bases = mutableListOf<Pair<File, String>>()
+        val low = s0.lowercase()
+        when {
+            s0.startsWith("~/") -> bases.add(filesDir to s0.drop(2))
+            s0.startsWith("/") -> bases.add(File("/") to s0.drop(1))
+            else -> {
+                if (low == "storage" || low == "sdcard") return ext
+                if (low.startsWith("sdcard/")) bases.add(ext to s0.drop(7))
+                if (low.startsWith("storage/shared/")) bases.add(ext to s0.drop(15))
+                if (low.startsWith("storage/emulated/")) bases.add(File("/") to s0)
+                bases.add(File(cwdPath) to s0); bases.add(ext to s0); bases.add(filesDir to s0); bases.add(File("/") to s0)
+            }
+        }
+        for ((b, r) in bases) {
+            val f = walkCI(b, r.split("/")) ?: continue
+            if (f.exists()) return try { f.canonicalFile } catch (e: Exception) { f }
+        }
+        return null
+    }
+
+    private val STARTER = mapOf(
+        "html" to "<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n  <title>Meu site</title>\n</head>\n<body>\n  <h1>Olá, mundo!</h1>\n</body>\n</html>\n",
+        "css" to "body {\n  margin: 0;\n  font-family: sans-serif;\n}\n",
+        "js" to "console.log(\"Olá, mundo!\");\n",
+        "py" to "print(\"Olá, mundo!\")\n",
+        "json" to "{\n  \"nome\": \"exemplo\"\n}\n",
+        "md" to "# Título\n\nTexto aqui.\n",
+        "lua" to "print(\"Olá, mundo!\")\n",
+        "gd" to "extends Node\n\nfunc _ready():\n    print(\"Olá, mundo!\")\n",
+        "sh" to "#!/bin/sh\necho \"Olá, mundo!\"\n",
+        "c" to "#include <stdio.h>\n\nint main() {\n    printf(\"Ola, mundo!\\n\");\n    return 0;\n}\n",
+        "cpp" to "#include <iostream>\n\nint main() {\n    std::cout << \"Ola, mundo!\" << std::endl;\n    return 0;\n}\n",
+        "java" to "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Ola, mundo!\");\n    }\n}\n",
+        "kt" to "fun main() {\n    println(\"Ola, mundo!\")\n}\n",
+        "php" to "<?php\necho \"Ola, mundo!\";\n",
+        "xml" to "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n</root>\n",
+        "hxc" to "", "txt" to "", "yml" to "", "yaml" to "", "toml" to "", "ini" to "", "bat" to "@echo off\necho Ola, mundo!\n",
+        "ts" to "console.log(\"Olá, mundo!\");\n", "cs" to "", "rb" to "puts \"Ola, mundo!\"\n", "go" to "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Ola, mundo!\")\n}\n",
+        "rs" to "fn main() {\n    println!(\"Ola, mundo!\");\n}\n", "tscn" to "", "gdshader" to "")
+
+    private fun safeSeg(n: String) = n.replace(Regex("[\\\\:*?\"<>|]"), "_").trim().trim('/').ifEmpty { "file" }
+
+    private fun openEditor(t: TabData, f: File) {
+        if (f.isDirectory) { err(t, f.name + ": " + tr("is a folder", "é uma pasta")); return }
+        if (f.length() > 600_000) { err(t, f.name + ": " + tr("file too big", "arquivo muito grande")); return }
+        val init = try { if (f.exists()) f.readText() else "" } catch (e: Exception) { err(t, "${f.name}: ${e.message}"); return }
+        val p = panel("✎ ${f.name}", 0.9f)
+        p.body.addView(tv(short(f.path), 11f, 0xFF9AA5B1.toInt()))
+        val et = field(tr("empty file", "arquivo vazio"), init, true)
+        et.typeface = Typeface.MONOSPACE
+        et.minLines = 12
+        et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        p.body.addView(et)
+        fun save(): Boolean = try {
+            f.parentFile?.mkdirs(); f.writeText(et.text.toString())
+            append(t, tr("saved ", "salvo ") + short(f.path) + "\n"); true
+        } catch (e: Exception) { err(t, "${f.name}: ${e.message}"); false }
+        p.button(tr("Close", "Fechar")) { p.close() }
+        p.button(tr("Save", "Salvar")) { if (save()) toast(tr("Saved ✔", "Salvo ✔")) }
+        p.button(tr("Save & close", "Salvar e fechar"), true) { if (save()) p.close() }
+    }
+
+    private fun creatUsage(t: TabData) = err(t, tr(
+        "usage: creat//Project//html//index.html   (also: creat//Project//py//main.py — saved in Files/Projects/Project)",
+        "uso: creat//Projeto//html//index.html   (também: creat//Projeto//py//main.py — salva em Files/Projects/Projeto)"))
+
+    private fun creatCmd(t: TabData, parts: List<String>) {
+        if (parts.isEmpty()) { creatUsage(t); return }
+        if (parts.size == 1) {
+            promptText(tr("Project folder name", "Nome da pasta do projeto"), "") { proj -> creatFinish(t, proj, "", parts[0]) }
+            return
+        }
+        if (parts.size == 2) creatFinish(t, parts[0], "", parts[1]) else creatFinish(t, parts[0], parts[1], parts[2])
+    }
+
+    private fun creatFinish(t: TabData, project: String, type0: String, file0: String) {
+        var type = type0.trim().trimStart('.').lowercase()
+        var fn = file0.trim()
+        if (fn.startsWith(".") && fn.indexOf('.', 1) > 0) fn = fn.drop(1)          // ".ex.html" -> "ex.html"
+        else if (fn.startsWith(".")) { if (type.isEmpty()) type = fn.drop(1).lowercase(); fn = "index$fn" }
+        if (fn.contains('/')) fn = fn.substringAfterLast('/')
+        if (type.isNotEmpty() && !fn.contains('.')) fn = "$fn.$type"
+        if (type.isEmpty()) type = fn.substringAfterLast('.', "").lowercase()
+        fn = safeSeg(fn)
+        val dir: File = when {
+            project == "." -> File(t.cwd)
+            project.startsWith("/") -> File(project)
+            project.startsWith("~/") -> File(filesDir, project.drop(2))
+            else -> project.split("/").filter { it.isNotBlank() && it != "." && it != ".." }.fold(projectsDir()) { a, sg -> File(a, safeSeg(sg)) }
+        }
+        try {
+            dir.mkdirs()
+            val f = File(dir, fn)
+            if (!f.exists()) { f.writeText(STARTER[type] ?: ""); append(t, tr("created ", "criado ") + short(f.path) + "\n") }
+            else append(t, tr("already exists, opening: ", "já existe, abrindo: ") + short(f.path) + "\n")
+            openEditor(t, f)
+        } catch (e: Exception) { err(t, "creat: ${e.message}") }
+    }
+
+    private fun openFileCmd(t: TabData, parts: List<String>) {
+        if (parts.isEmpty()) { err(t, tr("usage: open//Project//index.html", "uso: open//Projeto//index.html")); return }
+        fun dirOf(n: String): File? {
+            val a = projectsDir().listFiles()?.firstOrNull { it.isDirectory && it.name.equals(n, true) }
+            if (a != null) return a
+            val b = copiedDir().listFiles()?.firstOrNull { it.isDirectory && it.name.equals(n, true) }
+            if (b != null) return b
+            return resolvePath(t, n)?.takeIf { it.isDirectory }
+        }
+        if (parts.size == 1) {
+            val one = parts[0]
+            val direct = resolvePath(t, one)
+            if (direct != null && direct.isFile) { openEditor(t, direct); return }
+            val d = dirOf(one)
+            if (d != null) { append(t, short(d.path) + "\n" + (d.listFiles()?.sortedBy { it.name }?.joinToString("") { "  " + it.name + (if (it.isDirectory) "/" else "") + "\n" } ?: "")); return }
+            val hit = projectsDir().listFiles()?.filter { it.isDirectory }?.mapNotNull { walkCI(it, listOf(one))?.takeIf { f -> f.isFile } }?.firstOrNull()
+            if (hit != null) openEditor(t, hit) else err(t, "open: $one: " + tr("not found", "não encontrado"))
+            return
+        }
+        val d = dirOf(parts[0])
+        if (d == null) { err(t, "open: ${parts[0]}: " + tr("folder not found in Projects/Copied", "pasta não encontrada em Projects/Copied")); return }
+        val f = walkCI(d, parts.drop(1).joinToString("/").split("/"))
+        if (f == null || !f.exists()) {
+            err(t, "open: ${parts.drop(1).joinToString("/")}: " + tr("not found. Files: ", "não encontrado. Arquivos: ") + (d.listFiles()?.joinToString(", ") { it.name } ?: ""))
+            return
+        }
+        if (f.isDirectory) append(t, short(f.path) + "\n" + (f.listFiles()?.sortedBy { it.name }?.joinToString("") { "  " + it.name + (if (it.isDirectory) "/" else "") + "\n" } ?: "")) else openEditor(t, f)
+    }
+
+    private fun findAnywhere(name: String, t: TabData): File? {
+        if (name.contains('/')) resolvePath(t, name)?.let { return it }
+        val roots = listOf(Environment.getExternalStorageDirectory(), File("/data/data/com.termux/files/home"), filesDir).filter { it.exists() }
+        val skip = filesRoot().path
+        var exactFile: File? = null; var contains: File? = null; var seen = 0
+        val q = java.util.ArrayDeque<Pair<File, Int>>()
+        roots.forEach { q.add(it to 0) }
+        while (q.isNotEmpty() && seen < 400_000) {
+            val (d, depth) = q.poll()
+            val kids = d.listFiles() ?: continue
+            val nxt = mutableListOf<File>()
+            for (k in kids) {
+                seen++
+                val n = k.name
+                if (k.isDirectory) {
+                    if (k.path.startsWith(skip) || n == ".thumbnails" || (n == "Android" && d == Environment.getExternalStorageDirectory())) continue
+                    if (n.equals(name, true)) return k
+                    if (contains == null && n.contains(name, true)) contains = k
+                    if (depth < 9 && !java.nio.file.Files.isSymbolicLink(k.toPath())) nxt.add(k)
+                } else if (exactFile == null && n.equals(name, true)) exactFile = k
+            }
+            nxt.forEach { q.add(it to depth + 1) }
+        }
+        return exactFile ?: contains
+    }
+
+    private fun copyRec(src: File, dst: File, cnt: IntArray) {
+        if (src.isDirectory) {
+            dst.mkdirs()
+            src.listFiles()?.forEach { if (!java.nio.file.Files.isSymbolicLink(it.toPath())) copyRec(it, File(dst, it.name), cnt) }
+        } else { try { src.copyTo(dst, true); cnt[0]++ } catch (e: Exception) { cnt[1]++ } }
+    }
+
+    private fun copyCmd(t: TabData, nameRaw: String) {
+        val name = nameRaw.trim().removeSurrounding("\"").removeSurrounding("'")
+        if (name.isEmpty()) { err(t, tr("usage: copy FolderName   (searches the whole phone and copies to Files/Copied)", "uso: copy NomeDaPasta   (procura no celular todo e copia para Files/Copied)")); return }
+        append(t, tr("searching \"$name\" on the phone…\n", "procurando \"$name\" no celular…\n"))
+        busy(1)
+        thread {
+            try {
+                val src = findAnywhere(name, t)
+                if (src == null) {
+                    ui.post {
+                        err(t, tr("copy: \"$name\" not found.", "copy: \"$name\" não encontrado.") +
+                            (if (!storageOk()) tr(" Turn on storage in ⚙ Settings.", " Ligue o armazenamento em ⚙ Configurações.") else "") +
+                            tr(" (Termux's private home can't be read by other apps — copy it to shared storage first, e.g. cp -r ~/TermWin ~/storage/shared/)", " (a home privada do Termux não pode ser lida por outros apps — copie antes para o armazenamento, ex.: cp -r ~/TermWin ~/storage/shared/)"))
+                    }
+                } else {
+                    var dst = File(copiedDir(), src.name)
+                    var i = 2
+                    while (dst.exists()) { dst = File(copiedDir(), src.name + "_" + i); i++ }
+                    val cnt = intArrayOf(0, 0)
+                    copyRec(src, dst, cnt)
+                    ui.post {
+                        append(t, tr("found: ", "encontrado: ") + src.path + "\n" + tr("copied ${cnt[0]} file(s) to ", "copiados ${cnt[0]} arquivo(s) para ") + short(dst.path) + (if (cnt[1] > 0) tr("  (${cnt[1]} failed)", "  (${cnt[1]} falharam)") else "") + "\n")
+                    }
+                }
+            } catch (e: Exception) { ui.post { err(t, "copy: ${e.message}") } }
+            ui.post { busy(-1) }
+        }
+    }
+
+    /** ls storage: everything in /storage/emulated/0 with folder icons (ls storage -r = also inside folders, 3 levels). */
+    private fun lsStorage(t: TabData, deep: Boolean) {
+        val root = Environment.getExternalStorageDirectory()
+        if (!storageOk()) { err(t, "ls: " + tr("turn on storage in ⚙ Settings", "ligue o armazenamento em ⚙ Configurações")); return }
+        val sb = StringBuilder("📁 ${root.path}\n")
+        var n = 0
+        fun walk(d: File, pre: String, depth: Int) {
+            val l = d.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })) ?: return
+            for ((i, f) in l.withIndex()) {
+                if (n++ > 3000) return
+                val last = i == l.size - 1
+                sb.append(pre).append(if (deep) (if (last) "└─ " else "├─ ") else "  ").append(if (f.isDirectory) "📁 " else "📄 ").append(f.name).append("\n")
+                if (deep && f.isDirectory && depth < 3 && f.name != "Android") walk(f, pre + (if (last) "   " else "│  "), depth + 1)
+            }
+        }
+        walk(root, "", 1)
+        if (n > 3000) sb.append(tr("… (list cut at 3000 items)\n", "… (lista cortada em 3000 itens)\n"))
+        append(t, sb.toString())
+    }
+
+    private val SLASH_RE = Regex("^(creat|create|criar|open|abrir)\\s*//(.*)$", RegexOption.IGNORE_CASE)
+
+    /** Commands shared by the terminal and every server template. Returns true when handled. */
+    private fun fileCmd(t: TabData, line: String): Boolean {
+        val ln = line.trim()
+        val m = SLASH_RE.find(ln)
+        if (m != null) {
+            val verb = m.groupValues[1].lowercase()
+            val parts = m.groupValues[2].split("//").map { it.trim() }.filter { it.isNotEmpty() }
+            if (verb.startsWith("cre") || verb == "criar") creatCmd(t, parts) else openFileCmd(t, parts)
+            return true
+        }
+        val sp = ln.split(Regex("\\s+"), 2)
+        val c = sp[0].lowercase(); val rest = sp.getOrNull(1)?.trim() ?: ""
+        when (c) {
+            "creat", "create" -> creatCmd(t, if (rest.isEmpty()) emptyList() else rest.split("//").map { it.trim() }.filter { it.isNotEmpty() })
+            "copy", "copiar" -> copyCmd(t, rest)
+            "cd" -> {
+                val tg = when { rest.isEmpty() -> filesDir; rest == "-" -> File(t.prev.ifEmpty { t.cwd }); else -> resolvePath(t, rest) }
+                if (tg != null && tg.isDirectory) { t.prev = t.cwd; t.cwd = tg.path }
+                else err(t, "cd: $rest: " + tr("No such file or directory", "Arquivo ou diretório inexistente") +
+                    if (!storageOk() && rest.lowercase().let { it.startsWith("/storage") || it.startsWith("storage") || it.startsWith("sdcard") }) tr(" (turn on storage in ⚙ Settings)", " (ligue o armazenamento em ⚙ Configurações)") else "")
+            }
+            "pwd" -> if (t.tpl.isNotEmpty()) append(t, t.cwd + "\n") else return false
+            "ls" -> if (Regex("^(storage|sdcard)(\\s+(-r|-R|tree|arvore))?$", RegexOption.IGNORE_CASE).matches(rest)) {
+                lsStorage(t, rest.lowercase().let { it.endsWith("-r") || it.endsWith("tree") || it.endsWith("arvore") })
+            } else if (t.tpl.isNotEmpty()) {
+                val d = if (rest.isEmpty() || rest.startsWith("-")) File(t.cwd) else resolvePath(t, rest)
+                val l = d?.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+                if (l == null) err(t, "ls: $rest: " + tr("No such file or directory", "Arquivo ou diretório inexistente"))
+                else append(t, l.joinToString("") { it.name + (if (it.isDirectory) "/" else "") + "\n" })
+            } else return false
+            "nano", "edit", "vi" -> editFile(t, rest.ifEmpty { null })
+            "projects", "projetos" -> {
+                val l = projectsDir().listFiles()?.filter { it.isDirectory }?.sortedBy { it.name.lowercase() } ?: emptyList()
+                append(t, short(projectsDir().path) + "\n" + (if (l.isEmpty()) tr("  (no projects yet — use creat//Project//html//index.html)\n", "  (nenhum projeto ainda — use creat//Projeto//html//index.html)\n")
+                    else l.joinToString("") { "  " + it.name + "/  (" + (it.walkTopDown().count { f -> f.isFile }) + ")\n" }))
+            }
+            else -> return false
+        }
+        return true
+    }
+
     private fun editFile(t: TabData, name: String?) {
         if (name == null) { err(t, tr("usage: nano file.txt", "uso: nano arquivo.txt")); return }
-        val f = if (name.startsWith("/")) File(name) else File(t.cwd, name)
+        val f = resolvePath(t, name)?.takeIf { it.exists() } ?: (if (name.startsWith("/")) File(name) else File(t.cwd, name))
         if (f.isDirectory) { err(t, "nano: $name: " + tr("is a folder", "é uma pasta")); return }
         if (f.length() > 300_000) { err(t, "nano: $name: " + tr("file too big", "arquivo muito grande")); return }
         val init = try { if (f.exists()) f.readText() else "" } catch (e: Exception) { err(t, "nano: ${e.message}"); return }
