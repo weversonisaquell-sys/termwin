@@ -1085,15 +1085,17 @@ Long-press a tab to rename it.
     private fun enableImagePaste(et: EditText) {
         if (Build.VERSION.SDK_INT < 31) return
         try {
-            et.setOnReceiveContentListener(arrayOf("image/*", "text/*")) { v, payload ->
-                val (imgs, rest) = payload.partition { item ->
-                    val u = item.uri
-                    u != null && (contentResolver.getType(u) ?: "").startsWith("image/")
+            et.setOnReceiveContentListener(arrayOf("image/*", "text/*"), object : android.view.OnReceiveContentListener {
+                override fun onReceiveContent(v: View, payload: android.view.ContentInfo): android.view.ContentInfo? {
+                    val clip = payload.clip
+                    var handled = false
+                    for (i in 0 until clip.itemCount) {
+                        val u = clip.getItemAt(i).uri
+                        if (u != null && (contentResolver.getType(u) ?: "").startsWith("image/")) { savePastedImage(u, et); handled = true }
+                    }
+                    return if (handled) null else payload
                 }
-                val clip = imgs?.clip
-                if (clip != null) for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let { savePastedImage(it, v as? EditText ?: et) }
-                rest
-            }
+            })
         } catch (e: Exception) { logError("paste", e.message ?: "listener") }
     }
 
