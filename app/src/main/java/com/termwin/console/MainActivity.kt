@@ -268,6 +268,8 @@ class MainActivity : Activity() {
   open//Projeto//index.html  abre o arquivo no editor
   Roblox//arquivo.rbxl       acha o arquivo no celular, publica como modelo no Roblox e abre o link da loja numa janela
   Roblox//chave              salva a chave da API e o seu ID do Roblox (só na primeira vez)
+  Roblox//asset format//arquivo.rbxl   acha o arquivo, mostra o caminho e converte o lugar em modelo (.rbxm) na pasta Download (não envia nada)
+  Roblox//asset format//arquivo.rbxl   acha o arquivo, mostra o caminho e salva uma versão em formato de modelo (.rbxm) na pasta Download
   open//github.com/usuario/repo   abre o site numa janela do app (movível) e dá para baixar arquivos de qualquer site
   ct arquivo.txt             cria o arquivo em Files/Files Created e abre o editor (sem nome: pergunta o nome)
   cmd1 && cmd2 && cmd3       encadeia comandos como no Termux (help && clear funciona; até 1780 &&, com 1781 para e avisa)
@@ -336,6 +338,8 @@ Toque e segure numa aba para renomear.
   open//Project//index.html  open the file in the editor
   Roblox//file.rbxl          find the file on the phone, publish it as a Roblox model and open the store link in a window
   Roblox//key                save the API key and your Roblox ID (first time only)
+  Roblox//asset format//file.rbxl   find the file, show its path and convert the place into a model (.rbxm) in the Download folder (uploads nothing)
+  Roblox//asset format//file.rbxl   find the file, show its path and save a model-format copy (.rbxm) in the Download folder
   open//github.com/user/repo   open the site in an app window (movable); you can download files from any site
   ct file.txt                create the file in Files/Files Created and open the editor (no name: it asks)
   cmd1 && cmd2 && cmd3       chain commands like Termux (help && clear works; up to 1780 &&, 1781 stops and warns)
@@ -3858,6 +3862,12 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     private fun robloxOwner(): String = prefs.getString("roblox_owner", "") ?: ""
 
     private fun robloxCmd(t: TabData, rest: String) {
+        val ps0 = rest.split("//").map { it.trim() }.filter { it.isNotEmpty() }
+        if (ps0.size >= 2 && ps0[0].lowercase().replace(Regex("\\s+"), " ") in listOf("asset format", "asset formato", "asset", "format", "formato")) {
+            assetFormatCmd(t, ps0.drop(1).joinToString("//").removeSurrounding("\"").removeSurrounding("'")); return
+        }
+        val parts0 = rest.split("//").map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts0.size >= 2 && parts0[0].lowercase().replace(" ", "") in listOf("assetformat", "assetformato", "formato", "format")) { robloxFormat(t, parts0.drop(1).joinToString("//")); return }
         val arg = rest.split("//").map { it.trim() }.filter { it.isNotEmpty() }.joinToString("//").trim().removeSurrounding("\"").removeSurrounding("'")
         if (arg.isEmpty()) { err(t, tr("usage: Roblox//file.rbxl   (first time: Roblox//key)", "uso: Roblox//arquivo.rbxl   (primeira vez: Roblox//chave)")); return }
         if (arg.lowercase() in listOf("key", "chave", "setup", "config", "login")) { showRobloxKey(); return }
@@ -3975,6 +3985,361 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             if (!Regex("^[gG]?\\d{1,20}$").matches(id)) { msg.text = tr("The ID must be only numbers (group: g + number)", "O ID deve ser só números (grupo: g + número)"); return@button }
             apiPut("_roblox", k); prefs.edit().putString("roblox_owner", id).apply()
             toast(tr("Roblox saved ✔ — now run: Roblox//file.rbxl", "Roblox salvo ✔ — agora rode: Roblox//arquivo.rbxl")); p.close()
+        }
+    }
+
+    // ---------- Roblox//asset format//file.rbxl : place (.rbxl) -> model (.rbxm) saved in Download ----------
+    private class RbxChunk(val name: String, val raw: ByteArray, val data: ByteArray)
+    private class RbxInst(val classId: Int, val name: String, val service: Boolean, val ids: IntArray)
+
+    private fun rdU32(b: ByteArray, o: Int): Int = (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8) or ((b[o + 2].toInt() and 0xFF) shl 16) or ((b[o + 3].toInt() and 0xFF) shl 24)
+    private fun wrU32(o: java.io.ByteArrayOutputStream, v: Int) { for (i in 0..3) o.write((v ushr (8 * i)) and 0xFF) }
+
+    private fun lz4Block(src: ByteArray, off: Int, len: Int, outLen: Int): ByteArray {
+        val dst = ByteArray(outLen); var sp = off; val end = off + len; var d = 0
+        while (sp < end) {
+            val tok = src[sp++].toInt() and 0xFF
+            var lit = tok ushr 4
+            if (lit == 15) { while (true) { val b = src[sp++].toInt() and 0xFF; lit += b; if (b != 255) break } }
+            if (d + lit > outLen || sp + lit > end) throw Exception("LZ4: dados inválidos")
+            System.arraycopy(src, sp, dst, d, lit); sp += lit; d += lit
+            if (sp >= end) break
+            val offs = (src[sp].toInt() and 0xFF) or ((src[sp + 1].toInt() and 0xFF) shl 8); sp += 2
+            var ml = tok and 15
+            if (ml == 15) { while (true) { val b = src[sp++].toInt() and 0xFF; ml += b; if (b != 255) break } }
+            ml += 4
+            if (offs == 0 || offs > d || d + ml > outLen) throw Exception("LZ4: dados inválidos")
+            var from = d - offs
+            for (k in 0 until ml) dst[d++] = dst[from++]
+        }
+        return dst
+    }
+
+    private fun rbxParse(b: ByteArray): List<RbxChunk> {
+        val sig = byteArrayOf(0x89.toByte(), 0xFF.toByte(), 0x0D, 0x0A, 0x1A, 0x0A)
+        if (b.size < 32 || String(b, 0, 8, Charsets.ISO_8859_1) != "<roblox!" || (0 until 6).any { b[8 + it] != sig[it] }) throw Exception("not-binary")
+        val out = mutableListOf<RbxChunk>()
+        var pos = 32
+        while (pos + 16 <= b.size) {
+            val name = String(b, pos, 4, Charsets.ISO_8859_1).trimEnd('\u0000')
+            val cl = rdU32(b, pos + 4); val ul = rdU32(b, pos + 8)
+            val plen = if (cl == 0) ul else cl
+            val ps = pos + 16
+            if (plen < 0 || ul < 0 || ps + plen > b.size) throw Exception("arquivo cortado ou corrompido")
+            val data = if (cl == 0) b.copyOfRange(ps, ps + plen) else lz4Block(b, ps, cl, ul)
+            out.add(RbxChunk(name, b.copyOfRange(pos, ps + plen), data))
+            pos = ps + plen
+            if (name == "END") break
+        }
+        return out
+    }
+
+    private fun rbxDecodeRefs(d: ByteArray, off: Int, n: Int): IntArray {
+        if (off + 4 * n > d.size) throw Exception("lista de IDs inválida")
+        val out = IntArray(n); var prev = 0
+        for (i in 0 until n) {
+            var v = 0
+            for (k in 0..3) v = (v shl 8) or (d[off + k * n + i].toInt() and 0xFF)
+            prev += (v ushr 1) xor -(v and 1)
+            out[i] = prev
+        }
+        return out
+    }
+
+    private fun rbxEncodeRefs(a: IntArray): ByteArray {
+        val n = a.size; val out = ByteArray(n * 4); var prev = 0
+        for (i in 0 until n) {
+            val dl = a[i] - prev; prev = a[i]
+            val z = (dl shl 1) xor (dl shr 31)
+            for (k in 0..3) out[k * n + i] = ((z ushr (24 - 8 * k)) and 0xFF).toByte()
+        }
+        return out
+    }
+
+    private fun rbxInst(d: ByteArray): RbxInst {
+        val cid = rdU32(d, 0); val ln = rdU32(d, 4)
+        val nm = String(d, 8, ln, Charsets.UTF_8)
+        var p = 8 + ln
+        val svc = d[p].toInt() == 1; p++
+        val n = rdU32(d, p); p += 4
+        return RbxInst(cid, nm, svc, rbxDecodeRefs(d, p, n))
+    }
+
+    private fun rbxMk(name: String, payload: ByteArray): ByteArray {
+        val o = java.io.ByteArrayOutputStream()
+        val nb = name.toByteArray(Charsets.ISO_8859_1)
+        for (i in 0..3) o.write(if (i < nb.size) nb[i].toInt() else 0)
+        wrU32(o, 0); wrU32(o, payload.size); wrU32(o, 0)
+        o.write(payload)
+        return o.toByteArray()
+    }
+
+    private fun assetFormatCmd(t: TabData, rawName: String) {
+        var name = rawName.trim()
+        if (name.isEmpty()) { err(t, tr("usage: Roblox//asset format//file.rbxl", "uso: Roblox//asset format//arquivo.rbxl")); return }
+        if (name.substringAfterLast('/').substringAfterLast('.', "").isEmpty()) name += ".rbxl"
+        append(t, tr("searching $name …\n", "procurando $name …\n"))
+        busy(1)
+        thread {
+            try {
+                val f = findRobloxFile(name, t)
+                if (f == null) { ui.post { err(t, tr("file not found: $name", "arquivo não encontrado: $name")) }; return@thread }
+                ui.post { append(t, tr("path: ${f.path}\n", "caminho: ${f.path}\n")) }
+                val b = f.readBytes()
+                val chunks = try { rbxParse(b) } catch (e: Exception) {
+                    val msg = if (e.message == "not-binary") {
+                        if (String(b, 0, minOf(b.size, 16), Charsets.ISO_8859_1).startsWith("<roblox ")) tr("this is the XML format (.rbxlx/.rbxmx); only the binary format (.rbxl/.rbxm) can be converted", "este é o formato XML (.rbxlx/.rbxmx); só dá para converter o formato binário (.rbxl/.rbxm)")
+                        else tr("this does not look like a Roblox file", "isso não parece um arquivo do Roblox")
+                    } else e.message ?: "?"
+                    ui.post { err(t, "asset format: $msg") }; return@thread
+                }
+                val insts = chunks.filter { it.name == "INST" }.map { rbxInst(it.data) }
+                val prnt = chunks.firstOrNull { it.name == "PRNT" } ?: run { ui.post { err(t, "asset format: " + tr("no parent table in the file", "o arquivo não tem a tabela de pais")) }; return@thread }
+                val n = rdU32(prnt.data, 1)
+                val kids = rbxDecodeRefs(prnt.data, 5, n)
+                val pars = rbxDecodeRefs(prnt.data, 5 + 4 * n, n)
+                val services = insts.filter { it.service }
+                val total = insts.sumOf { it.ids.size }
+                ui.post { append(t, tr("format: Roblox binary, ${insts.size} classes, $total objects, ${if (services.isEmpty()) "model (.rbxm)" else "place (.rbxl) with services: " + services.joinToString { it.name }}\n",
+                    "formato: binário do Roblox, ${insts.size} classes, $total objetos, ${if (services.isEmpty()) "modelo (.rbxm)" else "lugar (.rbxl) com serviços: " + services.joinToString { it.name }}\n")) }
+                val dlDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).apply { mkdirs() }
+                val base = f.nameWithoutExtension
+                var outBytes: ByteArray = b
+                var note: String
+                if (services.isEmpty()) {
+                    note = tr("it is already a model; saved a copy as .rbxm", "já é um modelo; salvei uma cópia como .rbxm")
+                } else {
+                    val ws = services.firstOrNull { it.name == "Workspace" }?.ids?.firstOrNull() ?: run { ui.post { err(t, "asset format: " + tr("Workspace not found in the file", "Workspace não encontrado no arquivo")) }; return@thread }
+                    val clsOf = HashMap<Int, String>()
+                    insts.forEach { c -> c.ids.forEach { clsOf[it] = c.name } }
+                    val classCount = maxOf(rdU32(b, 16), (insts.maxOfOrNull { it.classId } ?: -1) + 1)
+                    val newClass = classCount
+                    val newId = (insts.maxOfOrNull { c -> c.ids.maxOrNull() ?: -1 } ?: -1) + 1
+                    var moved = 0
+                    val kids2 = IntArray(n + 1); val pars2 = IntArray(n + 1)
+                    for (i in 0 until n) {
+                        kids2[i] = kids[i]; pars2[i] = pars[i]
+                        if (pars[i] == ws && clsOf[kids[i]] !in setOf("Terrain", "Camera")) { pars2[i] = newId; moved++ }
+                    }
+                    kids2[n] = newId; pars2[n] = -1
+                    if (moved == 0) { ui.post { err(t, "asset format: " + tr("the Workspace has nothing to put in a model", "o Workspace não tem nada para colocar no modelo")) }; return@thread }
+                    val instP = java.io.ByteArrayOutputStream().apply {
+                        wrU32(this, newClass); val nb = "Model".toByteArray(); wrU32(this, nb.size); write(nb); write(0); wrU32(this, 1); write(rbxEncodeRefs(intArrayOf(newId)))
+                    }.toByteArray()
+                    val propP = java.io.ByteArrayOutputStream().apply {
+                        wrU32(this, newClass); val pn = "Name".toByteArray(); wrU32(this, pn.size); write(pn); write(1)
+                        val vn = base.toByteArray(); wrU32(this, vn.size); write(vn)
+                    }.toByteArray()
+                    val prntP = java.io.ByteArrayOutputStream().apply {
+                        write(0); wrU32(this, n + 1); write(rbxEncodeRefs(kids2)); write(rbxEncodeRefs(pars2))
+                    }.toByteArray()
+                    val o = java.io.ByteArrayOutputStream()
+                    val head = b.copyOfRange(0, 32)
+                    val cc = classCount + 1; val ic = rdU32(b, 20) + 1
+                    for (i in 0..3) { head[16 + i] = ((cc ushr (8 * i)) and 0xFF).toByte(); head[20 + i] = ((ic ushr (8 * i)) and 0xFF).toByte() }
+                    o.write(head)
+                    val lastInst = chunks.indexOfLast { it.name == "INST" }
+                    for ((i, c) in chunks.withIndex()) {
+                        if (c.name != "PRNT" && c.name != "END") o.write(c.raw)
+                        if (i == lastInst) o.write(rbxMk("INST", instP))
+                    }
+                    o.write(rbxMk("PROP", propP))
+                    o.write(rbxMk("PRNT", prntP))
+                    o.write(chunks.lastOrNull { it.name == "END" }?.raw ?: rbxMk("END", "</roblox>".toByteArray()))
+                    outBytes = o.toByteArray()
+                    val chk = rbxParse(outBytes)
+                    val chkPrnt = chk.first { it.name == "PRNT" }
+                    if (rdU32(chkPrnt.data, 1) != n + 1 || chk.count { it.name == "INST" } != insts.size + 1) throw Exception(tr("check after converting failed; nothing saved", "a conferência depois de converter falhou; nada foi salvo"))
+                    note = tr("converted: $moved objects from the Workspace are now inside a Model called \"$base\". Scripts and objects of the other services were not moved.", "convertido: $moved objetos do Workspace agora estão dentro de um Model chamado \"$base\". Scripts e objetos dos outros serviços não foram movidos.")
+                }
+                var outFile = File(dlDir, "$base (model).rbxm")
+                try { outFile.writeBytes(outBytes) } catch (e: Exception) { outFile = File(downloadsDir(), "$base (model).rbxm"); outFile.writeBytes(outBytes) }
+                ui.post { append(t, "$note\n" + tr("saved: ${outFile.path}  (${outBytes.size / 1024} KB)\n", "salvo: ${outFile.path}  (${outBytes.size / 1024} KB)\n")) }
+            } catch (e: Exception) {
+                ui.post { err(t, "asset format: ${e.message}") }
+            } finally { ui.post { busy(-1) } }
+        }
+    }
+
+    // ---------- Roblox//asset format//file.rbxl : place (.rbxl) -> model (.rbxm) in Downloads ----------
+    private fun rbxI32(b: ByteArray, p: Int) = (b[p].toInt() and 255) or ((b[p + 1].toInt() and 255) shl 8) or ((b[p + 2].toInt() and 255) shl 16) or ((b[p + 3].toInt() and 255) shl 24)
+    private fun rbxLe(v: Int) = byteArrayOf(v.toByte(), (v ushr 8).toByte(), (v ushr 16).toByte(), (v ushr 24).toByte())
+    private fun rbxStr(s: String): ByteArray { val b = s.toByteArray(Charsets.UTF_8); return rbxLe(b.size) + b }
+    private fun rbxChunk(name: String, data: ByteArray): ByteArray = name.toByteArray(Charsets.ISO_8859_1) + rbxLe(0) + rbxLe(data.size) + rbxLe(0) + data
+    private fun rbxReadStr(b: ByteArray, p: Int): Pair<String, Int> {
+        val l = rbxI32(b, p)
+        if (l < 0 || p + 4 + l > b.size) throw IllegalStateException("string")
+        return String(b, p + 4, l, Charsets.UTF_8) to (p + 4 + l)
+    }
+
+    private fun rbxLz4(s: ByteArray, off: Int, len: Int, outLen: Int): ByteArray {
+        val o = ByteArray(outLen); var op = 0; var i = off; val end = off + len
+        while (i < end) {
+            val tok = s[i++].toInt() and 255
+            var lit = tok shr 4
+            if (lit == 15) { while (true) { val b = s[i++].toInt() and 255; lit += b; if (b != 255) break } }
+            if (op + lit > outLen || i + lit > end) throw IllegalStateException("lz4")
+            System.arraycopy(s, i, o, op, lit); i += lit; op += lit
+            if (i >= end) break
+            val back = (s[i].toInt() and 255) or ((s[i + 1].toInt() and 255) shl 8); i += 2
+            var ml = tok and 15
+            if (ml == 15) { while (true) { val b = s[i++].toInt() and 255; ml += b; if (b != 255) break } }
+            ml += 4
+            if (back == 0 || back > op || op + ml > outLen) throw IllegalStateException("lz4")
+            for (k in 0 until ml) { o[op] = o[op - back]; op++ }
+        }
+        if (op != outLen) throw IllegalStateException("lz4 size")
+        return o
+    }
+
+    private fun rbxDecInts(b: ByteArray, pos: Int, n: Int): IntArray {
+        val r = IntArray(n); var acc = 0
+        for (i in 0 until n) {
+            val v = ((b[pos + i].toInt() and 255) shl 24) or ((b[pos + n + i].toInt() and 255) shl 16) or ((b[pos + 2 * n + i].toInt() and 255) shl 8) or (b[pos + 3 * n + i].toInt() and 255)
+            acc += (v ushr 1) xor -(v and 1)
+            r[i] = acc
+        }
+        return r
+    }
+
+    private fun rbxEncInts(a: IntArray): ByteArray {
+        val n = a.size; val o = ByteArray(4 * n); var acc = 0
+        for (i in 0 until n) {
+            val d = a[i] - acc; acc = a[i]
+            val z = (d shl 1) xor (d shr 31)
+            o[i] = (z ushr 24).toByte(); o[n + i] = (z ushr 16).toByte(); o[2 * n + i] = (z ushr 8).toByte(); o[3 * n + i] = z.toByte()
+        }
+        return o
+    }
+
+    private val RBX_MAGIC = intArrayOf(0x3C, 0x72, 0x6F, 0x62, 0x6C, 0x6F, 0x78, 0x21, 0x89, 0xFF, 0x0D, 0x0A, 0x1A, 0x0A)
+    private class RbxCh(val name: String, val start: Int, val end: Int, val cl: Int, val ul: Int) {
+        var cid = -1; var cname = ""; var flag = 0; var cnt = 0; var idsRaw = ByteArray(0); var data: ByteArray? = null
+    }
+    private class RbxOut(val bytes: ByteArray, val folders: List<String>, val instances: Int)
+
+    private fun rbxWalk(src: ByteArray): List<RbxCh> {
+        if (src.size < 32 || (0 until 14).any { (src[it].toInt() and 255) != RBX_MAGIC[it] })
+            throw IllegalStateException(tr("not a binary Roblox file (the XML .rbxlx is not supported)", "não é um arquivo binário do Roblox (o XML .rbxlx não é suportado)"))
+        val list = ArrayList<RbxCh>()
+        var pos = 32
+        while (pos + 16 <= src.size) {
+            val nm = String(src, pos, 4, Charsets.ISO_8859_1)
+            val cl = rbxI32(src, pos + 4); val ul = rbxI32(src, pos + 8)
+            val dl = if (cl != 0) cl else ul
+            if (cl < 0 || ul < 0 || dl < 0 || pos + 16 + dl > src.size) throw IllegalStateException(tr("damaged file (bad chunk)", "arquivo danificado (bloco inválido)"))
+            val ch = RbxCh(nm, pos, pos + 16 + dl, cl, ul)
+            list.add(ch)
+            pos += 16 + dl
+            if (nm == "END\u0000") break
+        }
+        if (list.isEmpty() || list.last().name != "END\u0000") throw IllegalStateException(tr("damaged file (no END)", "arquivo danificado (sem final)"))
+        return list
+    }
+
+    private fun rbxData(src: ByteArray, c: RbxCh): ByteArray =
+        if (c.cl != 0) rbxLz4(src, c.start + 16, c.cl, c.ul) else src.copyOfRange(c.start + 16, c.end)
+
+    /** Place -> model: services (and Terrain) become Folders, and everything goes inside one new Model. No property is decoded, so nothing else is touched. */
+    private fun rbxToModel(src: ByteArray, title: String): RbxOut {
+        val chunks = rbxWalk(src)
+        val ccount = rbxI32(src, 16); val icount = rbxI32(src, 20)
+        var maxc = -1; var lastInst = -1
+        val neutral = LinkedHashMap<Int, RbxCh>()
+        for ((i, c) in chunks.withIndex()) {
+            val d = if (c.name == "INST" || c.name == "PROP" || c.name == "PRNT") rbxData(src, c) else null
+            when (c.name) {
+                "INST" -> {
+                    d!!
+                    c.cid = rbxI32(d, 0); val (nm, p) = rbxReadStr(d, 4)
+                    c.cname = nm; c.flag = d[p].toInt() and 255; c.cnt = rbxI32(d, p + 1)
+                    if (c.cnt < 0 || p + 5 + 4 * c.cnt > d.size) throw IllegalStateException("INST")
+                    c.idsRaw = d.copyOfRange(p + 5, p + 5 + 4 * c.cnt)
+                    if (c.cid > maxc) maxc = c.cid
+                    lastInst = i
+                    if (c.flag == 1 || nm == "Terrain") neutral[c.cid] = c
+                }
+                "PROP" -> c.cid = rbxI32(d!!, 0)
+                "PRNT" -> c.data = d
+            }
+        }
+        val prntCh = chunks.firstOrNull { it.name == "PRNT" } ?: throw IllegalStateException(tr("damaged file (no hierarchy)", "arquivo danificado (sem hierarquia)"))
+        val pd = prntCh.data!!
+        if (pd.isEmpty() || pd[0].toInt() != 0) throw IllegalStateException("PRNT version")
+        val n = rbxI32(pd, 1)
+        if (n < 0 || pd.size != 5 + 8 * n) throw IllegalStateException("PRNT size")
+        val ch = rbxDecInts(pd, 5, n); val pa = rbxDecInts(pd, 5 + 4 * n, n)
+        var newId = icount
+        for (v in ch) if (v + 1 > newId) newId = v + 1
+        for (i in pa.indices) if (pa[i] == -1) pa[i] = newId
+        val ch2 = ch.copyOf(n + 1); ch2[n] = newId
+        val pa2 = pa.copyOf(n + 1); pa2[n] = -1
+        val newCls = maxOf(maxc + 1, ccount)
+
+        val o = java.io.ByteArrayOutputStream(src.size + 4096)
+        o.write(src, 0, 14); o.write(byteArrayOf(0, 0)); o.write(rbxLe(newCls + 1)); o.write(rbxLe(icount + 1)); o.write(ByteArray(8))
+        for ((i, c) in chunks.withIndex()) {
+            when (c.name) {
+                "INST" -> {
+                    if (neutral.containsKey(c.cid)) o.write(rbxChunk("INST", rbxLe(c.cid) + rbxStr("Folder") + byteArrayOf(0) + rbxLe(c.cnt) + c.idsRaw))
+                    else o.write(src, c.start, c.end - c.start)
+                    if (i == lastInst) {
+                        val zz = (newId shl 1)
+                        o.write(rbxChunk("INST", rbxLe(newCls) + rbxStr("Model") + byteArrayOf(0) + rbxLe(1) + byteArrayOf((zz ushr 24).toByte(), (zz ushr 16).toByte(), (zz ushr 8).toByte(), zz.toByte())))
+                    }
+                }
+                "PROP" -> if (!neutral.containsKey(c.cid)) o.write(src, c.start, c.end - c.start)
+                "PRNT" -> {
+                    o.write(rbxChunk("PROP", rbxLe(newCls) + rbxStr("Name") + byteArrayOf(1) + rbxStr(title)))
+                    for ((cid, ic) in neutral) {
+                        val b = java.io.ByteArrayOutputStream()
+                        b.write(rbxLe(cid)); b.write(rbxStr("Name")); b.write(byteArrayOf(1))
+                        repeat(ic.cnt) { b.write(rbxStr(ic.cname.let { nm -> if (nm == "Folder") "Folder" else nm })) }
+                        o.write(rbxChunk("PROP", b.toByteArray()))
+                    }
+                    o.write(rbxChunk("PRNT", byteArrayOf(0) + rbxLe(n + 1) + rbxEncInts(ch2) + rbxEncInts(pa2)))
+                }
+                else -> o.write(src, c.start, c.end - c.start)
+            }
+        }
+        val out = o.toByteArray()
+        // self-check: the new file must walk cleanly, end with END, and have exactly one hierarchy chunk of n+1 instances
+        val back = rbxWalk(out)
+        val bp = back.filter { it.name == "PRNT" }
+        if (bp.size != 1 || rbxI32(rbxData(out, bp[0]), 1) != n + 1) throw IllegalStateException(tr("self-check failed, nothing saved", "autoverificação falhou, nada foi salvo"))
+        return RbxOut(out, neutral.values.map { it.cname }, icount)
+    }
+
+    private fun robloxFormat(t: TabData, arg0: String) {
+        var name = arg0.trim().removeSurrounding("\"").removeSurrounding("'")
+        if (name.isEmpty()) { err(t, tr("usage: Roblox//asset format//file.rbxl", "uso: Roblox//asset format//arquivo.rbxl")); return }
+        if (name.substringAfterLast('/').substringAfterLast('.', "").isEmpty()) name += ".rbxl"
+        val ext = name.substringAfterLast('.').lowercase()
+        if (ext != "rbxl") {
+            err(t, if (ext == "rbxm") tr("this is already a model (.rbxm), nothing to convert", "isso já é um modelo (.rbxm), não precisa converter")
+                else tr("only .rbxl files can be converted (not .$ext)", "só dá para converter arquivos .rbxl (não .$ext)")); return
+        }
+        append(t, tr("searching $name …\n", "procurando $name …\n"))
+        busy(1)
+        thread {
+            try {
+                val f = findRobloxFile(name, t)
+                if (f == null) { ui.post { err(t, tr("file not found: $name", "arquivo não encontrado: $name")) }; return@thread }
+                ui.post { append(t, tr("found: ${f.path}  (${f.length() / 1024} KB)\nconverting …\n", "achei: ${f.path}  (${f.length() / 1024} KB)\nconvertendo …\n")) }
+                val title = f.nameWithoutExtension.take(100).ifBlank { "TermWin model" }
+                val res = rbxToModel(f.readBytes(), title)
+                val tmp = File(cacheDir, safe(f.nameWithoutExtension) + ".rbxm")
+                tmp.writeBytes(res.bytes)
+                val shown = publishToDownloads(tmp)
+                tmp.delete()
+                ui.post {
+                    if (shown == null) err(t, tr("converted, but could not save to Downloads (turn on storage in ⚙ Settings)", "converti, mas não consegui salvar em Downloads (ligue o armazenamento em ⚙ Configurações)"))
+                    else append(t, tr("converted ✔  saved: $shown  (${res.bytes.size / 1024} KB)\nthe game is now 1 model \"$title\"; ${res.folders.size} services became folders: ${res.folders.joinToString(", ")}\n",
+                        "convertido ✔  salvo: $shown  (${res.bytes.size / 1024} KB)\no jogo virou 1 modelo \"$title\"; ${res.folders.size} serviços viraram pastas: ${res.folders.joinToString(", ")}\n"))
+                }
+            } catch (e: Throwable) {
+                ui.post { err(t, "Roblox: " + tr("could not convert — ", "não consegui converter — ") + (e.message ?: e.javaClass.simpleName)) }
+            } finally { ui.post { busy(-1) } }
         }
     }
 
