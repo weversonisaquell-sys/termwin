@@ -53,7 +53,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "2.7"
+const val VERSION = "2.8"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -200,7 +200,7 @@ class MainActivity : Activity() {
         "cmd" -> tr("Command", "Comando")
         "custom" -> tr("Custom (HTML)", "Personalizado (HTML)")
         "tpl-youtube" -> tr("YouTube template", "Modelo YouTube")
-        "tpl-windows10" -> tr("Windows 10 template", "Modelo Windows 10")
+        "tpl-windows10" -> tr("Windows 11 template", "Modelo Windows 11")
         "tpl-ai" -> tr("AI template", "Modelo IA")
         else -> k
     }
@@ -261,7 +261,7 @@ class MainActivity : Activity() {
   servidor criar docs arquivos 8081 /sdcard
   servidor iniciar meusite   também: servidor parar | remover meusite
   servidor renomear meusite novo
-  botão 🎨 Modelos           modelos de servidor (YouTube, Windows 10, IA): play, port, turn off
+  botão 🎨 Modelos           modelos de servidor (YouTube, Windows 11, IA): play, port, turn off
   botão 📝 Dados             edita o arquivo dados.wintext
   nano arquivo.txt           editor de texto (também: edit, vi)
   creat//Projeto//html//index.html   cria o arquivo em Files/Projects/Projeto e abre o editor (py, js, css, json…)
@@ -332,7 +332,7 @@ Toque e segure numa aba para renomear.
   server create docs files 8081 /sdcard
   server start mysite        also: server stop | remove mysite
   server rename mysite newname
-  🎨 Templates button        server templates (YouTube, Windows 10, AI): play, port, turn off
+  🎨 Templates button        server templates (YouTube, Windows 11, AI): play, port, turn off
   📝 Data button             edit the dados.wintext file
   nano file.txt              text editor (also: edit, vi)
   creat//Project//html//index.html   create the file in Files/Projects/Project and open the editor (py, js, css, json…)
@@ -1030,7 +1030,7 @@ Long-press a tab to rename it.
             "• Android commands + built-in ones (info, memory, ip, battery…)\n" +
             "• pkg / termwin upgrade and packages: neofetch, cowsay, tree\n" +
             "• Local servers (.winser files): YouTube, Web, Files, JSON API, Command and Custom\n" +
-            "• Templates: YouTube, Windows 10 and AI (ai//question//app)\n" +
+            "• Templates: YouTube, Windows 11 and AI (ai//question//app)\n" +
             "• Runs in the background and notifies you when done\n" +
             "• Load .winv / .winser files from anywhere\n" +
             "• One-tap storage access",
@@ -1808,7 +1808,7 @@ Long-press a tab to rename it.
         return true
     }
 
-    // ---------- server templates (YouTube / Windows 10) ----------
+    // ---------- server templates (YouTube / Windows 11) ----------
     private fun openUrl(t: TabData, u: String) {
         try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) }
         catch (e: Exception) { err(t, tr("could not open the browser", "não foi possível abrir o navegador")) }
@@ -2642,8 +2642,8 @@ Long-press a tab to rename it.
 
     private fun tplExec(t: TabData, line: String) {
         val s = findSrv(t.srvName)
-        val name = when (t.tpl) { "youtube" -> "youtube"; "ai" -> "ai"; else -> "windows 10" }
-        val label = when (t.tpl) { "youtube" -> "YouTube"; "ai" -> "AI"; else -> "Windows 10" }
+        val name = when (t.tpl) { "youtube" -> "youtube"; "ai" -> "ai"; else -> "windows 11" }
+        val label = when (t.tpl) { "youtube" -> "YouTube"; "ai" -> "AI"; else -> "Windows 11" }
         val l = line.trim().lowercase().split(" ").filter { it.isNotEmpty() }.joinToString(" ")
         if (l.isEmpty()) return
         if (fileCmd(t, line)) return
@@ -2728,7 +2728,7 @@ Long-press a tab to rename it.
     }
 
     private fun openTemplate(key: String) {
-        val label = when (key) { "youtube" -> "YouTube"; "ai" -> "AI"; else -> "Windows 10" }
+        val label = when (key) { "youtube" -> "YouTube"; "ai" -> "AI"; else -> "Windows 11" }
         val s = Srv(uniqueSrvName(label), "tpl-$key", freePort(), "")
         servers.add(s)
         val t = TabData(uniqueTabName(label), filesDir.path,
@@ -2759,7 +2759,7 @@ Long-press a tab to rename it.
         }
         card("▶", "YouTube Mobile", tr("video feed, Shorts, player — command: play youtube", "feed de vídeos, Shorts, player — comando: play youtube"), "youtube")
         card("✦", tr("AI Assistant", "IA Assistente"), tr("ask or generate code in any language — command: ai//question//app (play ai opens the chat page)", "responde ou gera código em qualquer linguagem — comando: ia//pergunta//app (play ai abre o chat)"), "ai")
-        card("⊞", "Windows 10 Mobile", tr("lock screen, live tiles, apps — command: play windows 10", "tela de bloqueio, blocos dinâmicos, apps — comando: play windows 10"), "windows10")
+        card("⊞", "Windows 11", tr("lock screen, Start menu, windows, widgets — command: play windows 11", "tela de bloqueio, menu Iniciar, janelas, widgets — comando: play windows 11"), "windows10")
         p.button(tr("Close", "Fechar"), true) { p.close() }
     }
 
@@ -5654,7 +5654,7 @@ find() {
                 "files" -> serveFiles(o, s, path)
                 "json" -> send(o, "application/json; charset=utf-8", s.cmd.ifBlank { "{\"ok\":true}" }.toByteArray())
                 "tpl-youtube" -> ytRoute(o, path, range, (first.split(" ").getOrNull(1) ?: "").substringAfter("?", ""))
-                "tpl-windows10" -> sendAsset(o, "template_windows10.html")
+                "tpl-windows10" -> sendAsset(o, "template_windows11.html")
                 "tpl-ai" -> if (path == "/ask") {
                     val qs = first.split(" ").getOrNull(1)?.substringAfter("?", "") ?: ""
                     fun qp(k: String) = qs.split("&").firstOrNull { it.startsWith("$k=") }?.substringAfter("=")?.let { Uri.decode(it.replace("+", " ")) } ?: ""
