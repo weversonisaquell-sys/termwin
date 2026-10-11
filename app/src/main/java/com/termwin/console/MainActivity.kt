@@ -248,7 +248,7 @@ class MainActivity : Activity() {
   historico                  comandos usados
   botão 📜 Savedata           comandos recentes (Files/Savedata.wintext); toque para executar
   apk//open//nome.apk        procura o APK, abre o app em uma janela e guarda a pasta dele em Files/App data
-  skel//fbx//modelo.fbx       procura um modelo e abre a área móvel de rig 3D (protótipo)
+  skel//caminho/modelo.fbx    copia o modelo + texturas da pasta para Files/Models e abre o editor 3D (ex.: skel//storage/emulated/0/Download/Tobe/modelo.fbx)
   shizuku                    mostra o estado do Shizuku e pede a permissão (usado no lugar do root)
   dados                      onde seus arquivos ficam salvos
   erros                      mostra os erros salvos (erros limpar)
@@ -321,7 +321,7 @@ Toque e segure numa aba para renomear.
   history                    commands used
   📜 Savedata button         recent commands (Files/Savedata.wintext); tap one to run it
   apk//open//name.apk        find the APK, open the app in a window and keep its folder in Files/App data
-  skel//fbx//model.fbx       find a model and open the mobile 3D rig workspace (prototype)
+  skel//path/model.fbx       copy the model + its folder textures into Files/Models and open the 3D editor (e.g. skel//storage/emulated/0/Download/Tobe/model.fbx)
   shizuku                    show Shizuku status and ask for permission (used instead of root)
   data                       where your files are saved
   errors                     show saved errors (errors clear)
@@ -644,6 +644,7 @@ Long-press a tab to rename it.
             uris?.forEach { savePhotoSent(it) }
             return
         }
+        if (req == 82) { if (res == RESULT_OK) data?.data?.let { u -> thread { skelImportUri(u) } }; return }
         if (req == 79) { if (res == RESULT_OK) data?.data?.let { showPublish(it) }; return }
         if (req == 80) { if (res == RESULT_OK) data?.data?.let { copyFromTree(it) } else copyTab?.let { append(it, tr("copy cancelled\n", "cópia cancelada\n")) }; return }
         if (req != 77 || res != RESULT_OK) return
@@ -1998,6 +1999,7 @@ Long-press a tab to rename it.
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
     private fun openWebWindow(title: String, url: String, yt: Boolean = false, ai: Boolean = false, gh: Boolean = false) {
         val dm = resources.displayMetrics
+        val skelWin = url.startsWith("https://$SKEL_HOST/")
         val ov = FrameLayout(this)
         ov.setBackgroundColor(0x99000000.toInt())
         ov.isClickable = true
@@ -2012,7 +2014,7 @@ Long-press a tab to rename it.
         var mouse: MouseLayer? = null
         val tb = LinearLayout(this)
         tb.setBackgroundColor(TITLE)
-        tb.addView(tv("   ▣   $title — $url", 13f, Color.WHITE).apply { gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }, LinearLayout.LayoutParams(0, dp(40), 1f))
+        tb.addView(tv(if (skelWin) "   ▣   $title" else "   ▣   $title — $url", 13f, Color.WHITE).apply { gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }, LinearLayout.LayoutParams(0, dp(40), 1f))
         if (yt) tb.addView(capBtn("＋", false, 46) { wv.evaluateJavascript("if(window.mk)mk()", null) })
         if (ai) tb.addView(capBtn("🔑", false, 46) { showProviderKey() })
         if (gh) tb.addView(capBtn("💾", false, 46) { if (saveGhTokenFromClipboard()) p.close() })
@@ -2035,6 +2037,7 @@ Long-press a tab to rename it.
         wv.settings.allowFileAccess = true
         wv.settings.allowContentAccess = true
         wv.addJavascriptInterface(TwBridge(wv), "TW")
+        if (skelWin) { skelWv = wv; wv.addJavascriptInterface(TwSkel(wv), "TWSKEL") }
         if (yt) pubWv = wv
         // Roblox (and any site): never jump to the Roblox app or other apps; accept errors so the page keeps working inside this window
         // Roblox opens as the PC (desktop) website: Windows Chrome identity + wide desktop layout, with pinch zoom
@@ -2066,6 +2069,9 @@ Long-press a tab to rename it.
                 // roblox://, roblox-player://, intent://... are ignored: stay on the site instead of opening the app
                 toast(tr("Blocked opening another app (stayed on the site)", "Bloqueei a abertura de outro app (ficou no site)"))
                 return true
+            }
+            override fun shouldInterceptRequest(v: android.webkit.WebView, req: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse? {
+                return if (skelWin) skelResponse(req) else null
             }
             override fun onReceivedSslError(v: android.webkit.WebView, h: android.webkit.SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
             override fun onReceivedError(v: android.webkit.WebView, req: android.webkit.WebResourceRequest, err: android.webkit.WebResourceError) { /* accept the error and keep the page */ }
@@ -2107,7 +2113,7 @@ Long-press a tab to rename it.
         ov.addView(card, FrameLayout.LayoutParams((dm.widthPixels * 0.94).toInt(), (dm.heightPixels * 0.92).toInt(), Gravity.CENTER))
         root.addView(ov, FrameLayout.LayoutParams(MATCH, MATCH))
         p = Panel(ov, LinearLayout(this), LinearLayout(this))
-        p.onClose = { webMice.remove(ml); if (topWeb === wv) topWeb = null; if (pubWv === wv) pubWv = null; if (voiceWv === wv) { stopVoice(); voiceWv = null }; try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
+        p.onClose = { webMice.remove(ml); if (topWeb === wv) topWeb = null; if (pubWv === wv) pubWv = null; if (voiceWv === wv) { stopVoice(); voiceWv = null }; if (skelWv === wv) skelWv = null; try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { } }
         panels.add(p)
         wv.loadUrl(url)
     }
@@ -4671,38 +4677,431 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     private fun appDataDir() = File(filesRoot(), "App data").apply { mkdirs() }
 
 
-    /** Opens the mobile 3D skeleton workspace for a named model file. */
-    private fun skelCmd(t: TabData, line: String): Boolean {
-        val m = Regex("^skel//([^/]+)//(.+)$", RegexOption.IGNORE_CASE).matchEntire(line.trim()) ?: return false
-        val format = m.groupValues[1].trim().lowercase()
-        val rawName = m.groupValues[2].trim().trim('"')
-        val allowed = setOf("fbx", "gltf", "glb", "obj", "dae", "3ds", "stl", "ply")
-        if (format !in allowed) {
-            err(t, "skel: unsupported format '$format'. Supported: ${allowed.joinToString(", ")}")
-            return true
+    // ---------- skel//caminho : copia o modelo + as texturas da pasta dele para Files/Models e abre o editor 3D ----------
+    private val SKEL_HOST = "termwin.local"
+    private val SKEL_MODEL_EXT = setOf("fbx", "gltf", "glb", "obj", "dae", "3ds", "stl", "ply")
+    private val SKEL_IMG_EXT = setOf("png", "jpg", "jpeg", "bmp", "tga", "webp", "tif", "tiff", "gif", "dds", "hdr", "exr")
+    private var skelWv: android.webkit.WebView? = null
+    private fun modelsDir() = File(filesRoot(), "Models").apply { mkdirs() }
+
+    private class SkelImport(val folder: String, val file: String, val textures: Int, val files: Int, val bytes: Long, val missing: List<String>, val already: Boolean)
+
+    private fun skelNameMatch(fileName: String, ref: String): Boolean {
+        if (fileName.equals(ref, true)) return true
+        // binary FBX: the length byte of the string can stick to the front of the name
+        return ref.length > fileName.length && ref.length - fileName.length <= 1 && ref.endsWith(fileName, true)
+    }
+
+    /** Looks for a file by name inside a folder tree (limited depth / size so it never freezes). */
+    private fun skelFind(root: File, ref: String, maxDepth: Int): File? {
+        val q = java.util.ArrayDeque<Pair<File, Int>>()
+        q.add(root to 0)
+        var seen = 0
+        while (q.isNotEmpty() && seen < 30000) {
+            val (d, depth) = q.poll()!!
+            val kids = d.listFiles() ?: continue
+            for (k in kids) {
+                seen++
+                if (k.isFile) { if (skelNameMatch(k.name, ref)) return k }
+                else if (depth < maxDepth && !k.name.startsWith(".") && !java.nio.file.Files.isSymbolicLink(k.toPath())) q.add(k to depth + 1)
+            }
         }
-        if (rawName.isBlank()) { err(t, "usage: skel//format//file_name"); return true }
-        append(t, tr("Searching for $rawName ($format)…\n", "Procurando $rawName ($format)…\n"))
-        thread {
-            val requested = if (rawName.endsWith(".$format", true)) rawName else "$rawName.$format"
-            val found = try {
-                resolvePath(t, rawName)?.takeIf { it.isFile && it.extension.equals(format, true) }
-                    ?: resolvePath(t, requested)?.takeIf { it.isFile && it.extension.equals(format, true) }
-                    ?: findAnywhere(requested, t)?.takeIf { it.isFile && it.extension.equals(format, true) }
-                    ?: findAnywhere(rawName, t)?.takeIf { it.isFile && it.extension.equals(format, true) }
-            } catch (_: Exception) { null }
-            ui.post {
-                if (found == null) {
-                    err(t, "skel: file not found with .$format format: $requested")
-                    append(t, tr("No files were changed. Check the name and format, then try again.\n", "Nenhum arquivo foi alterado. Confira o nome e o formato e tente novamente.\n"))
-                } else {
-                    append(t, tr("Found: ${found.name}\nOpening the mobile 3D workspace…\n", "Encontrado: ${found.name}\nAbrindo o editor 3D móvel…\n"))
-                    val query = "format=${java.net.URLEncoder.encode(format, "UTF-8")}&name=${java.net.URLEncoder.encode(found.name, "UTF-8")}&path=${java.net.URLEncoder.encode(found.absolutePath, "UTF-8") }"
-                    openWebWindow("Skeleton Rig", "file:///android_asset/skel_editor.html?$query")
+        return null
+    }
+
+    /** Texture names written inside a binary/ascii FBX (or DAE/3DS): every text run that ends with an image extension. */
+    private fun skelScanNames(f: File): List<String> {
+        val out = linkedSetOf<String>()
+        val sb = StringBuilder()
+        fun flush() {
+            if (sb.length in 5..600) {
+                var s = String(sb.toString().toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8).trimEnd('"', '\'', ',', ' ')
+                s = s.substringAfterLast('"').substringAfterLast('\'')
+                val e = s.substringAfterLast('.', "").lowercase()
+                if (e in SKEL_IMG_EXT && s.length > e.length + 1) out.add(s)
+            }
+            sb.setLength(0)
+        }
+        f.inputStream().buffered().use { ins ->
+            val buf = ByteArray(65536)
+            while (out.size < 400) {
+                val n = ins.read(buf)
+                if (n < 0) break
+                for (i in 0 until n) {
+                    val c = buf[i].toInt() and 0xFF
+                    if (c in 32..126 || c >= 128) { if (sb.length < 700) sb.append(c.toChar()) }
+                    else if (sb.isNotEmpty()) flush()
                 }
             }
         }
+        if (sb.isNotEmpty()) flush()
+        return out.toList()
+    }
+
+    /** Files a model points to (textures, .mtl, .bin). */
+    private fun skelRefNames(src: File): List<String> {
+        val out = linkedSetOf<String>()
+        try {
+            when (src.extension.lowercase()) {
+                "gltf" -> {
+                    val j = JSONObject(src.readText())
+                    for (k in listOf("images", "buffers")) {
+                        val a = j.optJSONArray(k) ?: continue
+                        for (i in 0 until a.length()) {
+                            val u = a.optJSONObject(i)?.optString("uri", "") ?: ""
+                            if (u.isNotEmpty() && !u.startsWith("data:")) out.add(java.net.URLDecoder.decode(u.replace("+", "%2B"), "UTF-8"))
+                        }
+                    }
+                }
+                "obj" -> src.useLines { ls -> for (l in ls.take(3000)) { val s = l.trim(); if (s.startsWith("mtllib ", true)) out.add(s.substring(7).trim()) } }
+                "fbx", "dae", "3ds" -> out.addAll(skelScanNames(src))
+            }
+        } catch (e: Exception) { logError("skel", "refs ${src.name}: $e") }
+        return out.toList()
+    }
+
+    private fun skelMtlTextures(mtl: File): List<String> {
+        val out = linkedSetOf<String>()
+        try {
+            mtl.useLines { ls ->
+                for (l in ls.take(5000)) {
+                    val s = l.trim(); val low = s.lowercase()
+                    if (low.startsWith("map_") || low.startsWith("bump") || low.startsWith("disp") || low.startsWith("decal") || low.startsWith("refl")) {
+                        val rest = s.substringAfter(' ', "").trim()
+                        val cand = rest.replace(Regex("(^|\\s)-[a-zA-Z]+(\\s+[-0-9.]+)*(?=\\s|$)"), " ").trim()
+                        if (cand.substringAfterLast('.', "").lowercase() in SKEL_IMG_EXT) out.add(cand)
+                    }
+                }
+            }
+        } catch (e: Exception) { }
+        return out.toList()
+    }
+
+    /** Copies the model AND its textures into Files/Models/<model name>/ so the editor can build everything by itself. */
+    private fun skelImport(src: File, log: (String) -> Unit): SkelImport {
+        val mdir = modelsDir().canonicalFile
+        val srcC = try { src.canonicalFile } catch (e: Exception) { src.absoluteFile }
+        // already inside the app (Files/Models): just open it
+        if (srcC.path.startsWith(mdir.path + File.separator)) {
+            val rel = srcC.relativeTo(mdir).path.replace('\\', '/')
+            return SkelImport(rel.substringBefore('/'), rel.substringAfter('/', rel), 0, 0, 0L, emptyList(), true)
+        }
+        val parent = srcC.parentFile ?: throw IllegalStateException("sem pasta")
+        val dest = File(mdir, safe(srcC.nameWithoutExtension)).apply { mkdirs() }
+        var files = 0; var bytes = 0L; var textures = 0
+        val keys = HashSet<String>(); val names = HashSet<String>()
+        fun put(f: File, relIn: String): Boolean {
+            val rel = relIn.replace('\\', '/').trim('/')
+            if (rel.isEmpty() || rel.split('/').any { it == ".." }) return false
+            if (!keys.add(rel.lowercase())) return false
+            val out = File(dest, rel)
+            out.parentFile?.mkdirs()
+            if (!(out.isFile && out.length() == f.length())) f.copyTo(out, true)
+            files++; bytes += f.length(); names.add(f.name.lowercase())
+            if (f.extension.lowercase() in SKEL_IMG_EXT) textures++
+            return true
+        }
+        log(tr("copying model …\n", "copiando o modelo …\n"))
+        put(srcC, srcC.name)
+        val storageRoot = Environment.getExternalStorageDirectory().path
+        val pn = parent.name.lowercase()
+        val imgsHere = parent.listFiles()?.count { it.isFile && it.extension.lowercase() in SKEL_IMG_EXT } ?: 0
+        // a big shared folder (Downloads, DCIM...) must NOT be copied as a whole: only the textures the model names
+        val broad = parent.path == storageRoot || pn in setOf("download", "downloads", "downloaded", "dcim", "pictures", "documents", "0", "emulated") || imgsHere > 150
+        if (!broad) {
+            log(tr("copying textures from the model folder …\n", "copiando as texturas da pasta do modelo …\n"))
+            parent.listFiles()?.forEach { f -> if (f.isFile && f.extension.lowercase() in SKEL_IMG_EXT) put(f, f.name) }
+            val texDir = Regex("(?i).*(tex|map|material|image|img|\\.fbm|skin|diffuse|albedo|normal).*")
+            fun scanDir(base: File, flat: Boolean) {
+                base.listFiles()?.forEach { d ->
+                    if (d.isDirectory && !java.nio.file.Files.isSymbolicLink(d.toPath()) && texDir.matches(d.name)) {
+                        d.walkTopDown().maxDepth(3).forEach { f ->
+                            if (f.isFile && f.extension.lowercase() in SKEL_IMG_EXT) put(f, if (flat) "textures/" + f.name else f.relativeTo(base).path)
+                        }
+                    }
+                }
+            }
+            scanDir(parent, false)
+            val gp = parent.parentFile
+            if (gp != null && gp.path != storageRoot && gp.name.lowercase() !in setOf("download", "downloads", "storage", "0", "emulated")) scanDir(gp, true)
+        }
+        val missing = mutableListOf<String>()
+        val queue = java.util.ArrayDeque<String>()
+        skelRefNames(srcC).forEach { queue.add(it) }
+        var guard = 0
+        while (queue.isNotEmpty() && guard++ < 1500) {
+            val ref = queue.poll() ?: break
+            val rel = ref.replace('\\', '/').trimStart('/')
+            val base = rel.substringAfterLast('/')
+            if (base.isEmpty()) continue
+            if (keys.contains(rel.lowercase()) || names.contains(base.lowercase())) continue
+            val direct = File(parent, rel).takeIf { !rel.contains("..") && it.isFile }
+            val found = direct ?: skelFind(parent, base, 3)
+            if (found == null) { if (base.substringAfterLast('.', "").lowercase() in SKEL_IMG_EXT) missing.add(base); continue }
+            val isTex = found.extension.lowercase() in SKEL_IMG_EXT
+            put(found, if (direct != null) rel else (if (isTex) "textures/" + found.name else found.name))
+            if (found.extension.equals("mtl", true)) skelMtlTextures(found).forEach { queue.add(it) }
+        }
+        return SkelImport(dest.name, srcC.name, textures, files, bytes, missing, false)
+    }
+
+    /** Finds the model: full path (any case), folder (first model inside), or just the name anywhere in the phone. */
+    private fun skelResolve(t: TabData, raw: String): File? {
+        val r = try { resolvePath(t, raw) } catch (e: Exception) { null }
+        if (r != null && r.isFile) return r
+        if (r != null && r.isDirectory) return r.walkTopDown().maxDepth(3).firstOrNull { it.isFile && it.extension.lowercase() in SKEL_MODEL_EXT }
+        val base = raw.replace('\\', '/').substringAfterLast('/')
+        if (base.isBlank()) return null
+        val a = try { findAnywhere(base, t)?.takeIf { it.isFile } } catch (e: Exception) { null }
+        if (a != null) return a
+        if (!base.contains('.')) {
+            for (e in SKEL_MODEL_EXT) {
+                val b = try { findAnywhere("$base.$e", t)?.takeIf { it.isFile } } catch (x: Exception) { null }
+                if (b != null) return b
+            }
+        }
+        return null
+    }
+
+    private fun skelOpenEditor(folder: String?, file: String?) {
+        var url = "https://$SKEL_HOST/skel_editor.html"
+        if (!folder.isNullOrEmpty() && !file.isNullOrEmpty()) url += "?m=" + java.net.URLEncoder.encode(folder, "UTF-8") + "&f=" + java.net.URLEncoder.encode(file, "UTF-8")
+        openWebWindow(tr("3D Editor", "Editor 3D"), url)
+    }
+
+    /** skel//path/of/the/model.fbx  (old form skel//fbx//name still works).  "skel" alone opens the editor with the model library. */
+    private fun skelCmd(t: TabData, line: String): Boolean {
+        val trimmed = line.trim()
+        if (trimmed.equals("skel", true)) { skelOpenEditor(null, null); return true }
+        val m = Regex("^skel\\s*//\\s*(.+)$", RegexOption.IGNORE_CASE).matchEntire(trimmed) ?: return false
+        var rawName = m.groupValues[1].trim().trim('"', '\'')
+        Regex("^([a-z0-9]+)\\s*//\\s*(.+)$", RegexOption.IGNORE_CASE).matchEntire(rawName)?.let { o ->
+            if (o.groupValues[1].lowercase() in SKEL_MODEL_EXT) rawName = o.groupValues[2].trim().trim('"', '\'')
+        }
+        if (rawName.isBlank()) { err(t, tr("usage: skel//path of the model  (example: skel//storage/emulated/0/Download/Tobe/model.fbx)", "uso: skel//caminho do modelo  (exemplo: skel//storage/emulated/0/Download/Tobe/modelo.fbx)")); return true }
+        append(t, tr("Searching $rawName …\n", "Procurando $rawName …\n"))
+        busy(1)
+        thread {
+            try {
+                val found = skelResolve(t, rawName)
+                if (found == null) {
+                    ui.post {
+                        err(t, tr("skel: file not found: $rawName", "skel: arquivo não encontrado: $rawName"))
+                        append(t, tr("Nothing was changed. Check the path" + (if (storageOk()) "" else " (and allow all-files storage in ⚙ Settings)") + ".\n", "Nada foi alterado. Confira o caminho" + (if (storageOk()) "" else " (e ligue o armazenamento em ⚙ Configurações)") + ".\n"))
+                    }
+                    return@thread
+                }
+                val ext = found.extension.lowercase()
+                if (ext !in SKEL_MODEL_EXT) {
+                    ui.post { err(t, tr("skel: unsupported format '.$ext'. Supported: ${SKEL_MODEL_EXT.joinToString(", ")}", "skel: formato '.$ext' não suportado. Aceitos: ${SKEL_MODEL_EXT.joinToString(", ")}")) }
+                    return@thread
+                }
+                ui.post { append(t, tr("Found: ${found.path}\n", "Encontrado: ${found.path}\n")) }
+                val imp = skelImport(found) { s -> ui.post { append(t, s) } }
+                ui.post {
+                    if (imp.already) append(t, tr("Already inside the app (Files/Models/${imp.folder}).\n", "Já está dentro do app (Files/Models/${imp.folder}).\n"))
+                    else append(t, tr("Copied ✔ Files/Models/${imp.folder}  (${imp.files} files, ${imp.textures} textures, ${imp.bytes / 1024} KB)\n", "Copiado ✔ Files/Models/${imp.folder}  (${imp.files} arquivos, ${imp.textures} texturas, ${imp.bytes / 1024} KB)\n"))
+                    if (imp.missing.isNotEmpty()) append(t, tr("Textures not found: ${imp.missing.take(8).joinToString(", ")}${if (imp.missing.size > 8) " …" else ""}\n", "Texturas não encontradas: ${imp.missing.take(8).joinToString(", ")}${if (imp.missing.size > 8) " …" else ""}\n"))
+                    append(t, tr("Opening the 3D editor…\n", "Abrindo o editor 3D…\n"))
+                    skelOpenEditor(imp.folder, imp.file)
+                }
+            } catch (e: Throwable) {
+                ui.post { err(t, "skel: " + tr("could not import — ", "não consegui importar — ") + (e.message ?: e.javaClass.simpleName)) }
+            } finally { ui.post { busy(-1) } }
+        }
         return true
+    }
+
+    // ----- editor window <-> app: tiny "website" on https://termwin.local (page, model list, model files) -----
+    private fun skelModelsJson(): String {
+        val arr = JSONArray()
+        val dirs = modelsDir().listFiles()?.filter { it.isDirectory }?.sortedByDescending { it.lastModified() } ?: emptyList()
+        for (d in dirs) {
+            val models = mutableListOf<File>()
+            var tex = 0
+            d.walkTopDown().maxDepth(4).forEach { f ->
+                if (f.isFile) {
+                    val e = f.extension.lowercase()
+                    if (e in SKEL_MODEL_EXT) models.add(f) else if (e in SKEL_IMG_EXT) tex++
+                }
+            }
+            for (m in models.sortedBy { it.name.endsWith("_rig.glb", true) }) {
+                val o = JSONObject()
+                o.put("folder", d.name); o.put("file", m.relativeTo(d).path.replace('\\', '/'))
+                o.put("format", m.extension.lowercase()); o.put("textures", tex); o.put("size", m.length())
+                arr.put(o)
+            }
+        }
+        return arr.toString()
+    }
+
+    private fun skelListJson(folder: String): String? {
+        val root = modelsDir().canonicalFile
+        val d = File(root, folder).canonicalFile
+        if (!d.isDirectory || !d.path.startsWith(root.path + File.separator)) return null
+        val arr = JSONArray()
+        d.walkTopDown().maxDepth(6).forEach { f ->
+            if (f.isFile) { val o = JSONObject(); o.put("p", f.relativeTo(d).path.replace('\\', '/')); o.put("s", f.length()); arr.put(o) }
+        }
+        return arr.toString()
+    }
+
+    private fun skelResponse(req: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse? {
+        val u = req.url
+        if (!SKEL_HOST.equals(u.host, true)) return null
+        val hdr = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store")
+        fun ok(mime: String, enc: String?, data: java.io.InputStream) = android.webkit.WebResourceResponse(mime, enc, 200, "OK", hdr, data)
+        fun text(mime: String, s: String) = ok(mime, "utf-8", java.io.ByteArrayInputStream(s.toByteArray(Charsets.UTF_8)))
+        fun nf() = android.webkit.WebResourceResponse("text/plain", "utf-8", 404, "Not Found", hdr, java.io.ByteArrayInputStream("not found".toByteArray()))
+        return try {
+            val path = u.path ?: "/"
+            when {
+                path == "/" || path == "/skel_editor.html" -> ok("text/html", "utf-8", assets.open("skel_editor.html"))
+                path == "/api/models" -> text("application/json", skelModelsJson())
+                path == "/api/list" -> text("application/json", skelListJson(u.getQueryParameter("m") ?: "") ?: "[]")
+                path.startsWith("/models/") -> {
+                    val root = modelsDir().canonicalFile
+                    val f = File(root, path.removePrefix("/models/")).canonicalFile
+                    if (!f.path.startsWith(root.path + File.separator) || !f.isFile) nf()
+                    else {
+                        val mime = when (f.extension.lowercase()) {
+                            "glb" -> "model/gltf-binary"
+                            "gltf" -> "model/gltf+json"
+                            "png" -> "image/png"
+                            "jpg", "jpeg" -> "image/jpeg"
+                            "webp" -> "image/webp"
+                            "gif" -> "image/gif"
+                            "bmp" -> "image/bmp"
+                            else -> "application/octet-stream"
+                        }
+                        ok(mime, null, f.inputStream())
+                    }
+                }
+                else -> nf()
+            }
+        } catch (e: Exception) { logError("skel", "http ${u.path}: $e"); nf() }
+    }
+
+    private fun skelJs(js: String) { ui.post { try { skelWv?.evaluateJavascript(js, null) } catch (e: Exception) { } } }
+
+    /** Copies the model + textures and tells the editor page the result. */
+    private fun skelFinish(src: File) {
+        val o = JSONObject()
+        try {
+            if (src.extension.lowercase() !in SKEL_MODEL_EXT) {
+                o.put("error", "format"); o.put("ext", src.extension)
+            } else {
+                val imp = skelImport(src) { }
+                o.put("ok", true); o.put("folder", imp.folder); o.put("file", imp.file)
+                o.put("textures", imp.textures); o.put("files", imp.files); o.put("missing", JSONArray(imp.missing))
+            }
+        } catch (e: Throwable) { logError("skel", "import: $e"); o.put("error", e.message ?: e.javaClass.simpleName) }
+        skelJs("if(window.onImported)onImported(" + o.toString() + ")")
+    }
+
+    /** The file manager hands us a content:// address; for the phone's storage we turn it back into the real path, so the textures next to the model can be copied too. */
+    private fun skelUriToFile(uri: Uri): File? {
+        try {
+            if (uri.scheme == "file") return uri.path?.let { File(it) }?.takeIf { it.isFile }
+            if (DocumentsContract.isDocumentUri(this, uri)) {
+                val id = DocumentsContract.getDocumentId(uri)
+                if ((uri.authority ?: "") == "com.android.externalstorage.documents") {
+                    val p = id.split(":", limit = 2)
+                    if (p.size == 2) {
+                        val base = if (p[0].equals("primary", true)) Environment.getExternalStorageDirectory() else File("/storage/" + p[0])
+                        val f = File(base, p[1])
+                        if (f.isFile) return f
+                    }
+                }
+                if (id.startsWith("raw:")) { val f = File(id.removePrefix("raw:")); if (f.isFile) return f }
+            }
+        } catch (e: Exception) { logError("skel", "uri: $e") }
+        return null
+    }
+
+    private fun skelImportUri(uri: Uri) {
+        skelJs("if(window.onImporting)onImporting()")
+        try {
+            val real = skelUriToFile(uri)
+            if (real != null && real.canRead()) { skelFinish(real); return }
+            // could not get the real path: copy just the chosen file (no textures next to it)
+            val name = try {
+                contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val ix = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (c.moveToFirst() && ix >= 0) c.getString(ix) else null
+                }
+            } catch (e: Exception) { null } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "model"
+            val tmpDir = File(cacheDir, "skel_in").apply { deleteRecursively(); mkdirs() }
+            val tmp = File(tmpDir, safe(name))
+            contentResolver.openInputStream(uri)!!.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+            skelFinish(tmp)
+            tmpDir.deleteRecursively()
+        } catch (e: Throwable) {
+            logError("skel", "pick: $e")
+            skelJs("if(window.onImported)onImported(" + JSONObject().put("error", e.message ?: "erro").toString() + ")")
+        }
+    }
+
+    /** Functions the editor page can call (only given to the editor window). */
+    inner class TwSkel(private val web: android.webkit.WebView) {
+        private var saveOut: java.io.FileOutputStream? = null
+        private var saveTmp: File? = null
+        private var saveFolder = ""
+        private var saveName = ""
+
+        /** Opens the phone's own file manager (any app) to choose the model. */
+        @android.webkit.JavascriptInterface fun pick() {
+            runOnUiThread {
+                skelWv = web
+                try { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 82) }
+                catch (e: Exception) { toast(tr("No file manager found", "Nenhum gerenciador de arquivos encontrado")) }
+            }
+        }
+
+        /** Same as the terminal command: a path (or just a name). */
+        @android.webkit.JavascriptInterface fun importPath(raw: String) {
+            skelWv = web
+            skelJs("if(window.onImporting)onImporting()")
+            thread {
+                val f = try { skelResolve(TabData("skel", Environment.getExternalStorageDirectory().path), raw.trim().trim('"', '\'')) } catch (e: Exception) { null }
+                if (f == null) skelJs("if(window.onImported)onImported({error:'not_found'})") else skelFinish(f)
+            }
+        }
+
+        @android.webkit.JavascriptInterface fun saveBegin(folder: String, name: String): Boolean {
+            return try {
+                saveCancel()
+                saveFolder = safe(folder.ifBlank { "Exportados" }); saveName = safe(name.ifBlank { "model.glb" })
+                val tmp = File(cacheDir, "skel_save_" + System.currentTimeMillis() + ".tmp")
+                saveTmp = tmp; saveOut = java.io.FileOutputStream(tmp)
+                true
+            } catch (e: Exception) { logError("skel", "saveBegin: $e"); false }
+        }
+
+        @android.webkit.JavascriptInterface fun saveChunk(b64: String): Boolean {
+            return try { saveOut?.write(android.util.Base64.decode(b64, android.util.Base64.DEFAULT)); true } catch (e: Exception) { logError("skel", "saveChunk: $e"); false }
+        }
+
+        private fun saveCancel() {
+            try { saveOut?.close() } catch (e: Exception) { }
+            saveOut = null
+            saveTmp?.delete(); saveTmp = null
+        }
+
+        /** Finishes the save: file goes to Files/Models/<model>/ and a copy to Download/Downloaded. Returns a small JSON. */
+        @android.webkit.JavascriptInterface fun saveEnd(): String {
+            val o = JSONObject()
+            try {
+                saveOut?.close(); saveOut = null
+                val tmp = saveTmp ?: throw IllegalStateException("nada para salvar")
+                val dir = File(modelsDir(), saveFolder).apply { mkdirs() }
+                val out = File(dir, saveName)
+                tmp.copyTo(out, true); tmp.delete(); saveTmp = null
+                val shown = publishToDownloads(out)
+                o.put("ok", true); o.put("app", "Files/Models/$saveFolder/$saveName"); o.put("shown", shown ?: "")
+            } catch (e: Exception) { logError("skel", "saveEnd: $e"); o.put("ok", false); o.put("error", e.message ?: "erro"); saveCancel() }
+            return o.toString()
+        }
     }
 
     private fun apkCmd(t: TabData, line: String): Boolean {

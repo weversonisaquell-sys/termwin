@@ -1,31 +1,838 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>TermWin Skeleton Rig</title>
-<style>*{box-sizing:border-box}body{margin:0;background:#08101d;color:#eef4ff;font:14px system-ui;overflow:auto}.bar{position:sticky;top:0;z-index:5;height:44px;background:#17243b;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid #29466b}.layout{display:grid;grid-template-columns:58px minmax(0,1fr);min-height:calc(100dvh - 44px)}.tools{background:#111b2d;display:flex;flex-direction:column;gap:6px;padding:6px}.tools button{font-size:11px;padding:9px 2px}button{border:1px solid #3b5d8a;border-radius:7px;background:#203958;color:white;padding:9px;cursor:pointer}.primary{background:#075de9;border-color:#4386ff;width:100%;font-weight:700}.stage{padding:10px;background:radial-gradient(ellipse at center,#23334a,#080d17);min-width:0}.panel{background:#142139;border:1px solid #304b70;border-radius:10px;padding:10px;margin-bottom:10px;min-width:0}.viewport{height:44vh;min-height:250px;border-radius:8px;background:#0a1423;border:1px solid #304b70;position:relative;overflow:hidden;touch-action:none}.viewport canvas{width:100%;height:100%;display:block}.muted{color:#9eb2cf;font-size:12px}.status{color:#82f0bd;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}.warning{color:#ffd28a;font-size:12px;line-height:1.45}h3{font-size:14px;margin:0 0 8px}label{display:block;margin:8px 0;color:#cfdef5}input[type=file]{width:100%;font-size:12px}.row{display:flex;gap:7px;flex-wrap:wrap}.row>*{flex:1}.field{width:100%;background:#091322;color:white;border:1px solid #38577f;padding:8px;border-radius:6px}@media(min-width:750px){.stage{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(270px,1fr);gap:10px;align-content:start}.viewport{height:65vh}.panel{margin:0 0 10px}.side{display:flex;flex-direction:column;gap:10px}}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Editor 3D · TermWin</title>
+<style>
+:root{
+  --bg:#1f1f1f;--bg2:#202020;--title:#272727;--row:#2a2a2a;--ctl:#2d2d2d;--ctl-h:#373737;--line:#3a3a3a;--line2:#454545;
+  --text:#fff;--muted:#9aa5b1;--dim:#6b7785;--accent:#60cdff;--accent-h:#7ad6ff;--green:#3ddc84;--warn:#ffb454;--red:#ff6b6b;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:13px/1.35 "Segoe UI Variable","Segoe UI",system-ui,Roboto,sans-serif;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;cursor:pointer}
+svg.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+svg.ic.sm{width:16px;height:16px}
+.grow{flex:1;min-width:0}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#4a4a4a;border-radius:8px}::-webkit-scrollbar-track{background:transparent}
+
+#app{display:flex;flex-direction:column;height:100%}
+#top{height:44px;flex:none;background:var(--title);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 10px}
+.brand{display:flex;align-items:center;gap:8px;color:var(--accent);font-weight:600;white-space:nowrap}
+.brand b{color:var(--text)}
+.chips{display:flex;gap:6px;min-width:0;overflow:hidden}
+.chip{background:var(--ctl);border:1px solid var(--line2);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw}
+.chip.acc{color:#00131c;background:var(--accent);border-color:var(--accent);font-weight:700}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;background:var(--ctl);border:1px solid var(--line2);border-radius:6px;white-space:nowrap}
+.btn:hover{background:var(--ctl-h)}.btn:active{background:#262626;transform:scale(.98)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#00131c;font-weight:700}
+.btn.primary:hover{background:var(--accent-h)}
+.btn.sub{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.sub:hover{background:var(--ctl)}
+.btn.full{width:100%}
+.btn[disabled]{opacity:.45;pointer-events:none}
+
+#mid{flex:1;min-height:0;display:flex}
+#rail{width:58px;flex:none;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;overflow-y:auto}
+.tool{width:50px;min-height:48px;border-radius:8px;border:1px solid transparent;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--muted);position:relative;padding:4px 0}
+.tool span{font-size:9.5px;line-height:1}
+.tool:hover{background:var(--ctl)}
+.tool.on{background:var(--ctl);border-color:var(--line2);color:var(--accent)}
+.tool.on::before{content:"";position:absolute;left:-5px;top:12px;bottom:12px;width:3px;border-radius:3px;background:var(--accent)}
+.sep{width:30px;height:1px;background:var(--line);margin:4px 0;flex:none}
+
+#stage{flex:1;min-width:0;position:relative;background:#181818}
+#viewEl{position:absolute;inset:0;touch-action:none}
+#viewEl canvas{width:100%;height:100%;display:block;outline:none}
+.pill{position:absolute;background:rgba(32,32,32,.82);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:11.5px;color:var(--muted);backdrop-filter:blur(8px);pointer-events:none}
+#infoPill{left:10px;top:10px}
+#hintPill{left:10px;bottom:10px}
+#empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px}
+#empty .card{max-width:340px;text-align:center;background:rgba(32,32,32,.92);border:1px solid var(--line);border-radius:12px;padding:18px}
+#empty h2{margin:8px 0 4px;font-size:16px;font-weight:600}
+#empty p{margin:0 0 14px;color:var(--muted);font-size:12.5px}
+#empty .col{display:flex;flex-direction:column;gap:8px}
+
+#side{width:318px;flex:none;background:var(--bg2);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;flex:none;border-bottom:1px solid var(--line);padding:0 6px}
+.tab{flex:1;background:transparent;border:0;padding:11px 4px 9px;color:var(--muted);position:relative;font-weight:500}
+.tab.on{color:var(--text)}
+.tab.on::after{content:"";position:absolute;left:22%;right:22%;bottom:0;height:3px;border-radius:3px;background:var(--accent)}
+.pane{display:none;flex:1;min-height:0;overflow-y:auto;padding:10px;flex-direction:column;gap:10px}
+.pane.on{display:flex}
+.card{background:var(--row);border:1px solid var(--line);border-radius:10px;padding:10px}
+.card h3{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px}
+.card h3 .grow{flex:1}
+.kv{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:12.5px}
+.kv span:first-child{color:var(--muted)}.kv span:last-child{text-align:right;overflow-wrap:anywhere}
+.list{display:flex;flex-direction:column;gap:5px;max-height:210px;overflow-y:auto}
+.item{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--ctl);border:1px solid transparent;border-radius:8px;text-align:left;width:100%}
+.item:hover{background:var(--ctl-h)}
+.item.sel{border-color:var(--accent);background:#25333b}
+.item .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item small{color:var(--muted);font-size:11px;white-space:nowrap}
+.thumb{width:28px;height:28px;border-radius:6px;border:1px solid var(--line2);overflow:hidden;flex:none;background:#444;display:block}
+.thumb canvas,.thumb img{width:100%;height:100%;display:block;object-fit:cover}
+.badges{display:flex;gap:3px;flex-wrap:wrap}
+.bdg{font-size:9px;padding:1px 5px;border-radius:4px;background:#1c3a48;color:var(--accent);font-weight:700}
+.eye{width:26px;height:26px;border-radius:6px;border:0;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;flex:none}
+.eye.on{color:var(--accent)}
+.empty{color:var(--dim);font-size:12px;padding:8px 2px}
+.note{color:var(--muted);font-size:11.5px;line-height:1.45}
+.note.warn{color:var(--warn)}
+.row2{display:flex;gap:6px}.row2>*{flex:1}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.tile{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--line2);background:#333;padding:0}
+.tile:hover{border-color:var(--accent)}
+.tile img{width:100%;height:100%;object-fit:cover;display:block}
+.tile em{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);font-style:normal;font-size:9.5px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .ph{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-weight:700}
+select,input[type=text],input[type=number]{width:100%;height:32px;background:var(--ctl);color:var(--text);border:1px solid var(--line2);border-bottom-color:#8a8a8a;border-radius:6px;padding:0 8px;font:inherit;-webkit-user-select:text;user-select:text;outline:none}
+select:focus,input:focus{border-bottom-color:var(--accent)}
+label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
+.xyz{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.sw{display:flex;align-items:center;gap:10px;padding:6px 2px;color:var(--text)}
+.sw input{appearance:none;-webkit-appearance:none;width:38px;height:20px;border-radius:20px;background:#3a3a3a;border:1px solid #777;position:relative;flex:none;transition:.15s}
+.sw input::after{content:"";position:absolute;top:3px;left:3px;width:12px;height:12px;border-radius:50%;background:#ddd;transition:.15s}
+.sw input:checked{background:var(--accent);border-color:var(--accent)}
+.sw input:checked::after{left:21px;background:#00131c}
+
+#sbar{height:26px;flex:none;background:#1a1a1a;border-top:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 10px;font-size:11px;color:var(--muted)}
+#sbar #statusMsg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+#toast{position:fixed;left:50%;bottom:40px;transform:translate(-50%,20px);background:#2b2b2b;border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:8px;padding:9px 14px;max-width:80vw;opacity:0;pointer-events:none;transition:.2s;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast.warn{border-left-color:var(--warn)}#toast.err{border-left-color:var(--red)}#toast.ok{border-left-color:var(--green)}
+
+#loader{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:60}
+#loader.on{display:flex}
+.spin{width:34px;height:34px;border-radius:50%;border:3px solid #444;border-top-color:var(--accent);animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:40;padding:12px}
+#modal.on{display:flex}
+#sheet{width:min(560px,100%);max-height:100%;overflow-y:auto;background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px;box-shadow:0 16px 48px rgba(0,0,0,.6)}
+#sheet header{display:flex;align-items:center;gap:8px}
+#sheet header h2{margin:0;font-size:16px;font-weight:600;flex:1}
+.bigbtn{display:flex;align-items:center;gap:12px;padding:12px;background:var(--ctl);border:1px solid var(--line2);border-radius:10px;text-align:left;width:100%}
+.bigbtn:hover{background:var(--ctl-h)}
+.bigbtn .ico{width:40px;height:40px;border-radius:10px;background:#1c3a48;color:var(--accent);display:flex;align-items:center;justify-content:center;flex:none}
+.bigbtn b{display:block;font-weight:600}
+.bigbtn small{color:var(--muted);font-size:11.5px}
+.fmt{font-size:10px;font-weight:700;background:#1c3a48;color:var(--accent);padding:3px 6px;border-radius:5px;flex:none}
+.pathrow{display:flex;gap:6px}
+.pathrow input{flex:1}
+
+#fatal{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px;text-align:center;z-index:90;flex-direction:column;gap:10px}
+
+@media (max-aspect-ratio:1/1){
+  #mid{flex-direction:column}
+  #rail{width:auto;flex-direction:row;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;overflow-y:hidden;padding:4px 8px}
+  .tool.on::before{display:none}
+  #side{width:auto;height:44%;border-left:0;border-top:1px solid var(--line)}
+  .sep{width:1px;height:30px;margin:0 4px}
+  .chip{max-width:30vw}
+}
 </style>
-<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script></head><body><div class="bar"><b>TermWin · Editor 3D / Rig</b><span id="fmt">MODEL</span></div><div class="layout"><aside class="tools"><button onclick="window.setMode('move')">Mover</button><button onclick="window.setMode('rotate')">Girar</button><button onclick="window.setMode('bone')">Ossos</button><button onclick="document.getElementById('model').click()">Abrir</button><button onclick="window.resetView()">Reset</button></aside><main class="stage"><section class="panel"><h3 id="modelTitle">Pré-visualização 3D</h3><div class="viewport" id="viewport"></div><label>Modelo 3D</label><input id="model" type="file" accept=".fbx,.gltf,.glb,.obj,.stl,.ply"><p class="muted">Formatos com carregador disponível: FBX, glTF/GLB, OBJ, STL e PLY. DAE/3DS não são carregados neste editor.</p></section><div class="side"><section class="panel"><h3>Textura única</h3><input id="texture" type="file" accept="image/*"><div id="textureInfo" class="muted">Selecione uma imagem para aplicar ao modelo.</div><p class="warning">O editor não apaga nem modifica os arquivos originais. Imagens separadas não são combinadas automaticamente em atlas; isso exige UVs e composição específicas do modelo.</p></section><section class="panel"><h3>Montar esqueleto</h3><div class="row"><button onclick="window.addBone()">Adicionar osso</button><button onclick="window.autoRig()">Auto Rig</button><button onclick="window.clearBones()">Limpar</button></div><label>Osso selecionado</label><select class="field" id="boneList"></select><label>Posição X <input class="field" id="bx" type="number" step="0.05" value="0"></label><label>Posição Y <input class="field" id="by" type="number" step="0.05" value="1"></label><label>Posição Z <input class="field" id="bz" type="number" step="0.05" value="0"></label><button onclick="window.applyBonePosition()">Aplicar posição</button><label><input type="checkbox" id="walk"> Testar movimento de caminhada</label><div id="status" class="status">Inicializando visualizador…</div><button class="primary" onclick="window.exportScene()">Pronto · Exportar GLB</button><p class="warning">Importante: criar ossos não cria automaticamente pesos de pele. Esta ferramenta exporta o modelo e os ossos de referência em GLB; não promete um rig deformável compatível com Mixamo nem exportação FBX original.</p></section></div></main></div>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="brand"><svg class="ic"><use href="#i-cube"/></svg><b>Editor 3D</b></div>
+    <div class="chips"><span class="chip" id="chipName">Nenhum modelo</span><span class="chip acc" id="chipFmt" hidden></span></div>
+    <div class="grow"></div>
+    <button class="btn" data-act="open"><svg class="ic sm"><use href="#i-folder"/></svg>Abrir</button>
+    <button class="btn" data-act="pick"><svg class="ic sm"><use href="#i-import"/></svg>Importar</button>
+    <button class="btn primary" data-act="export"><svg class="ic sm"><use href="#i-export"/></svg>Exportar GLB</button>
+  </header>
+
+  <div id="mid">
+    <nav id="rail">
+      <button class="tool on" data-tool="orbit"><svg class="ic"><use href="#i-orbit"/></svg><span>Orbitar</span></button>
+      <button class="tool" data-tool="move"><svg class="ic"><use href="#i-move"/></svg><span>Mover</span></button>
+      <button class="tool" data-tool="rotate"><svg class="ic"><use href="#i-rotate"/></svg><span>Girar</span></button>
+      <div class="sep"></div>
+      <button class="tool" data-act="addbone"><svg class="ic"><use href="#i-bone"/></svg><span>Osso</span></button>
+      <button class="tool" data-act="autorig"><svg class="ic"><use href="#i-wand"/></svg><span>Auto Rig</span></button>
+      <button class="tool" data-act="autotex"><svg class="ic"><use href="#i-image"/></svg><span>Texturas</span></button>
+      <div class="sep"></div>
+      <button class="tool" id="btnWire" data-act="wire"><svg class="ic"><use href="#i-wire"/></svg><span>Malha</span></button>
+      <button class="tool on" id="btnGrid" data-act="grid"><svg class="ic"><use href="#i-grid"/></svg><span>Grade</span></button>
+      <button class="tool" data-act="bg"><svg class="ic"><use href="#i-sun"/></svg><span>Fundo</span></button>
+      <button class="tool" data-act="reset"><svg class="ic"><use href="#i-home"/></svg><span>Câmera</span></button>
+    </nav>
+
+    <section id="stage">
+      <div id="viewEl"></div>
+      <div class="pill" id="infoPill" hidden></div>
+      <div class="pill" id="hintPill">Arraste: girar · Dois dedos: zoom/mover · Toque: selecionar</div>
+      <div id="empty">
+        <div class="card">
+          <svg class="ic" style="width:42px;height:42px;color:var(--accent)"><use href="#i-cube"/></svg>
+          <h2>Nenhum modelo aberto</h2>
+          <p>Importe pelo gerenciador de arquivos ou digite no terminal<br><b>skel//caminho/do/modelo.fbx</b></p>
+          <div class="col">
+            <button class="btn primary full" data-act="pick"><svg class="ic sm"><use href="#i-import"/></svg>Escolher arquivo</button>
+            <button class="btn full" data-act="open"><svg class="ic sm"><use href="#i-folder"/></svg>Biblioteca / caminho</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside id="side">
+      <div class="tabs">
+        <button class="tab on" data-tab="model">Modelo</button>
+        <button class="tab" data-tab="tex">Texturas</button>
+        <button class="tab" data-tab="skel">Esqueleto</button>
+      </div>
+
+      <div class="pane on" id="pane-model">
+        <div class="card"><h3>Arquivo</h3><div id="fileCard"><div class="empty">Abra um modelo para ver os detalhes.</div></div></div>
+        <div class="card"><h3>Malhas <span class="grow"></span><span id="meshCount" style="font-weight:400"></span></h3><div class="list" id="meshList"></div></div>
+        <div class="card"><h3>Materiais <span class="grow"></span><span id="matCount" style="font-weight:400"></span></h3><div class="list" id="matList"></div><p class="note" style="margin:8px 0 0">Toque no modelo ou em um material para selecioná-lo.</p></div>
+      </div>
+
+      <div class="pane" id="pane-tex">
+        <div class="card">
+          <h3>Montagem automática</h3>
+          <button class="btn primary full" data-act="autotex"><svg class="ic sm"><use href="#i-wand"/></svg>Montar texturas da pasta</button>
+          <p class="note" style="margin:8px 0 0">Associa cada imagem ao material certo pelo nome (cor, normal, rugosidade, metal, AO, emissivo). As texturas já ligadas pelo próprio modelo são mantidas.</p>
+        </div>
+        <div class="card">
+          <h3>Aplicar manualmente</h3>
+          <div id="selMatLabel" class="note">Nenhum material selecionado.</div>
+          <label class="f" for="slotSel">Aplicar como</label>
+          <select id="slotSel">
+            <option value="base">Cor (base)</option><option value="normal">Normal</option><option value="rough">Rugosidade</option>
+            <option value="metal">Metal</option><option value="ao">Oclusão (AO)</option><option value="emis">Emissivo</option><option value="alpha">Opacidade</option><option value="bump">Relevo</option>
+          </select>
+          <p class="note" style="margin:8px 0">Toque em uma imagem para aplicar ao material selecionado.</p>
+          <div class="grid" id="texGrid"></div>
+        </div>
+      </div>
+
+      <div class="pane" id="pane-skel">
+        <div class="card"><h3>Esqueleto</h3>
+          <div id="skelInfo" class="note">Abra um modelo.</div>
+          <div class="row2" style="margin-top:8px" id="skelBtns">
+            <button class="btn" data-act="addbone"><svg class="ic sm"><use href="#i-bone"/></svg>Osso</button>
+            <button class="btn primary" data-act="autorig"><svg class="ic sm"><use href="#i-wand"/></svg>Auto Rig</button>
+          </div>
+          <button class="btn sub full" data-act="clearbones" style="margin-top:6px">Limpar ossos e rig</button>
+        </div>
+        <div class="card"><h3>Ossos <span class="grow"></span><span id="boneCount" style="font-weight:400"></span></h3><div class="list" id="boneList"></div></div>
+        <div class="card" id="boneEdit" hidden><h3>Osso selecionado</h3>
+          <label class="f" for="bname" style="margin-top:0">Nome</label><input type="text" id="bname">
+          <label class="f">Posição X · Y · Z</label>
+          <div class="xyz"><input type="number" id="bx" step="0.01"><input type="number" id="by" step="0.01"><input type="number" id="bz" step="0.01"></div>
+          <p class="note" style="margin:8px 0 0">Ou use a ferramenta <b>Mover</b> e arraste a esfera no modelo.</p>
+        </div>
+        <div class="card"><h3>Testar</h3>
+          <label class="sw"><input type="checkbox" id="walk"><span>Movimento de caminhada (ossos do Auto Rig)</span></label>
+          <label class="sw"><input type="checkbox" id="showBones" checked><span>Mostrar ossos</span></label>
+          <div id="animBox" hidden>
+            <label class="f" for="clipSel">Animação do arquivo</label>
+            <div class="row2"><select id="clipSel"></select><button class="btn" data-act="playclip" id="playBtn" style="flex:none;min-width:84px">Tocar</button></div>
+          </div>
+        </div>
+        <p class="note warn">O Auto Rig calcula pesos aproximados pela distância aos ossos. Confira o resultado antes de exportar; não é um rig no padrão Mixamo.</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer id="sbar"><span id="statusMsg">Pronto</span><span class="grow"></span><span id="statusInfo"></span></footer>
+</div>
+
+<div id="modal"><div id="sheet">
+  <header><svg class="ic" style="color:var(--accent)"><use href="#i-folder"/></svg><h2>Abrir modelo 3D</h2><button class="btn sub" data-act="closemodal" style="width:36px;padding:0">✕</button></header>
+  <button class="bigbtn" data-act="pick"><span class="ico"><svg class="ic"><use href="#i-import"/></svg></span><span><b>Gerenciador de arquivos</b><small>Escolha qualquer arquivo 3D. As texturas da mesma pasta vão junto.</small></span></button>
+  <div>
+    <label class="f" for="pathIn" style="margin-top:0">Ou digite o caminho (igual ao comando skel//)</label>
+    <div class="pathrow"><input type="text" id="pathIn" placeholder="/storage/emulated/0/Download/Tobe/modelo.fbx" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="importpath">Importar</button></div>
+  </div>
+  <div>
+    <label class="f" style="margin-top:0">Biblioteca do TermWin (Files/Models)</label>
+    <div class="list" id="libList" style="max-height:240px"></div>
+  </div>
+</div></div>
+
+<div id="toast"></div>
+<div id="loader"><div class="spin"></div><div id="loaderTxt">Carregando…</div></div>
+<div id="fatal"><svg class="ic" style="width:42px;height:42px;color:var(--warn)"><use href="#i-cube"/></svg><b style="font-size:16px">Não consegui carregar o motor 3D</b><span class="note" id="fatalMsg"></span><button class="btn primary" onclick="location.reload()">Tentar de novo</button></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-import" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+<symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M4 20h16"/></symbol>
+<symbol id="i-orbit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(-30 12 12)"/></symbol>
+<symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
+<symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v5h-5"/></symbol>
+<symbol id="i-bone" viewBox="0 0 24 24"><circle cx="6.5" cy="17.5" r="2.3"/><circle cx="14.5" cy="9.5" r="2.3"/><path d="M8.1 15.9l4.8-4.8"/><path d="M18 14v6M15 17h6"/></symbol>
+<symbol id="i-wand" viewBox="0 0 24 24"><path d="M5 19L15 9"/><path d="M14 3.5l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/><path d="M19 12l.6 1.4L21 14l-1.4.6L19 16l-.6-1.4L17 14l1.4-.6z"/></symbol>
+<symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 9"/></symbol>
+<symbol id="i-wire" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/><path d="M8 5.3l8 4.5M16 5.3L8 9.8" opacity=".5"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 6.1A9.8 9.8 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.3 7.6A17 17 0 0 0 2 12s4 7 10 7a9.6 9.6 0 0 0 4-.9"/></symbol>
+</defs></svg>
+
 <script type="module">
-import * as THREE from 'three';
-import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
-import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {OBJLoader} from 'three/addons/loaders/OBJLoader.js';
-import {STLLoader} from 'three/addons/loaders/STLLoader.js';
-import {PLYLoader} from 'three/addons/loaders/PLYLoader.js';
-import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
-const $=id=>document.getElementById(id), qs=new URLSearchParams(location.search);$('fmt').textContent=(qs.get('format')||'MODEL').toUpperCase();$('modelTitle').textContent=qs.get('name')||'Pré-visualização 3D';
-const scene=new THREE.Scene();scene.background=new THREE.Color(0x0a1423);const camera=new THREE.PerspectiveCamera(45,1,.01,1000);camera.position.set(3,2.5,4);const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;$('viewport').appendChild(renderer.domElement);const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;scene.add(new THREE.HemisphereLight(0xffffff,0x34445c,2));const light=new THREE.DirectionalLight(0xffffff,2);light.position.set(4,8,5);scene.add(light);const grid=new THREE.GridHelper(10,20,0x345170,0x1c2c42);scene.add(grid);let model=null,texture=null, bones=[], helpers=[], walk=false,walkTime=0, rigRoot=null, rigBones=[];
-function resize(){const r=$('viewport').getBoundingClientRect();camera.aspect=Math.max(.1,r.width)/Math.max(.1,r.height);camera.updateProjectionMatrix();renderer.setSize(Math.max(1,r.width),Math.max(1,r.height),false)}new ResizeObserver(resize).observe($('viewport'));resize();function msg(s){$('status').textContent=s}
-function centerObject(obj){const box=new THREE.Box3().setFromObject(obj);if(box.isEmpty())return;const size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());obj.position.sub(center);const max=Math.max(size.x,size.y,size.z)||1;camera.position.set(max*1.6,max*1.1,max*1.8);controls.target.set(0,0,0);camera.near=max/1000;camera.far=max*100;camera.updateProjectionMatrix();controls.update()}
-function dispose(obj){obj.traverse?.(n=>{if(n.geometry)n.geometry.dispose();if(n.material){for(const m of (Array.isArray(n.material)?n.material:[n.material]))m.dispose()}})}
-async function loadFile(file){if(!file)return;const ext=file.name.split('.').pop().toLowerCase();msg('Carregando '+file.name+'…');try{let obj;const url=URL.createObjectURL(file);if(ext==='fbx')obj=await new FBXLoader().loadAsync(url);else if(ext==='gltf'||ext==='glb'){const gltf=await new GLTFLoader().loadAsync(url);obj=gltf.scene}else if(ext==='obj')obj=await new OBJLoader().loadAsync(url);else if(ext==='stl'||ext==='ply'){const loader=ext==='stl'?new STLLoader():new PLYLoader();const geo=await loader.loadAsync(url);if(ext==='ply'&&geo.hasAttribute('color')){const mat=new THREE.MeshStandardMaterial({vertexColors:true});obj=new THREE.Mesh(geo,mat)}else obj=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0xb7c8dc,roughness:.8}))}else throw Error('Formato não suportado pelo carregador: '+ext);URL.revokeObjectURL(url);if(model){scene.remove(model);dispose(model)}model=obj;model.name=file.name;scene.add(model);centerObject(model);$('modelTitle').textContent=file.name;msg('Modelo carregado na visualização 3D. O arquivo original não foi alterado.');}catch(e){msg('Falha ao carregar: '+e.message+'. Confira o formato e se o WebView tem acesso à internet para baixar os carregadores.')}}
-$('model').addEventListener('change',e=>loadFile(e.target.files[0]));$('texture').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;new THREE.TextureLoader().load(URL.createObjectURL(f),t=>{t.colorSpace=THREE.SRGBColorSpace;texture=t;if(model)model.traverse(n=>{if(n.isMesh){n.material=new THREE.MeshStandardMaterial({map:t,roughness:.8});n.material.needsUpdate=true}});$('textureInfo').textContent='Textura aplicada: '+f.name;msg('Textura aplicada à superfície do modelo (quando UVs estão disponíveis).')},undefined,err=>msg('Não foi possível carregar a textura.'));});
-function refreshBones(){for(const h of helpers)scene.remove(h);helpers=[];const list=$('boneList');list.innerHTML='';bones.forEach((b,i)=>{const dot=new THREE.Mesh(new THREE.SphereGeometry(.055,12,8),new THREE.MeshStandardMaterial({color:0x18cfff}));dot.position.copy(b.position);scene.add(dot);helpers.push(dot);if(b.parentBone){const points=[b.parentBone.position,b.position];const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0x22cfff}));scene.add(line);helpers.push(line)}const o=document.createElement('option');o.value=i;o.textContent=b.name;list.appendChild(o)});syncBoneFields()}
-function syncBoneFields(){const b=bones[+$('boneList').value];if(!b)return;$('bx').value=b.position.x.toFixed(2);$('by').value=b.position.y.toFixed(2);$('bz').value=b.position.z.toFixed(2)}$('boneList').addEventListener('change',syncBoneFields);
-window.addBone=()=>{const parent=bones.length?bones[bones.length-1]:null;const b={name:'Bone_'+(bones.length+1),position:new THREE.Vector3(0,Math.max(0,bones.length*.15),0),parentBone:parent};bones.push(b);refreshBones();$('boneList').value=bones.length-1;syncBoneFields();msg('Osso de referência adicionado. Ajuste as coordenadas.');};window.clearBones=()=>{bones=[];refreshBones();msg('Ossos de referência removidos.')};window.applyBonePosition=()=>{const b=bones[+$('boneList').value];if(!b)return;b.position.set(+$('bx').value||0,+$('by').value||0,+$('bz').value||0);refreshBones();$('boneList').value=bones.indexOf(b);syncBoneFields();};window.setMode=m=>msg('Ferramenta selecionada: '+m+'. Use arrastar para orbitar a câmera; ajuste ossos pelos campos.');window.resetView=()=>{if(model)centerObject(model);else{camera.position.set(3,2.5,4);controls.target.set(0,0,0);controls.update()}};$('walk').addEventListener('change',e=>{walk=e.target.checked;msg(walk?'Prévia de caminhada ativada para os marcadores.':'Prévia de caminhada parada.')});
-window.autoRig=()=>{
- if(!model){msg('Carregue um modelo primeiro.');return}
- if(!bones.length){const box=new THREE.Box3().setFromObject(model),h=Math.max(.5,box.getSize(new THREE.Vector3()).y),c=box.getCenter(new THREE.Vector3());const specs=[['Root',0],['Spine',.28],['Chest',.52],['Neck',.72],['Head',.82],['LeftArm',.53],['RightArm',.53],['LeftLeg',.20],['RightLeg',.20]];bones=specs.map(([name,f])=>({name,position:new THREE.Vector3(c.x+(name==='LeftArm'?-h*.18:name==='RightArm'?h*.18:0),box.min.y+h*f,c.z),parentBone:null}));const parents={Spine:'Root',Chest:'Spine',Neck:'Chest',Head:'Neck',LeftArm:'Chest',RightArm:'Chest',LeftLeg:'Root',RightLeg:'Root'};bones.forEach(b=>b.parentBone=bones.find(x=>x.name===parents[b.name])||null);refreshBones()}
- try{if(rigRoot){scene.remove(rigRoot)}rigRoot=new THREE.Group();rigRoot.name='TermWin_SkinnedRig';scene.add(rigRoot);rigBones=[];const map=new Map();bones.forEach(b=>{const bn=new THREE.Bone();bn.name=b.name;bn.position.copy(b.position);map.set(b,bn);rigBones.push(bn)});bones.forEach(b=>{if(b.parentBone)map.get(b.parentBone).add(map.get(b));else rigRoot.add(map.get(b))});rigRoot.updateMatrixWorld(true);const skeleton=new THREE.Skeleton(rigBones);const meshes=[];model.updateMatrixWorld(true);model.traverse(n=>{if(n.isMesh&&n.geometry?.attributes?.position)meshes.push(n)});meshes.forEach(src=>{const geo=src.geometry.clone(),pos=geo.attributes.position,idx=new Uint16Array(pos.count*4),weights=new Float32Array(pos.count*4);for(let i=0;i<pos.count;i++){const v=new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(src.matrixWorld);const near=bones.map((b,j)=>({j,d:Math.max(.001,v.distanceTo(b.position))})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,bones.length));let sum=0;near.forEach((n,k)=>{idx[i*4+k]=n.j;weights[i*4+k]=1/(n.d*n.d);sum+=weights[i*4+k]});for(let k=0;k<4;k++)weights[i*4+k]=sum?weights[i*4+k]/sum:0}geo.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(idx,4));geo.setAttribute('skinWeight',new THREE.Float32BufferAttribute(weights,4));const mat=Array.isArray(src.material)?src.material.map(m=>m.clone()):src.material.clone();const sk=new THREE.SkinnedMesh(geo,mat);sk.name=src.name||'SkinnedMesh';sk.position.copy(src.getWorldPosition(new THREE.Vector3()));sk.quaternion.copy(src.getWorldQuaternion(new THREE.Quaternion()));sk.scale.copy(src.getWorldScale(new THREE.Vector3()));rigRoot.add(sk);sk.add(rigBones[0]);sk.bind(skeleton)});model.visible=false;msg('Rig com pesos automáticos aproximados criado. Confira o resultado antes de exportar.')}catch(e){msg('Falha no Auto Rig: '+e.message)}};
-window.exportScene=()=>{const out=new THREE.Scene();if(rigRoot)out.add(rigRoot.clone(true));else if(model)out.add(model.clone(true));else{msg('Carregue um modelo antes de exportar.');return}new GLTFExporter().parse(out,result=>{const blob=new Blob([result],{type:'model/gltf-binary'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;const original=(qs.get('name')||$('model').files[0]?.name||'model.glb');a.download=original.replace(/\.[^.]+$/,'')+'_rig.glb';a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);msg('Exportação iniciada: '+a.download+'. O original foi preservado.')},e=>msg('Erro ao exportar: '+(e?.message||e)),{binary:true,onlyVisible:true})};
-const requested=qs.get('path');if(requested)msg('Arquivo encontrado no terminal: '+(qs.get('name')||requested)+'. Selecione-o abaixo para carregá-lo no visualizador; o WebView não pode ler caminhos privados diretamente.');else msg('Visualizador pronto. Importe um modelo para começar.');
-function animate(){requestAnimationFrame(animate);controls.update();if(walk){walkTime+=.05;rigBones.forEach(b=>{const n=b.name.toLowerCase();if(n.includes('arm'))b.rotation.z=Math.sin(walkTime*2+(n.includes('left')?0:Math.PI))*.25;if(n.includes('leg'))b.rotation.z=Math.sin(walkTime*2+(n.includes('left')?Math.PI:0))*.3})}else{rigBones.forEach(b=>b.rotation.set(0,0,0))}renderer.render(scene,camera)}animate();
-</script></body></html>
+/* ============ helpers (sem three.js) ============ */
+const $=id=>document.getElementById(id);
+const qs=new URLSearchParams(location.search);
+const BR=window.TWSKEL||null;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const extOf=p=>(String(p).split('.').pop()||'').toLowerCase();
+const encPath=p=>p.split('/').map(encodeURIComponent).join('/');
+const kb=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const ico=(id,cls)=>`<svg class="ic ${cls||''}"><use href="#${id}"/></svg>`;
+let toastT=0;
+function toast(msg,kind){const t=$('toast');t.textContent=msg;t.className='show '+(kind||'');clearTimeout(toastT);toastT=setTimeout(()=>{t.className=''},3800);$('statusMsg').textContent=msg}
+function busy(on,text){$('loader').classList.toggle('on',!!on);if(text)$('loaderTxt').textContent=text}
+function openModal(){$('modal').classList.add('on');refreshLibrary()}
+function closeModal(){$('modal').classList.remove('on')}
+function setTab(n){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===n));document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='pane-'+n))}
+window.onImporting=()=>{closeModal();busy(true,'Copiando modelo e texturas…')};
+
+/* ============ three.js ============ */
+let THREE,OrbitControls,TransformControls,GLTFExporter,TGALoader;
+try{
+  THREE=await import('three');
+  ({OrbitControls}=await import('three/addons/controls/OrbitControls.js'));
+  ({TransformControls}=await import('three/addons/controls/TransformControls.js'));
+  ({GLTFExporter}=await import('three/addons/exporters/GLTFExporter.js'));
+  ({TGALoader}=await import('three/addons/loaders/TGALoader.js'));
+}catch(e){
+  $('fatal').style.display='flex';
+  $('fatalMsg').textContent='O three.js é baixado da internet na primeira vez. Conecte-se e tente de novo. ('+(e&&e.message||e)+')';
+  throw e;
+}
+
+const viewEl=$('viewEl');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+viewEl.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+const BGS=[0x181818,0x2a3038,0xc9d1da];let bgIdx=0;scene.background=new THREE.Color(BGS[0]);
+const camera=new THREE.PerspectiveCamera(45,1,.01,2000);camera.position.set(3,2.5,4);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.12;controls.screenSpacePanning=true;controls.target.set(0,1,0);
+scene.add(new THREE.HemisphereLight(0xffffff,0x3a4658,1.6));
+const key=new THREE.DirectionalLight(0xffffff,2.2);key.position.set(4,8,6);scene.add(key);
+const fill=new THREE.DirectionalLight(0x9fd8ff,.8);fill.position.set(-5,3,-4);scene.add(fill);
+const tc=new TransformControls(camera,renderer.domElement);tc.setSize(.9);scene.add(tc);
+tc.addEventListener('dragging-changed',e=>{controls.enabled=!e.value});
+const raycaster=new THREE.Raycaster();
+function resize(){const r=viewEl.getBoundingClientRect();const w=Math.max(2,r.width),h=Math.max(2,r.height);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false)}
+new ResizeObserver(resize).observe(viewEl);resize();
+
+/* ============ estado ============ */
+let model=null,folder='',file='',manifest=[],fileMap=new Map(),exact=new Set();
+let meshes=[],mats=[],hasSkel=false,realBones=[],skelHelper=null,mixer=null,clips=[],playing=false,curAction=null;
+let selMesh=null,selMat=null,selBox=null,stats={verts:0,tris:0};
+let bones=[],boneObjs=[],boneLines=null,selBone=-1,selReal=null,rigRoot=null,rigBones=[],walk=false,walkT=0;
+let tool='orbit',lib=[],grid=null,gridOn=true,wire=false,modelSize=1,modelH=1,texCache=new Map();
+const clock=new THREE.Clock();
+const baseUrl=()=>`/models/${encodeURIComponent(folder)}/`;
+const isGltf=()=>['glb','gltf'].includes(extOf(file));
+const IMG_OK=['png','jpg','jpeg','bmp','tga','webp','gif'];
+
+/* ============ grade / câmera ============ */
+function niceSize(v){const p=Math.pow(10,Math.floor(Math.log10(v)));const n=v/p;return (n<=1?1:n<=2?2:n<=5?5:10)*p}
+function buildGrid(){
+  if(grid){scene.remove(grid);grid.geometry.dispose();if(grid.material&&grid.material.dispose)grid.material.dispose()}
+  grid=new THREE.GridHelper(niceSize(modelSize*3),20,0x3d7fa0,bgIdx===2?0x9aa5b1:0x333a42);grid.visible=gridOn;scene.add(grid);
+}
+function resetCam(){
+  const m=modelSize;camera.near=m/1000;camera.far=m*300;
+  camera.position.set(m*1.1,modelH*.8,m*1.7);controls.target.set(0,modelH/2,0);camera.updateProjectionMatrix();controls.update();
+}
+buildGrid();
+
+/* ============ carregar modelo ============ */
+function disposeObj(o){o.traverse(n=>{if(n.geometry)n.geometry.dispose();const ms=n.material?(Array.isArray(n.material)?n.material:[n.material]):[];ms.forEach(m=>{for(const k in m){const v=m[k];if(v&&v.isTexture)v.dispose()}m.dispose()})})}
+function eachMesh(fn){[model,rigRoot].forEach(r=>r&&r.traverse(n=>{if(n.isMesh)fn(n)}))}
+function eachMat(fn){eachMesh(n=>(Array.isArray(n.material)?n.material:[n.material]).forEach(m=>m&&fn(m)))}
+
+async function loadModel(f,rel){
+  busy(true,'Carregando '+rel.split('/').pop()+'…');
+  try{
+    const list=await (await fetch('/api/list?m='+encodeURIComponent(f))).json();
+    list.sort((a,b)=>a.p.split('/').length-b.p.split('/').length);
+    const fm=new Map(),ex=new Set();
+    for(const it of list){const b=it.p.split('/').pop().toLowerCase();if(!fm.has(b))fm.set(b,it.p);ex.add(it.p.toLowerCase())}
+    if(!ex.has(rel.toLowerCase()))throw new Error('arquivo não está na pasta do app: '+rel);
+    // tudo certo: troca o estado
+    clearRig(true);clearBones(true);
+    if(mixer){mixer.stopAllAction();mixer=null}
+    if(skelHelper){scene.remove(skelHelper);skelHelper=null}
+    if(model){tc.detach();scene.remove(model);disposeObj(model);model=null}
+    folder=f;file=rel;manifest=list;fileMap=fm;exact=ex;texCache=new Map();selMesh=null;selMat=null;playing=false;
+    const base=baseUrl(),url=base+encPath(rel),ext=extOf(rel);
+    let resolveAll;const allDone=new Promise(r=>{resolveAll=r});
+    const manager=new THREE.LoadingManager();manager.onLoad=()=>resolveAll();
+    manager.setURLModifier(u=>{
+      if(/^(data|blob):/i.test(u))return u;
+      try{
+        const path=decodeURIComponent(new URL(u,location.href).pathname);
+        const pre='/models/'+folder+'/';
+        if(path.startsWith(pre)&&exact.has(path.slice(pre.length).toLowerCase()))return u;
+        const hit=fileMap.get(path.split(/[\\/]/).pop().toLowerCase());
+        if(hit)return base+encPath(hit);
+      }catch(e){}
+      return u;
+    });
+    manager.addHandler(/\.tga$/i,new TGALoader(manager));
+    let obj,anims=[];
+    if(ext==='fbx'){const {FBXLoader}=await import('three/addons/loaders/FBXLoader.js');obj=await new FBXLoader(manager).loadAsync(url);anims=obj.animations||[]}
+    else if(ext==='glb'||ext==='gltf'){const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');const g=await new GLTFLoader(manager).loadAsync(url);obj=g.scene;anims=g.animations||[]}
+    else if(ext==='obj'){
+      const {OBJLoader}=await import('three/addons/loaders/OBJLoader.js');const loader=new OBJLoader(manager);
+      const stem=rel.replace(/\.[^.]+$/,'').toLowerCase();
+      const mtl=list.find(i=>i.p.toLowerCase()===stem+'.mtl')||list.find(i=>extOf(i.p)==='mtl');
+      if(mtl){const {MTLLoader}=await import('three/addons/loaders/MTLLoader.js');const mc=await new MTLLoader(manager).loadAsync(base+encPath(mtl.p));mc.preload();loader.setMaterials(mc)}
+      obj=await loader.loadAsync(url);
+    }
+    else if(ext==='dae'){const {ColladaLoader}=await import('three/addons/loaders/ColladaLoader.js');const c=await new ColladaLoader(manager).loadAsync(url);obj=c.scene;anims=c.scene.animations||[]}
+    else if(ext==='3ds'){const {TDSLoader}=await import('three/addons/loaders/TDSLoader.js');const l=new TDSLoader(manager);l.setResourcePath(base);obj=await l.loadAsync(url)}
+    else if(ext==='stl'){const {STLLoader}=await import('three/addons/loaders/STLLoader.js');const g=await new STLLoader(manager).loadAsync(url);obj=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0xb7c8dc,roughness:.8}))}
+    else if(ext==='ply'){const {PLYLoader}=await import('three/addons/loaders/PLYLoader.js');const g=await new PLYLoader(manager).loadAsync(url);if(!g.hasAttribute('normal'))g.computeVertexNormals();obj=new THREE.Mesh(g,new THREE.MeshStandardMaterial(g.hasAttribute('color')?{vertexColors:true,roughness:.8}:{color:0xb7c8dc,roughness:.8}))}
+    else throw new Error('formato não suportado: .'+ext);
+    busy(true,'Carregando texturas…');
+    await Promise.race([allDone,sleep(20000)]);
+    model=obj;model.name=rel.split('/').pop();clips=anims;$('clipSel').innerHTML='';scene.add(model);
+    analyze();fitModel();
+    if(hasSkel){skelHelper=new THREE.SkeletonHelper(model);skelHelper.material.depthTest=false;skelHelper.visible=$('showBones').checked;scene.add(skelHelper)}
+    if(clips.length){mixer=new THREE.AnimationMixer(model)}
+    if(mats.length===1)selMat=mats[0];
+    busy(true,'Montando texturas…');
+    const n=await autoTextures(true);
+    if(wire)applyWire();
+    afterChange();
+    $('empty').style.display='none';
+    toast(n?`Modelo pronto — ${n} textura(s) montada(s) automaticamente`:'Modelo carregado','ok');
+  }catch(e){
+    console.error(e);toast('Falha ao carregar: '+(e&&e.message||e),'err');
+  }finally{busy(false)}
+}
+
+function analyze(){
+  meshes=[];realBones=[];hasSkel=false;const ms=new Set();let verts=0,tris=0;
+  model.traverse(n=>{
+    if(n.isBone)realBones.push(n);
+    if(n.isMesh){
+      if(n.isSkinnedMesh)hasSkel=true;
+      const g=n.geometry,p=g&&g.attributes&&g.attributes.position,v=p?p.count:0,t=g?(g.index?g.index.count:v)/3:0;
+      verts+=v;tris+=t;meshes.push({mesh:n,name:n.name||('Malha '+(meshes.length+1)),tris:Math.round(t)});
+      (Array.isArray(n.material)?n.material:[n.material]).forEach(m=>m&&ms.add(m));
+    }
+  });
+  if(realBones.length)hasSkel=true;
+  mats=[...ms];stats={verts,tris:Math.round(tris)};
+}
+function fitModel(){
+  model.position.set(0,0,0);model.updateMatrixWorld(true);
+  const box=new THREE.Box3().setFromObject(model);if(box.isEmpty())return;
+  const c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
+  model.position.set(-c.x,-box.min.y,-c.z);model.updateMatrixWorld(true);
+  modelSize=Math.max(s.x,s.y,s.z)||1;modelH=s.y||modelSize;buildGrid();resetCam();
+}
+
+/* ============ texturas automáticas ============ */
+const SLOTS={base:'map',normal:'normalMap',rough:'roughnessMap',metal:'metalnessMap',ao:'aoMap',emis:'emissiveMap',alpha:'alphaMap',bump:'bumpMap'};
+const SLOT_LABEL={base:'COR',normal:'NORMAL',rough:'ROUGH',metal:'METAL',ao:'AO',emis:'EMIS',alpha:'ALFA',bump:'RELEVO'};
+const SW={normal:['normal','nrm','norm','nor','nrml'],rough:['rough','roughness','rgh'],metal:['metal','metallic','metalness'],ao:['ao','occlusion','ambientocclusion'],emis:['emissive','emission','emit','glow'],alpha:['opacity','alpha','transparency'],bump:['bump','height','disp','displacement']};
+const SINGLE={n:'normal',r:'rough',m:'metal',e:'emis',d:'base'};
+const GENERIC=new Set(['diffuse','diff','dif','albedo','basecolor','base','color','colour','col','bc','map','tex','texture','mat','material','mtl','lambert','phong','standard','default','srgb','linear','raw','png','jpg','jpeg','tga','webp','bmp','gif','uvs']);
+const ALLSLOTW=new Set(Object.values(SW).flat());
+function toks(s){return String(s||'').replace(/([a-z0-9])([A-Z])/g,'$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)}
+function slotOf(t){for(const k of ['normal','rough','metal','ao','emis','alpha','bump'])if(t.some(x=>SW[k].includes(x)))return k;const last=t[t.length-1];if(last&&t.length>1&&SINGLE[last])return SINGLE[last];return 'base'}
+function keyToks(t){return t.filter(x=>x.length>1&&!GENERIC.has(x)&&!ALLSLOTW.has(x)&&!/^\d+$/.test(x)&&!/^\d+k$/.test(x))}
+function score(tk,mk){let s=0;for(const x of tk){if(mk.includes(x))s+=1;else if(x.length>=4&&mk.some(m=>m.length>=4&&(m.includes(x)||x.includes(m))))s+=.6}return s}
+function toStd(m){
+  const n=new THREE.MeshStandardMaterial({name:m.name,color:m.color?m.color.clone():new THREE.Color(0xffffff),map:m.map||null,normalMap:m.normalMap||null,aoMap:m.aoMap||null,alphaMap:m.alphaMap||null,
+    emissive:m.emissive?m.emissive.clone():new THREE.Color(0),emissiveMap:m.emissiveMap||null,transparent:m.transparent,opacity:m.opacity,side:m.side,alphaTest:m.alphaTest,roughness:.8,metalness:0});
+  eachMesh(me=>{if(Array.isArray(me.material))me.material=me.material.map(x=>x===m?n:x);else if(me.material===m)me.material=n});
+  mats=mats.map(x=>x===m?n:x);if(selMat===m)selMat=n;m.dispose();return n;
+}
+async function loadTex(rel,srgb){
+  const k=rel+'|'+(srgb?1:0);if(texCache.has(k))return texCache.get(k);
+  const e=extOf(rel),url=baseUrl()+encPath(rel);
+  const loader=e==='tga'?new TGALoader():new THREE.TextureLoader();
+  const t=await new Promise((res,rej)=>loader.load(url,res,undefined,()=>rej(new Error('textura '+rel))));
+  t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  if(e!=='tga')t.flipY=!isGltf();
+  t.name=rel;t.needsUpdate=true;texCache.set(k,t);return t;
+}
+async function applySlot(mat,slot,rel){
+  const t=await loadTex(rel,slot==='base'||slot==='emis');
+  let m=mat;
+  if((slot==='rough'||slot==='metal')&&!m.isMeshStandardMaterial)m=toStd(m);
+  m[SLOTS[slot]]=t;
+  if(slot==='base'&&m.color)m.color.set(0xffffff);
+  if(slot==='rough')m.roughness=1;
+  if(slot==='metal')m.metalness=1;
+  if(slot==='emis'&&m.emissive)m.emissive.set(0xffffff);
+  if(slot==='alpha')m.transparent=true;
+  m.needsUpdate=true;return m;
+}
+async function autoTextures(silent){
+  if(!model)return 0;
+  const list=manifest.filter(m=>IMG_OK.includes(extOf(m.p))).map(m=>{const t=toks(m.p.split('/').pop().replace(/\.[^.]+$/,''));return{p:m.p,slot:slotOf(t),key:keyToks(t)}});
+  if(!list.length){if(!silent)toast('Não há texturas na pasta do modelo','warn');return 0}
+  let n=0;
+  for(const mat0 of [...mats]){
+    let mat=mat0;
+    for(const k of Object.values(SLOTS))if(mat[k]&&!mat[k].image)mat[k]=null; // textura que não carregou
+    const mk=keyToks(toks(mat.name));
+    for(const slot of Object.keys(SLOTS)){
+      if(mat[SLOTS[slot]])continue;
+      if(slot==='bump'&&mat.normalMap)continue;
+      const cands=list.filter(x=>x.slot===slot);if(!cands.length)continue;
+      let best=null,bs=0;for(const c of cands){const s=score(c.key,mk);if(s>bs){bs=s;best=c}}
+      if(!best&&mats.length===1)best=cands[0];
+      if(!best)continue;
+      try{mat=await applySlot(mat,slot,best.p);n++}catch(e){console.warn(e)}
+    }
+  }
+  // 2ª passada: sobraram cores sem dono e materiais sem cor, na mesma quantidade → pareia na ordem
+  const usedBase=new Set();mats.forEach(m=>{if(m.map&&m.map.name)usedBase.add(m.map.name)});
+  const freeTex=list.filter(x=>x.slot==='base'&&!usedBase.has(x.p));
+  const freeMat=mats.filter(m=>!m.map);
+  if(freeTex.length&&freeTex.length===freeMat.length){
+    for(let i=0;i<freeMat.length;i++){try{await applySlot(freeMat[i],'base',freeTex[i].p);n++}catch(e){console.warn(e)}}
+  }
+  if(!silent){afterChange();toast(n?`${n} textura(s) montada(s)`:'Nada novo para montar — os materiais já têm texturas','ok')}
+  return n;
+}
+
+/* ============ seleção ============ */
+function selectMesh(mesh,matIndex){
+  selMesh=mesh;
+  const m=mesh?(Array.isArray(mesh.material)?mesh.material[matIndex||0]:mesh.material):null;selMat=m||selMat;
+  if(selBox){scene.remove(selBox);selBox=null}
+  if(mesh){selBox=new THREE.BoxHelper(mesh,0x60cdff);selBox.material.depthTest=false;scene.add(selBox)}
+  renderModelTab();renderTexTab();
+}
+function selectMat(m){
+  selMat=m;const me=meshes.find(x=>(Array.isArray(x.mesh.material)?x.mesh.material:[x.mesh.material]).includes(m));
+  selectMesh(me?me.mesh:null,me&&Array.isArray(me.mesh.material)?me.mesh.material.indexOf(m):0);selMat=m;renderModelTab();renderTexTab();
+}
+let pd=null;
+renderer.domElement.addEventListener('pointerdown',e=>{pd={x:e.clientX,y:e.clientY,t:performance.now()}});
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(!pd)return;const mv=Math.hypot(e.clientX-pd.x,e.clientY-pd.y),dt=performance.now()-pd.t;pd=null;
+  if(mv<7&&dt<500&&!tc.dragging)pickAt(e);
+});
+function pickAt(e){
+  if(!model)return;
+  const r=renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1),camera);
+  if(boneObjs.length){const h=raycaster.intersectObjects(boneObjs,false)[0];if(h){selectBone(h.object.userData.bone);setTab('skel');return}}
+  const root=rigRoot&&rigRoot.visible?rigRoot:model;
+  const hit=raycaster.intersectObject(root,true).find(h=>h.object.isMesh&&h.object.visible);
+  if(hit){selectMesh(hit.object,hit.face?hit.face.materialIndex:0)}
+}
+
+/* ============ ossos ============ */
+const boneR=()=>Math.max(modelSize*.012,.005);
+function rebuildBoneObjs(){
+  boneObjs.forEach(o=>{scene.remove(o);o.geometry.dispose();o.material.dispose()});boneObjs=[];
+  if(boneLines){scene.remove(boneLines);boneLines.geometry.dispose();boneLines=null}
+  bones.forEach((b,i)=>{
+    const o=new THREE.Mesh(new THREE.SphereGeometry(boneR(),14,10),new THREE.MeshBasicMaterial({color:i===selBone?0x3ddc84:0x60cdff,depthTest:false,transparent:true}));
+    o.position.copy(b.position);o.renderOrder=999;o.userData.bone=i;o.visible=$('showBones').checked;scene.add(o);boneObjs.push(o);
+  });
+  boneLines=new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x60cdff,depthTest:false,transparent:true,opacity:.8}));
+  boneLines.renderOrder=998;boneLines.frustumCulled=false;boneLines.visible=$('showBones').checked;scene.add(boneLines);
+  updateLines();attachGizmo();renderSkelTab();
+}
+function updateLines(){
+  if(!boneLines)return;const p=[];
+  bones.forEach(b=>{if(b.parent)p.push(b.parent.position.x,b.parent.position.y,b.parent.position.z,b.position.x,b.position.y,b.position.z)});
+  boneLines.geometry.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
+}
+function attachGizmo(){
+  tc.detach();if(tool==='orbit')return;
+  if(hasSkel){if(selReal){tc.setMode(tool==='rotate'?'rotate':'translate');tc.attach(selReal)}return}
+  if(selBone>=0&&boneObjs[selBone]){tc.setMode('translate');tc.attach(boneObjs[selBone])}
+}
+tc.addEventListener('objectChange',()=>{
+  if(hasSkel||selBone<0||!boneObjs[selBone])return;
+  bones[selBone].position.copy(boneObjs[selBone].position);updateLines();syncFields();
+});
+function selectBone(i){
+  if(hasSkel){selReal=realBones[i]||null;selBone=i}else{selBone=i;selReal=null}
+  boneObjs.forEach((o,k)=>o.material.color.set(k===selBone?0x3ddc84:0x60cdff));
+  attachGizmo();syncFields();renderSkelTab();
+}
+function syncFields(){
+  const ed=$('boneEdit');
+  if(hasSkel||selBone<0||!bones[selBone]){ed.hidden=true;return}
+  ed.hidden=false;const b=bones[selBone];
+  $('bname').value=b.name;$('bx').value=b.position.x.toFixed(3);$('by').value=b.position.y.toFixed(3);$('bz').value=b.position.z.toFixed(3);
+}
+function applyFields(){
+  const b=bones[selBone];if(!b)return;
+  b.position.set(parseFloat($('bx').value)||0,parseFloat($('by').value)||0,parseFloat($('bz').value)||0);
+  if(boneObjs[selBone])boneObjs[selBone].position.copy(b.position);updateLines();
+}
+['bx','by','bz'].forEach(id=>$(id).addEventListener('input',applyFields));
+$('bname').addEventListener('input',()=>{const b=bones[selBone];if(b){b.name=$('bname').value||b.name;renderSkelTab(true)}});
+function addBone(){
+  if(!model){toast('Abra um modelo primeiro','warn');return}
+  if(hasSkel){toast('Este modelo já tem esqueleto — selecione um osso na lista e use Mover/Girar','warn');setTab('skel');return}
+  const parent=bones.length?bones[selBone>=0?selBone:bones.length-1]:null;
+  const pos=parent?parent.position.clone().add(new THREE.Vector3(0,modelSize*.08,0)):new THREE.Vector3(0,modelH*.5,0);
+  bones.push({name:'Osso_'+(bones.length+1),position:pos,parent});selBone=bones.length-1;
+  setTool('move');rebuildBoneObjs();setTab('skel');toast('Osso adicionado — arraste a esfera para posicionar');
+}
+function clearBones(silent){
+  bones=[];selBone=-1;selReal=null;clearRig(silent);rebuildBoneObjs();
+  if(!silent)toast('Ossos removidos');
+}
+function clearRig(silent){
+  walk=false;$('walk').checked=false;
+  if(rigRoot){scene.remove(rigRoot);rigRoot.traverse(n=>{if(n.isSkinnedMesh){n.geometry.dispose()}});rigRoot=null}
+  rigBones=[];if(model)model.visible=true;
+  if(!silent&&model)afterChange();
+}
+function defaultBones(){
+  const box=new THREE.Box3().setFromObject(model),h=box.max.y-box.min.y,c=box.getCenter(new THREE.Vector3());
+  const P=(fx,fy)=>new THREE.Vector3(c.x+fx*h,box.min.y+fy*h,c.z);
+  const spec=[['Hips',0,.52,null],['Spine',0,.60,'Hips'],['Chest',0,.71,'Spine'],['Neck',0,.84,'Chest'],['Head',0,.90,'Neck'],
+    ['LeftArm',.10,.80,'Chest'],['LeftForeArm',.22,.80,'LeftArm'],['LeftHand',.34,.80,'LeftForeArm'],
+    ['RightArm',-.10,.80,'Chest'],['RightForeArm',-.22,.80,'RightArm'],['RightHand',-.34,.80,'RightForeArm'],
+    ['LeftUpLeg',.06,.50,'Hips'],['LeftLeg',.06,.27,'LeftUpLeg'],['LeftFoot',.06,.04,'LeftLeg'],
+    ['RightUpLeg',-.06,.50,'Hips'],['RightLeg',-.06,.27,'RightUpLeg'],['RightFoot',-.06,.04,'RightLeg']];
+  bones=[];spec.forEach(s=>bones.push({name:s[0],position:P(s[1],s[2]),parent:bones.find(b=>b.name===s[3])||null}));
+}
+function segDist(p,a,b){const ab=b.clone().sub(a),l2=ab.lengthSq();if(l2<1e-12)return p.distanceTo(a);const t=Math.max(0,Math.min(1,p.clone().sub(a).dot(ab)/l2));return p.distanceTo(a.clone().addScaledVector(ab,t))}
+function buildRig(){
+  clearRig(true);
+  rigRoot=new THREE.Group();rigRoot.name='TermWin_Rig';scene.add(rigRoot);
+  const map=new Map();rigBones=[];
+  bones.forEach(b=>{const bn=new THREE.Bone();bn.name=b.name;map.set(b,bn);rigBones.push(bn)});
+  bones.forEach(b=>{const bn=map.get(b);if(b.parent){bn.position.copy(b.position).sub(b.parent.position);map.get(b.parent).add(bn)}else{bn.position.copy(b.position);rigRoot.add(bn)}});
+  rigRoot.updateMatrixWorld(true);
+  const skeleton=new THREE.Skeleton(rigBones);
+  const srcs=[];model.updateMatrixWorld(true);model.traverse(n=>{if(n.isMesh&&n.geometry&&n.geometry.attributes&&n.geometry.attributes.position)srcs.push(n)});
+  const v=new THREE.Vector3();
+  srcs.forEach(src=>{
+    const geo=src.geometry.clone(),pos=geo.attributes.position,idx=new Uint16Array(pos.count*4),wt=new Float32Array(pos.count*4);
+    for(let i=0;i<pos.count;i++){
+      v.fromBufferAttribute(pos,i).applyMatrix4(src.matrixWorld);
+      const near=bones.map((b,j)=>({j,d:Math.max(1e-4,b.parent?segDist(v,b.parent.position,b.position):v.distanceTo(b.position))})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,bones.length));
+      let sum=0;near.forEach((q,k)=>{idx[i*4+k]=q.j;const w=1/(q.d*q.d);wt[i*4+k]=w;sum+=w});
+      for(let k=0;k<4;k++)wt[i*4+k]=sum?wt[i*4+k]/sum:0;
+    }
+    geo.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(idx,4));geo.setAttribute('skinWeight',new THREE.Float32BufferAttribute(wt,4));
+    const mat=Array.isArray(src.material)?src.material.map(m=>m.clone()):src.material.clone();
+    const sk=new THREE.SkinnedMesh(geo,mat);sk.name=src.name||'Malha';
+    src.matrixWorld.decompose(sk.position,sk.quaternion,sk.scale);
+    rigRoot.add(sk);sk.updateMatrixWorld(true);sk.bind(skeleton);
+  });
+  model.visible=false;if(wire)applyWire();
+}
+function autoRig(){
+  if(!model){toast('Abra um modelo primeiro','warn');return}
+  if(hasSkel){toast('Este modelo já tem esqueleto — não precisa de Auto Rig','warn');setTab('skel');return}
+  busy(true,'Calculando pesos da pele…');
+  setTimeout(()=>{
+    try{
+      if(!bones.length){defaultBones();selBone=0}
+      buildRig();rebuildBoneObjs();setTab('skel');
+      toast('Rig criado. Ajuste os ossos e toque em Auto Rig de novo para reaplicar os pesos.','ok');
+    }catch(e){console.error(e);toast('Falha no Auto Rig: '+e.message,'err')}
+    busy(false);afterChange();
+  },40);
+}
+
+/* ============ ferramentas / painéis ============ */
+function setTool(t){
+  tool=t;document.querySelectorAll('.tool[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
+  attachGizmo();
+  $('hintPill').textContent=t==='orbit'?'Arraste: girar · Dois dedos: zoom/mover · Toque: selecionar':hasSkel?'Selecione um osso na lista (aba Esqueleto) e arraste o gizmo':'Toque numa esfera de osso e arraste o gizmo para mover';
+}
+function applyWire(){eachMat(m=>{m.wireframe=wire})}
+function afterChange(){
+  renderModelTab();renderTexTab();renderSkelTab();
+  $('chipName').textContent=model?model.name:'Nenhum modelo';
+  const cf=$('chipFmt');cf.hidden=!model;if(model)cf.textContent=extOf(file).toUpperCase();
+  const ip=$('infoPill');ip.hidden=!model;
+  if(model){ip.textContent=`${stats.verts.toLocaleString('pt-BR')} vértices · ${stats.tris.toLocaleString('pt-BR')} triângulos · ${meshes.length} malha(s)`;$('statusInfo').textContent=folder+'/'+file}
+}
+function thumbFor(mat){
+  const c=document.createElement('canvas');c.width=c.height=32;const g=c.getContext('2d');
+  const img=mat.map&&mat.map.image;
+  try{if(img&&(img.width||img.naturalWidth)){g.drawImage(img,0,0,32,32);return c}}catch(e){}
+  g.fillStyle='#'+(mat.color?mat.color.getHexString():'888888');g.fillRect(0,0,32,32);return c;
+}
+function renderModelTab(){
+  const fc=$('fileCard');
+  if(!model){fc.innerHTML='<div class="empty">Abra um modelo para ver os detalhes.</div>';$('meshList').innerHTML='';$('matList').innerHTML='';$('meshCount').textContent='';$('matCount').textContent='';return}
+  const imgs=manifest.filter(m=>IMG_OK.includes(extOf(m.p))).length;
+  const sz=(manifest.find(m=>m.p===file)||{}).s||0;
+  fc.innerHTML=`<div class="kv"><span>Nome</span><span>${esc(file.split('/').pop())}</span></div><div class="kv"><span>Formato</span><span>${esc(extOf(file).toUpperCase())} · ${kb(sz)}</span></div><div class="kv"><span>Pasta no app</span><span>Files/Models/${esc(folder)}</span></div><div class="kv"><span>Texturas na pasta</span><span>${imgs}</span></div><div class="kv"><span>Esqueleto</span><span>${hasSkel?'sim ('+realBones.length+' ossos)':(rigRoot?'Auto Rig ('+rigBones.length+' ossos)':'não')}</span></div>`;
+  $('meshCount').textContent=meshes.length;$('matCount').textContent=mats.length;
+  const ml=$('meshList');
+  ml.innerHTML=meshes.map((m,i)=>`<div class="item ${selMesh===m.mesh?'sel':''}" data-act="meshsel" data-i="${i}"><button class="eye ${m.mesh.visible?'on':''}" data-act="meshvis" data-i="${i}">${ico(m.mesh.visible?'i-eye':'i-eyeoff','sm')}</button><span class="nm">${esc(m.name)}</span><small>${m.tris.toLocaleString('pt-BR')} tri</small></div>`).join('')||'<div class="empty">Sem malhas.</div>';
+  const tl=$('matList');
+  tl.innerHTML=mats.map((m,i)=>{
+    const b=Object.keys(SLOTS).filter(k=>m[SLOTS[k]]).map(k=>`<span class="bdg">${SLOT_LABEL[k]}</span>`).join('');
+    return `<div class="item ${selMat===m?'sel':''}" data-act="matsel" data-i="${i}"><span class="thumb" data-mi="${i}"></span><span class="nm">${esc(m.name||('Material '+(i+1)))}<div class="badges">${b||'<small>sem textura</small>'}</div></span></div>`;
+  }).join('')||'<div class="empty">Sem materiais.</div>';
+  tl.querySelectorAll('.thumb').forEach(el=>el.appendChild(thumbFor(mats[+el.dataset.mi])));
+}
+function renderTexTab(){
+  $('selMatLabel').innerHTML=selMat?`Material: <b style="color:var(--text)">${esc(selMat.name||'(sem nome)')}</b>`:'Nenhum material selecionado — toque no modelo.';
+  const imgs=manifest.filter(m=>IMG_OK.includes(extOf(m.p)));
+  $('texGrid').innerHTML=imgs.map((m,i)=>{
+    const n=m.p.split('/').pop(),e=extOf(m.p);
+    const body=(e==='tga')?`<div class="ph">TGA</div>`:`<img loading="lazy" src="${baseUrl()+encPath(m.p)}" alt="">`;
+    return `<button class="tile" data-act="texapply" data-i="${i}">${body}<em>${esc(n)}</em></button>`;
+  }).join('')||'<div class="empty" style="grid-column:1/-1">Nenhuma imagem encontrada na pasta do modelo.</div>';
+}
+function renderSkelTab(listOnly){
+  const info=$('skelInfo');
+  if(!model){info.textContent='Abra um modelo.';$('boneList').innerHTML='';$('boneCount').textContent='';$('boneEdit').hidden=true;return}
+  const sb=$('skelBtns');
+  if(hasSkel){
+    info.innerHTML=`Este modelo <b style="color:var(--green)">já tem esqueleto</b> (${realBones.length} ossos). Selecione um osso e use <b>Mover</b> ou <b>Girar</b> para posar.`;sb.style.display='none';
+  }else{
+    info.textContent=rigRoot?'Auto Rig aplicado. Ajuste os ossos e toque em Auto Rig para recalcular os pesos.':bones.length?'Ossos de referência criados. Toque em Auto Rig para ligar a malha a eles.':'Sem esqueleto. Use Osso para criar do zero ou Auto Rig para um esqueleto humano editável.';
+    sb.style.display='flex';
+  }
+  const items=hasSkel?realBones.map(b=>b.name||'(osso)'):bones.map(b=>b.name);
+  $('boneCount').textContent=items.length||'';
+  $('boneList').innerHTML=items.map((n,i)=>`<button class="item ${selBone===i?'sel':''}" data-act="bonesel" data-i="${i}"><span class="nm">${esc(n)}</span></button>`).join('')||'<div class="empty">Nenhum osso.</div>';
+  if(!listOnly)syncFields();
+  const ab=$('animBox');ab.hidden=!clips.length;
+  if(clips.length&&!$('clipSel').options.length)$('clipSel').innerHTML=clips.map((c,i)=>`<option value="${i}">${esc(c.name||('Animação '+(i+1)))}</option>`).join('');
+  if(!clips.length)$('clipSel').innerHTML='';
+  $('playBtn').textContent=playing?'Parar':'Tocar';
+}
+
+/* ============ biblioteca / importar ============ */
+async function refreshLibrary(){
+  try{lib=await (await fetch('/api/models')).json()}catch(e){lib=[]}
+  $('libList').innerHTML=lib.map((m,i)=>`<button class="item" data-act="libopen" data-i="${i}"><span class="fmt">${esc(m.format.toUpperCase())}</span><span class="nm">${esc(m.file.split('/').pop())}<br><small>${esc(m.folder)} · ${m.textures} textura(s) · ${kb(m.size)}</small></span></button>`).join('')||'<div class="empty">Nenhum modelo importado ainda. Use o gerenciador de arquivos ou o comando skel// no terminal.</div>';
+}
+window.onImported=res=>{
+  busy(false);
+  if(res&&res.ok){
+    refreshLibrary();loadModel(res.folder,res.file).then(()=>{if(res.missing&&res.missing.length)toast(`${res.missing.length} textura(s) citada(s) no modelo não foram achadas na pasta`,'warn')});
+  }else{
+    const er=res&&res.error;
+    toast(er==='not_found'?'Arquivo não encontrado. Confira o caminho.':er==='format'?'Formato .'+res.ext+' não suportado.':'Não consegui importar'+(er?': '+er:''),'err');
+    openModal();
+  }
+};
+function needBridge(){if(BR)return true;toast('Importar só funciona dentro do app TermWin','warn');return false}
+
+/* ============ exportar ============ */
+async function exportGLB(){
+  if(!model){toast('Abra um modelo antes de exportar','warn');return}
+  const target=rigRoot||model;
+  busy(true,'Exportando GLB…');
+  const opts={binary:true,onlyVisible:true};if(!rigRoot&&clips.length)opts.animations=clips;
+  new GLTFExporter().parse(target,async buf=>{
+    try{
+      const stem=file.split('/').pop().replace(/\.[^.]+$/,'')+(rigRoot?'_rig':'_export');const name=stem+'.glb';
+      if(BR){
+        const bytes=new Uint8Array(buf);const CH=3*131072;
+        if(!BR.saveBegin(folder,name))throw new Error('não consegui criar o arquivo');
+        for(let i=0;i<bytes.length;i+=CH){
+          const sub=bytes.subarray(i,i+CH);let bin='';
+          for(let j=0;j<sub.length;j+=0x8000)bin+=String.fromCharCode.apply(null,sub.subarray(j,j+0x8000));
+          if(!BR.saveChunk(btoa(bin)))throw new Error('falha ao gravar');
+          if((i/CH)%6===5)await sleep(0);
+        }
+        const r=JSON.parse(BR.saveEnd());
+        if(!r.ok)throw new Error(r.error||'erro ao salvar');
+        toast('Salvo: '+r.app+(r.shown?' · cópia em '+r.shown:''),'ok');refreshLibrary();
+      }else{
+        const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([buf],{type:'model/gltf-binary'}));a.download=name;a.click();toast('Exportação iniciada: '+name,'ok');
+      }
+    }catch(e){toast('Erro ao exportar: '+(e&&e.message||e),'err')}
+    busy(false);
+  },e=>{busy(false);toast('Erro ao exportar: '+(e&&e.message||e),'err')},opts);
+}
+
+/* ============ cliques ============ */
+const ACT={
+  open:openModal,closemodal:closeModal,
+  pick:()=>{if(needBridge())BR.pick()},
+  importpath:()=>{const v=$('pathIn').value.trim();if(!v){toast('Digite o caminho do modelo','warn');return}if(needBridge())BR.importPath(v)},
+  export:exportGLB,addbone:addBone,autorig:autoRig,
+  autotex:async()=>{if(!model){toast('Abra um modelo primeiro','warn');return}busy(true,'Montando texturas…');try{await autoTextures(false)}finally{busy(false)}},
+  clearbones:()=>{if(!model)return;clearBones(false)},
+  wire:()=>{wire=!wire;$('btnWire').classList.toggle('on',wire);applyWire()},
+  grid:()=>{gridOn=!gridOn;$('btnGrid').classList.toggle('on',gridOn);if(grid)grid.visible=gridOn},
+  bg:()=>{bgIdx=(bgIdx+1)%BGS.length;scene.background=new THREE.Color(BGS[bgIdx]);buildGrid()},
+  reset:()=>resetCam(),
+  libopen:b=>{const m=lib[+b.dataset.i];if(m){closeModal();loadModel(m.folder,m.file)}},
+  meshsel:b=>{const m=meshes[+b.dataset.i];if(m)selectMesh(m.mesh,0)},
+  meshvis:b=>{const m=meshes[+b.dataset.i];if(m){m.mesh.visible=!m.mesh.visible;renderModelTab()}},
+  matsel:b=>{const m=mats[+b.dataset.i];if(m)selectMat(m)},
+  bonesel:b=>selectBone(+b.dataset.i),
+  texapply:async b=>{
+    const imgs=manifest.filter(m=>IMG_OK.includes(extOf(m.p))),it=imgs[+b.dataset.i];
+    if(!it)return;
+    const target=selMat||(mats.length===1?mats[0]:null);
+    if(!target){toast('Selecione um material (toque no modelo) antes de aplicar','warn');return}
+    busy(true,'Aplicando textura…');
+    try{const slot=$('slotSel').value;const m=await applySlot(target,slot,it.p);selMat=m;if(wire)applyWire();afterChange();toast(`${SLOT_LABEL[slot]} aplicada: ${it.p.split('/').pop()}`,'ok')}
+    catch(e){toast('Não consegui aplicar: '+e.message,'err')}
+    busy(false);
+  },
+  playclip:()=>{
+    if(!mixer||!clips.length)return;
+    if(playing){mixer.stopAllAction();playing=false}
+    else{const c=clips[+$('clipSel').value||0];curAction=mixer.clipAction(c);curAction.reset().play();playing=true}
+    renderSkelTab(true);
+  }
+};
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-tool]');if(t){setTool(t.dataset.tool);return}
+  const tb=e.target.closest('[data-tab]');if(tb){setTab(tb.dataset.tab);return}
+  const a=e.target.closest('[data-act]');if(a){e.stopPropagation();const f=ACT[a.dataset.act];if(f)f(a)}
+});
+$('modal').addEventListener('click',e=>{if(e.target===$('modal'))closeModal()});
+$('pathIn').addEventListener('keydown',e=>{if(e.key==='Enter')ACT.importpath()});
+$('walk').addEventListener('change',e=>{walk=e.target.checked;if(walk&&!rigRoot){toast('Crie um rig com o Auto Rig primeiro','warn');e.target.checked=false;walk=false}else toast(walk?'Caminhada ligada':'Caminhada parada');if(!walk)rigBones.forEach(b=>b.rotation.set(0,0,0))});
+$('showBones').addEventListener('change',e=>{const on=e.target.checked;if(skelHelper)skelHelper.visible=on;boneObjs.forEach(o=>o.visible=on);if(boneLines)boneLines.visible=on});
+$('clipSel').addEventListener('change',()=>{if(playing){mixer.stopAllAction();curAction=mixer.clipAction(clips[+$('clipSel').value||0]);curAction.reset().play()}});
+
+/* ============ loop ============ */
+function loop(){
+  requestAnimationFrame(loop);
+  const dt=clock.getDelta();
+  if(mixer&&playing)mixer.update(dt);
+  if(walk&&rigBones.length){
+    walkT+=dt*4;
+    rigBones.forEach(b=>{
+      const n=b.name.toLowerCase(),ph=n.startsWith('left')?0:Math.PI;
+      if(n.endsWith('arm')&&!n.includes('fore'))b.rotation.x=Math.sin(walkT+ph+Math.PI)*.5;
+      else if(n.endsWith('upleg'))b.rotation.x=Math.sin(walkT+ph)*.6;
+    });
+  }
+  controls.update();if(selBox)selBox.update();
+  renderer.render(scene,camera);
+}
+loop();
+
+/* ============ início ============ */
+renderModelTab();renderTexTab();renderSkelTab();setTool('orbit');
+const m0=qs.get('m'),f0=qs.get('f');
+if(m0&&f0)loadModel(m0,f0);
+else{refreshLibrary().then(()=>{if(!lib.length)$('statusMsg').textContent='Importe um modelo para começar';});}
+</script>
+</body>
+</html>
