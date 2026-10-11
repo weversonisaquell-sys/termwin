@@ -2267,8 +2267,38 @@ Long-press a tab to rename it.
         return null
     }
 
-    private fun openSiteWindow(t: TabData, url: String) {
+    /** Roblox: instead of the website, open the Roblox APP in a window (installed app, or the APK file found on the phone). */
+    private fun findRobloxFile(t: TabData): File? {
+        val roots = listOf(downloadsDir(), filesRoot(), dataDir(), File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Downloaded"), Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)).filter { it.isDirectory }
+        for (r in roots) {
+            val hit = r.walkTopDown().maxDepth(8).firstOrNull { f ->
+                f.isFile && f.length() > 1_000_000 && f.name.contains("roblox", true) &&
+                    (f.extension.lowercase() in setOf("apk", "apkm", "xapk", "apks", "") || f.name.contains("client", true)) &&
+                    try { f.inputStream().use { i -> val b = ByteArray(2); i.read(b) == 2 && b[0] == 'P'.code.toByte() && b[1] == 'K'.code.toByte() } } catch (e: Exception) { false }
+            }
+            if (hit != null) return hit
+        }
+        return null
+    }
+
+    private fun openRobloxApp(t: TabData, url: String): Boolean {
+        val pkg = "com.roblox.client"
+        val installed = try { packageManager.getPackageInfo(pkg, 0); true } catch (e: Exception) { false }
+        if (installed) { append(t, tr("opening the Roblox app in a window…\n", "abrindo o app do Roblox numa janela…\n")); openAsWindow(t, pkg, "Roblox"); return true }
+        append(t, tr("searching the Roblox APK…\n", "procurando o APK do Roblox…\n"))
+        thread {
+            val f = try { findRobloxFile(t) } catch (e: Exception) { null }
+            ui.post {
+                if (f != null) openApk(t, f)
+                else { err(t, tr("Roblox APK not found. Download it (it goes to Downloaded) and run the command again. Opening the site for now.", "APK do Roblox não encontrado. Baixe ele (vai para Downloaded) e rode o comando de novo. Abrindo o site por enquanto.")); openSiteWindow(t, url, false) }
+            }
+        }
+        return true
+    }
+
+    private fun openSiteWindow(t: TabData, url: String, roblox: Boolean = true) {
         val host = try { Uri.parse(url).host ?: url } catch (e: Exception) { url }
+        if (roblox && (host.equals("roblox.com", true) || host.equals("www.roblox.com", true)) && openRobloxApp(t, url)) return
         append(t, tr("opening $url in a window (you can download files here)\n", "abrindo $url numa janela (dá para baixar arquivos aqui)\n"))
         openWebWindow(host, url)
     }
@@ -4761,7 +4791,9 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                     }
                     android.content.pm.PackageInstaller.STATUS_SUCCESS -> {
                         append(t, tr("installed ✔\n", "instalado ✔\n"))
-                        if (!launchPkg(t, instPkg, instLabel)) append(t, tr("run the command again to open it\n", "rode o comando de novo para abrir\n"))
+                        // right after installing, open the game in the TermWin window (floating window with root/Shizuku, normal app otherwise)
+                        if (packageManager.getLaunchIntentForPackage(instPkg) != null) openAsWindow(t, instPkg, instLabel)
+                        else append(t, tr("run the command again to open it\n", "rode o comando de novo para abrir\n"))
                     }
                     else -> {
                         val m = i.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "status $st"
