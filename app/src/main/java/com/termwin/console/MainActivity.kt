@@ -2029,7 +2029,25 @@ Long-press a tab to rename it.
         wv.settings.allowContentAccess = true
         wv.addJavascriptInterface(TwBridge(wv), "TW")
         if (yt) pubWv = wv
-        wv.webViewClient = android.webkit.WebViewClient()
+        // Roblox (and any site): never jump to the Roblox app or other apps; accept errors so the page keeps working inside this window
+        if (url.contains("roblox", true)) wv.settings.userAgentString = wv.settings.userAgentString.replace("; wv", "").replace("Version/4.0 ", "")
+        wv.webViewClient = object : android.webkit.WebViewClient() {
+            override fun shouldOverrideUrlLoading(v: android.webkit.WebView, req: android.webkit.WebResourceRequest): Boolean {
+                val sc = req.url.scheme?.lowercase() ?: return false
+                // links that are files (zip, apk, GitHub archive/release...) go straight to our downloader -> Downloaded folder
+                if (req.isForMainFrame && (sc == "http" || sc == "https") && isFileUrl(req.url.toString())) {
+                    val cu = req.url.toString()
+                    startWebDownload(v, cu, v.settings.userAgentString, null, null)
+                    return true
+                }
+                if (sc in listOf("http", "https", "about", "data", "blob", "file", "javascript")) return false
+                // roblox://, roblox-player://, intent://... are ignored: stay on the site instead of opening the app
+                toast(tr("Blocked opening another app (stayed on the site)", "Bloqueei a abertura de outro app (ficou no site)"))
+                return true
+            }
+            override fun onReceivedSslError(v: android.webkit.WebView, h: android.webkit.SslErrorHandler, e: android.net.http.SslError) { h.proceed() }
+            override fun onReceivedError(v: android.webkit.WebView, req: android.webkit.WebResourceRequest, err: android.webkit.WebResourceError) { /* accept the error and keep the page */ }
+        }
         wv.settings.setSupportMultipleWindows(true)
         wv.addJavascriptInterface(TwDl(), "TWDL")
         wv.webChromeClient = object : android.webkit.WebChromeClient() {
@@ -2046,6 +2064,8 @@ Long-press a tab to rename it.
             // links with target=_blank open in this same window (so their downloads work too)
             override fun onCreateWindow(view: android.webkit.WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
                 val tmp = android.webkit.WebView(this@MainActivity)
+                tmp.settings.javaScriptEnabled = true
+                tmp.setDownloadListener { dlUrl, ua, cd, mime, _ -> startWebDownload(view, dlUrl, ua, cd, mime) }
                 tmp.webViewClient = object : android.webkit.WebViewClient() {
                     override fun onPageStarted(v: android.webkit.WebView, u: String, f: android.graphics.Bitmap?) { if (u != "about:blank") { view.loadUrl(u); v.stopLoading(); v.destroy() } }
                 }
@@ -2168,6 +2188,17 @@ Long-press a tab to rename it.
         dlDone(f)
     }
 
+    /** True when the address is clearly a file download (so we do not depend on the page's download callback). */
+    private fun isFileUrl(u: String): Boolean {
+        val uri = try { Uri.parse(u) } catch (e: Exception) { return false }
+        val host = (uri.host ?: "").lowercase(); val path = (uri.path ?: "").lowercase()
+        if (host == "codeload.github.com") return true
+        if (host.endsWith("github.com") && (path.contains("/archive/") || path.contains("/releases/download/") || path.contains("/zipball/") || path.contains("/tarball/"))) return true
+        if (host == "objects.githubusercontent.com" || host == "release-assets.githubusercontent.com") return true
+        val ext = path.substringAfterLast('.', "")
+        return ext in setOf("zip", "apk", "rar", "7z", "tar", "gz", "xapk", "apks", "aab", "obb", "iso")
+    }
+
     private fun startWebDownload(wv: android.webkit.WebView, url: String, ua: String?, cd: String?, mime: String?) {
         val name = android.webkit.URLUtil.guessFileName(url, cd, mime)
         if (url.startsWith("data:")) {
@@ -2187,13 +2218,14 @@ Long-press a tab to rename it.
     }
 
     /** Own downloader (follows redirects, sends the page's cookies) used when the system DownloadManager is not allowed to write. */
-    private fun fallbackDownload(url: String, ua: String?, cookie: String?, name: String) {
+    private fun fallbackDownload(url: String, ua: String?, cookie: String?, name: String, retry: Boolean = true) {
         thread {
             try {
                 var u = url; var cn: java.net.HttpURLConnection? = null
                 for (hop in 0..8) {
                     val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection
                     c.instanceFollowRedirects = false; c.connectTimeout = 15000; c.readTimeout = 30000
+                    c.setRequestProperty("Accept", "*/*")
                     if (!ua.isNullOrEmpty()) c.setRequestProperty("User-Agent", ua)
                     if (hop == 0 && !cookie.isNullOrEmpty()) c.setRequestProperty("Cookie", cookie)
                     val code = c.responseCode
@@ -2202,7 +2234,10 @@ Long-press a tab to rename it.
                     cn = c; break
                 }
                 val c = cn ?: throw Exception("too many redirects")
-                if (c.responseCode !in 200..299) throw Exception("HTTP ${c.responseCode}")
+                if (c.responseCode !in 200..299) {
+                    if (retry) { fallbackDownload(url, "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36", null, name, false); return@thread }
+                    throw Exception("HTTP ${c.responseCode}")
+                }
                 val cdh = c.getHeaderField("Content-Disposition")
                 val nm = if (cdh != null) android.webkit.URLUtil.guessFileName(u, cdh, c.contentType) else name
                 val f = uniqueDlFile(nm)
