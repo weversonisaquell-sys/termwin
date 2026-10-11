@@ -248,6 +248,7 @@ class MainActivity : Activity() {
   historico                  comandos usados
   botão 📜 Savedata           comandos recentes (Files/Savedata.wintext); toque para executar
   apk//open//nome.apk        procura o APK, abre o app em uma janela e guarda a pasta dele em Files/App data
+  skel//fbx//modelo.fbx       procura um modelo e abre a área móvel de rig 3D (protótipo)
   shizuku                    mostra o estado do Shizuku e pede a permissão (usado no lugar do root)
   dados                      onde seus arquivos ficam salvos
   erros                      mostra os erros salvos (erros limpar)
@@ -320,6 +321,7 @@ Toque e segure numa aba para renomear.
   history                    commands used
   📜 Savedata button         recent commands (Files/Savedata.wintext); tap one to run it
   apk//open//name.apk        find the APK, open the app in a window and keep its folder in Files/App data
+  skel//fbx//model.fbx       find a model and open the mobile 3D rig workspace (prototype)
   shizuku                    show Shizuku status and ask for permission (used instead of root)
   data                       where your files are saved
   errors                     show saved errors (errors clear)
@@ -1529,6 +1531,7 @@ Long-press a tab to rename it.
     private fun exec(t: TabData, rawLine: String, single: Boolean = false) {
         if (rawLine.isEmpty()) return
         val line = expandAlias(rawLine)
+        if (skelCmd(t, line)) { saveSoon(); return }
         if (apkCmd(t, line)) { saveSoon(); return }
         if (!single) {
             val n = chainOps(line)
@@ -4666,6 +4669,41 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     // ---------- apk//open//name.apk : find the APK, open the app in a window, keep its folder in Files/App data ----------
     private val RE_APK = Regex("^(?:apk|akp)\\s*//\\s*(?:open|onpen|abrir)\\s*//\\s*(.+)$", RegexOption.IGNORE_CASE)
     private fun appDataDir() = File(filesRoot(), "App data").apply { mkdirs() }
+
+
+    /** Opens the mobile 3D skeleton workspace for a named model file. */
+    private fun skelCmd(t: TabData, line: String): Boolean {
+        val m = Regex("^skel//([^/]+)//(.+)$", RegexOption.IGNORE_CASE).matchEntire(line.trim()) ?: return false
+        val format = m.groupValues[1].trim().lowercase()
+        val rawName = m.groupValues[2].trim().trim('"')
+        val allowed = setOf("fbx", "gltf", "glb", "obj", "dae", "3ds", "stl", "ply")
+        if (format !in allowed) {
+            err(t, "skel: unsupported format '$format'. Supported: ${allowed.joinToString(", ")}")
+            return true
+        }
+        if (rawName.isBlank()) { err(t, "usage: skel//format//file_name"); return true }
+        append(t, tr("Searching for $rawName ($format)…\n", "Procurando $rawName ($format)…\n"))
+        thread {
+            val requested = if (rawName.endsWith(".$format", true)) rawName else "$rawName.$format"
+            val found = try {
+                resolvePath(t, rawName)?.takeIf { it.isFile && it.extension.equals(format, true) }
+                    ?: resolvePath(t, requested)?.takeIf { it.isFile && it.extension.equals(format, true) }
+                    ?: findAnywhere(requested, t)?.takeIf { it.isFile && it.extension.equals(format, true) }
+                    ?: findAnywhere(rawName, t)?.takeIf { it.isFile && it.extension.equals(format, true) }
+            } catch (_: Exception) { null }
+            ui.post {
+                if (found == null) {
+                    err(t, "skel: file not found with .$format format: $requested")
+                    append(t, tr("No files were changed. Check the name and format, then try again.\n", "Nenhum arquivo foi alterado. Confira o nome e o formato e tente novamente.\n"))
+                } else {
+                    append(t, tr("Found: ${found.name}\nOpening the mobile 3D workspace…\n", "Encontrado: ${found.name}\nAbrindo o editor 3D móvel…\n"))
+                    val query = "format=${java.net.URLEncoder.encode(format, "UTF-8")}&name=${java.net.URLEncoder.encode(found.name, "UTF-8")}&path=${java.net.URLEncoder.encode(found.absolutePath, "UTF-8") }"
+                    openWebWindow("Skeleton Rig", "file:///android_asset/skel_editor.html?$query")
+                }
+            }
+        }
+        return true
+    }
 
     private fun apkCmd(t: TabData, line: String): Boolean {
         if (Regex("^(janela|window)\\s+off$", RegexOption.IGNORE_CASE).matches(line.trim())) {
