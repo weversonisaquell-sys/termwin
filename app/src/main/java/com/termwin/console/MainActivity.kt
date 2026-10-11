@@ -272,7 +272,7 @@ class MainActivity : Activity() {
   Roblox//asset format//arquivo.rbxl   acha o arquivo, mostra o caminho e salva uma versão em formato de modelo (.rbxm) na pasta Download
   open//github.com/usuario/repo   abre o site numa janela do app (movível) e dá para baixar arquivos de qualquer site
   ct arquivo.txt             cria o arquivo em Files/Files Created e abre o editor (sem nome: pergunta o nome)
-  editor//nome//tipo         cria nome.tipo em Files/Files Created (ex.: editor//site//html) e abre o editor numa janela movível
+  editor//nome//tipo         abre nome.tipo se já existir (na pasta onde você está com cd, depois em Files Created e no resto); se não existir, cria em Files/Files Created. Ex.: editor//site//html
   cmd1 && cmd2 && cmd3       encadeia comandos como no Termux (help && clear funciona; até 1780 &&, com 1781 para e avisa)
   copy NomePasta             procura no celular todo e copia para Files/Copied/NomePasta
   copy                       abre o seletor para copiar pastas de OUTROS apps (ex.: Termux) para Files/Copied  |  depois: cd copied/NomePasta
@@ -343,7 +343,7 @@ Toque e segure numa aba para renomear.
   Roblox//asset format//file.rbxl   find the file, show its path and save a model-format copy (.rbxm) in the Download folder
   open//github.com/user/repo   open the site in an app window (movable); you can download files from any site
   ct file.txt                create the file in Files/Files Created and open the editor (no name: it asks)
-  editor//name//type         create name.type in Files/Files Created (e.g. editor//site//html) and open the editor in a movable window
+  editor//name//type         open name.type if it exists (in the folder you cd'd into, then Files Created and the rest); if not, create it in Files/Files Created. E.g. editor//site//html
   cmd1 && cmd2 && cmd3       chain commands like Termux (help && clear works; up to 1780 &&, 1781 stops and warns)
   copy FolderName            search the whole phone and copy to Files/Copied/FolderName
   copy                       opens the picker to copy folders from OTHER apps (e.g. Termux) to Files/Copied  |  then: cd copied/FolderName
@@ -3867,15 +3867,46 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     /** editor//name//type  (e.g. editor//site//html) — creates Files/Files Created/name.type and opens the floating editor window. */
     private fun editorCmd(t: TabData, parts: List<String>) {
         if (parts.isEmpty()) { err(t, tr("usage: editor//name//type   (e.g. editor//site//html)", "uso: editor//nome//tipo   (ex.: editor//site//html)")); return }
-        var name = safeSeg(parts[0].substringAfterLast('/'))
+        val base = safeSeg(parts[0].substringAfterLast('/'))
         val typ = parts.getOrNull(1)?.trim()?.trimStart('.')?.lowercase()?.filter { it.isLetterOrDigit() } ?: ""
-        if (typ.isNotEmpty()) { if (!name.endsWith(".$typ", true)) name = name.substringBeforeLast('.', name) + "." + typ }
-        else if (!name.contains('.')) name += ".txt"
-        try {
-            val f = File(createdDir(), name)
-            if (!f.exists()) { f.writeText(STARTER[f.extension.lowercase()] ?: ""); append(t, tr("created ", "criado ") + short(f.path) + "\n") }
-            openEditorWindow(t, f)
-        } catch (e: Exception) { err(t, "editor: ${e.message}") }
+        // names to look for, in order (name.type; with no type: the exact name, then name.txt)
+        val names = when {
+            typ.isNotEmpty() -> listOf(if (base.endsWith(".$typ", true)) base else base.substringBeforeLast('.', base) + "." + typ)
+            base.contains('.') -> listOf(base)
+            else -> listOf(base, "$base.txt")
+        }
+        append(t, tr("looking for ${names[0]}…\n", "procurando ${names[0]}…\n"))
+        thread {
+            try {
+                var found: File? = null
+                // 1) the folder you are in (cd Test)   2) Files/Files Created   3) the rest of Files, then the whole phone
+                for (n in names) {
+                    found = walkCI(File(t.cwd), listOf(n))?.takeIf { it.isFile }
+                        ?: walkCI(createdDir(), listOf(n))?.takeIf { it.isFile }
+                    if (found != null) break
+                }
+                if (found == null) for (n in names) {
+                    found = filesRoot().walkTopDown().maxDepth(8).firstOrNull { it.isFile && it.name.equals(n, true) }
+                        ?: findAnywhere(n, t)?.takeIf { it.isFile && it.name.equals(n, true) }
+                    if (found != null) break
+                }
+                val hit = found
+                ui.post {
+                    try {
+                        if (hit != null) {
+                            append(t, tr("opening existing file ", "abrindo arquivo que já existe ") + short(hit.path) + "\n")
+                            openEditorWindow(t, hit)
+                        } else {
+                            // not found anywhere: create it in Files/Files Created
+                            val nf = File(createdDir(), names.last())
+                            nf.writeText(STARTER[nf.extension.lowercase()] ?: "")
+                            append(t, tr("created ", "criado ") + short(nf.path) + "\n")
+                            openEditorWindow(t, nf)
+                        }
+                    } catch (e: Exception) { err(t, "editor: ${e.message}") }
+                }
+            } catch (e: Exception) { ui.post { err(t, "editor: ${e.message}") } }
+        }
     }
 
     /** Floating, movable editor (like nano, but nicer): line numbers, status bar, Exit without saving / Save / Save & exit. */
