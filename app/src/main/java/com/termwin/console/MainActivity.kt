@@ -53,7 +53,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "2.8"
+const val VERSION = "2.9"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -271,6 +271,7 @@ class MainActivity : Activity() {
   Roblox//asset format//arquivo.rbxl   acha o arquivo, mostra o caminho e converte o lugar em modelo (.rbxm) na pasta Download (não envia nada)
   Roblox//asset format//arquivo.rbxl   acha o arquivo, mostra o caminho e salva uma versão em formato de modelo (.rbxm) na pasta Download
   open//github.com/usuario/repo   abre o site numa janela do app (movível) e dá para baixar arquivos de qualquer site
+  open//roblox.com            abre o Roblox de PC (versão desktop do site) numa janela
   ct arquivo.txt             cria o arquivo em Files/Files Created e abre o editor (sem nome: pergunta o nome)
   editor//nome//tipo         abre nome.tipo se já existir (na pasta onde você está com cd, depois em Files Created e no resto); se não existir, cria em Files/Files Created. Ex.: editor//site//html
   cmd1 && cmd2 && cmd3       encadeia comandos como no Termux (help && clear funciona; até 1780 &&, com 1781 para e avisa)
@@ -342,6 +343,7 @@ Toque e segure numa aba para renomear.
   Roblox//asset format//file.rbxl   find the file, show its path and convert the place into a model (.rbxm) in the Download folder (uploads nothing)
   Roblox//asset format//file.rbxl   find the file, show its path and save a model-format copy (.rbxm) in the Download folder
   open//github.com/user/repo   open the site in an app window (movable); you can download files from any site
+  open//roblox.com            opens the PC (desktop) version of Roblox in a window
   ct file.txt                create the file in Files/Files Created and open the editor (no name: it asks)
   editor//name//type         open name.type if it exists (in the folder you cd'd into, then Files Created and the rest); if not, create it in Files/Files Created. E.g. editor//site//html
   cmd1 && cmd2 && cmd3       chain commands like Termux (help && clear works; up to 1780 &&, 1781 stops and warns)
@@ -2032,8 +2034,23 @@ Long-press a tab to rename it.
         wv.addJavascriptInterface(TwBridge(wv), "TW")
         if (yt) pubWv = wv
         // Roblox (and any site): never jump to the Roblox app or other apps; accept errors so the page keeps working inside this window
-        if (url.contains("roblox", true)) wv.settings.userAgentString = wv.settings.userAgentString.replace("; wv", "").replace("Version/4.0 ", "")
+        // Roblox opens as the PC (desktop) website: Windows Chrome identity + wide desktop layout, with pinch zoom
+        val pcSite = try { (Uri.parse(url).host ?: "").lowercase().let { it == "roblox.com" || it.endsWith(".roblox.com") } } catch (e: Exception) { false }
+        if (pcSite) {
+            wv.settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+            wv.settings.useWideViewPort = true
+            wv.settings.loadWithOverviewMode = true
+            wv.settings.setSupportZoom(true)
+            wv.settings.builtInZoomControls = true
+            wv.settings.displayZoomControls = false
+            wv.setInitialScale(0)
+        } else if (url.contains("roblox", true)) wv.settings.userAgentString = wv.settings.userAgentString.replace("; wv", "").replace("Version/4.0 ", "")
         wv.webViewClient = object : android.webkit.WebViewClient() {
+            // keep the desktop layout on every Roblox page (even after login/redirects): force a 1280px wide viewport
+            override fun onPageFinished(v: android.webkit.WebView, u: String?) {
+                if (!pcSite) return
+                v.evaluateJavascript("(function(){try{var m=document.querySelector('meta[name=viewport]');if(!m){m=document.createElement('meta');m.name='viewport';document.head.appendChild(m)}m.setAttribute('content','width=1280');}catch(e){}})()", null)
+            }
             override fun shouldOverrideUrlLoading(v: android.webkit.WebView, req: android.webkit.WebResourceRequest): Boolean {
                 val sc = req.url.scheme?.lowercase() ?: return false
                 // links that are files (zip, apk, GitHub archive/release...) go straight to our downloader -> Downloaded folder
@@ -2352,6 +2369,7 @@ Long-press a tab to rename it.
     private fun openSiteWindow(t: TabData, url: String, roblox: Boolean = false) {
         val host = try { Uri.parse(url).host ?: url } catch (e: Exception) { url }
         if (roblox && (host.equals("roblox.com", true) || host.equals("www.roblox.com", true)) && openRobloxApp(t, url)) return
+        if (host.equals("roblox.com", true) || host.endsWith(".roblox.com", true)) append(t, tr("opening the PC version of Roblox ($url)\n", "abrindo o Roblox de PC ($url)\n")) else
         append(t, tr("opening $url in a window (you can download files here)\n", "abrindo $url numa janela (dá para baixar arquivos aqui)\n"))
         openWebWindow(host, url)
     }
