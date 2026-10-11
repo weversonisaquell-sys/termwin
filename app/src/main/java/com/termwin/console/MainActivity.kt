@@ -53,7 +53,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
-const val VERSION = "2.4"
+const val VERSION = "2.7"
 
 class TabData(var name: String, var cwd: String, val log: StringBuilder = StringBuilder()) {
     @Volatile var proc: Process? = null
@@ -2093,7 +2093,30 @@ Long-press a tab to rename it.
     }
 
     // ---------- downloads from the in-app web windows ----------
-    private fun downloadsDir() = File(dataDir(), "Downloaded").apply { mkdirs() }
+    /** "Downloaded" lives INSIDE Files (next to Projects, Copied, App data), so it shows up in the app's file browser. */
+    private fun downloadsDir(): File {
+        val d = File(filesRoot(), "Downloaded")
+        if (!d.isDirectory) { d.delete(); d.mkdirs() }
+        migrateOldDownloaded(d)
+        return d
+    }
+    @Volatile private var dlMigrated = false
+    /** Older versions saved to <app folder>/Downloaded (outside Files). Move those files into Files/Downloaded once. */
+    private fun migrateOldDownloaded(dst: File) {
+        if (dlMigrated) return
+        dlMigrated = true
+        try {
+            for (old in listOf(File(dataDir(), "Downloaded"), File(filesDir, "Downloaded"))) {
+                if (!old.isDirectory || old.canonicalPath == dst.canonicalPath) continue
+                old.listFiles()?.forEach { f ->
+                    var t = File(dst, f.name); var i = 1
+                    while (t.exists()) { t = File(dst, f.nameWithoutExtension + " ($i)" + (if (f.extension.isNotEmpty()) "." + f.extension else "")); i++ }
+                    try { if (!f.renameTo(t)) { f.copyTo(t, false); f.delete() } } catch (e: Exception) { logError("download", "migrate ${f.name}: $e") }
+                }
+                if (old.list().isNullOrEmpty()) old.delete()
+            }
+        } catch (e: Exception) { logError("download", "migrate: $e") }
+    }
     @Volatile private var blobOkUntil = 0L
     @Volatile private var blobName = ""
 
@@ -2190,9 +2213,10 @@ Long-press a tab to rename it.
         try {
             target.parentFile?.let { if (!it.isDirectory) { it.delete(); it.mkdirs() } }
             tmp.copyTo(target, true)
+            if (!target.isFile || target.length() != tmp.length()) throw java.io.IOException("file not written correctly")
         } catch (e: Exception) {
             logError("download", "Downloaded folder failed ($target): $e — using internal storage")
-            val alt = File(File(filesDir, "Downloaded").apply { mkdirs() }, target.name)
+            val alt = File(File(filesRoot(), "Downloaded").apply { mkdirs() }, target.name)
             tmp.copyTo(alt, true)
             target = alt
         }
@@ -4911,7 +4935,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             p.close()
             if (installed) openAsWindow(t, pkg, label)
             else if (splits != null) installSplits(t, pkg, label, splits)
-            else installSingle(t, label, src)
+            else installSplits(t, pkg, label, listOf(src), true)
         }
     }
 
@@ -5000,10 +5024,20 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                         try { ni?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); if (ni != null) startActivity(ni) } catch (e: Exception) { err(t, "install: ${e.message}") }
                     }
                     android.content.pm.PackageInstaller.STATUS_SUCCESS -> {
-                        append(t, tr("installed ✔\n", "instalado ✔\n"))
-                        // right after installing, open the game in the TermWin window (floating window with root/Shizuku, normal app otherwise)
-                        if (packageManager.getLaunchIntentForPackage(instPkg) != null) openAsWindow(t, instPkg, instLabel)
-                        else append(t, tr("run the command again to open it\n", "rode o comando de novo para abrir\n"))
+                        // do not trust the status alone: confirm that Android really has the package now
+                        val really = try { packageManager.getPackageInfo(instPkg, 0); true } catch (e: Exception) { false }
+                        if (!really) {
+                            err(t, tr("Android said OK but $instPkg is not on the phone. Try again (or install it from the Files app).", "O Android disse OK mas $instPkg não está no celular. Tente de novo (ou instale pelo app Arquivos)."))
+                            logError("install", "success status but package missing: $instPkg")
+                        } else {
+                            append(t, tr("installed ✔ ($instPkg)\n", "instalado ✔ ($instPkg)\n"))
+                            // right after installing, open the game in the TermWin window (floating window with root/Shizuku, normal app otherwise)
+                            if (packageManager.getLaunchIntentForPackage(instPkg) != null) openAsWindow(t, instPkg, instLabel)
+                            else append(t, tr("run the command again to open it\n", "rode o comando de novo para abrir\n"))
+                        }
+                    }
+                    android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                        append(t, tr("install cancelled\n", "instalação cancelada\n"))
                     }
                     else -> {
                         val m = i.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "status $st"
@@ -5018,7 +5052,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     }
 
     /** Installs base.apk + splits in one PackageInstaller session. */
-    private fun installSplits(t: TabData, pkg: String, label: String, files: List<File>) {
+    private fun installSplits(t: TabData, pkg: String, label: String, files: List<File>, single: Boolean = false) {
         if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
             append(t, tr("Allow TermWin to install apps, then run the command again.\n", "Permita o TermWin instalar apps e rode o comando de novo.\n"))
             try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) } catch (e: Exception) { }
@@ -5034,14 +5068,22 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                 params.setAppPackageName(pkg)
                 val sid = pi.createSession(params)
                 pi.openSession(sid).use { sess ->
-                    files.forEach { f ->
-                        f.inputStream().use { i -> sess.openWrite(f.name, 0, f.length()).use { o -> i.copyTo(o); sess.fsync(o) } }
+                    files.forEachIndexed { idx, f ->
+                        val nm = if (single) "base.apk" else (f.name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifEmpty { "part$idx.apk" })
+                        f.inputStream().use { i -> sess.openWrite(nm, 0, f.length()).use { o -> i.copyTo(o); sess.fsync(o) } }
                     }
                     val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
                     val pend = PendingIntent.getBroadcast(this, sid, Intent("com.termwin.INSTALL_RESULT").setPackage(packageName), flags)
                     sess.commit(pend.intentSender)
                 }
-            } catch (e: Exception) { ui.post { err(t, "install: ${e.message}") } }
+            } catch (e: Exception) {
+                logError("install", e.toString())
+                ui.post {
+                    err(t, "install: ${e.message}")
+                    // single APK: if the session failed, try the system installer screen instead
+                    if (single) installSingle(t, label, files[0])
+                }
+            }
         }
     }
 

@@ -160,6 +160,15 @@ body.sfs header,body.sfs .nv{display:none}
 #sp .logo{font-size:36px;animation:pop .7s cubic-bezier(.2,1.4,.4,1) both}
 #sp .logo img{width:64px;height:64px}
 @keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+.th u{position:absolute;left:0;bottom:0;height:3px;background:var(--r);text-decoration:none}
+.dt{position:absolute;top:50%;margin-top:-26px;padding:12px 18px;border-radius:30px;background:rgba(0,0,0,.6);font-weight:700;pointer-events:none;animation:dtf .5s forwards;z-index:3}
+.dt.l{left:10%}.dt.r{right:10%}
+@keyframes dtf{0%{opacity:0;transform:scale(.7)}30%{opacity:1;transform:scale(1)}100%{opacity:0}}
+.bf{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;border:4px solid rgba(255,255,255,.25);border-top-color:#ff4a5b;border-radius:50%;animation:spn .8s linear infinite;display:none;pointer-events:none;z-index:2}
+.bf.on{display:block}
+@keyframes spn{to{transform:rotate(360deg)}}
+.sep{flex:none;width:1px;background:var(--c2);margin:4px 2px}
+.tm .spd{font-weight:700;min-width:36px;text-align:center;border-radius:12px;background:rgba(255,255,255,.15);padding:4px 8px}
 @media(max-width:760px){.wp{flex-direction:column}.wr{width:auto}.rs .th{width:150px}}
 </style>
 </head>
@@ -174,10 +183,10 @@ body.sfs header,body.sfs .nv{display:none}
   <button class="pill" data-go="you"><span class="av" id="hav">?</span>Canal</button>
 </header>
 <div id="app">
-  <nav class="nv"><a data-go="home" class="on"><i data-i="home" data-z="22"></i>Início</a><a data-go="shv"><i data-i="bolt" data-z="22"></i>Shorts</a><a data-go="sbv"><i data-i="subs" data-z="22"></i>Inscrições</a><a data-go="pv"><i data-i="post" data-z="22"></i>Posts</a><a data-go="you"><i data-i="user" data-z="22"></i>Você</a></nav>
+  <nav class="nv"><a data-go="home" class="on"><i data-i="home" data-z="22"></i>Início</a><a data-go="shv"><i data-i="bolt" data-z="22"></i>Shorts</a><a data-go="sbv"><i data-i="subs" data-z="22"></i>Inscrições</a><a data-go="svv"><i data-i="save" data-z="22"></i>Salvos</a><a data-go="pv"><i data-i="post" data-z="22"></i>Posts</a><a data-go="you"><i data-i="user" data-z="22"></i>Você</a></nav>
   <main>
     <section class="v on" id="home"></section><section class="v" id="rs"></section><section class="v" id="wp"></section>
-    <section class="v" id="shv"></section><section class="v" id="sbv"></section><section class="v" id="ch"></section><section class="v" id="pv"></section>
+    <section class="v" id="shv"></section><section class="v" id="sbv"></section><section class="v" id="ch"></section><section class="v" id="pv"></section><section class="v" id="svv"></section>
     <div id="cp"><div class="cph"><span id="cpt">Comentários</span><button class="ib" data-a="cpx"><i data-i="close"></i></button></div><div id="cpl"></div><div class="cpi"><input id="cpin" placeholder="Adicione um comentário…" autocomplete="off"><button class="btn" data-a="cpsend">Enviar</button></div></div>
   </main>
 </div>
@@ -191,6 +200,15 @@ function ic(n,s){return'<svg viewBox="0 0 24 24" width="'+(s||20)+'" height="'+(
 function icons(){[].forEach.call(document.querySelectorAll('i[data-i]'),function(x){x.innerHTML=ic(x.getAttribute('data-i'),x.getAttribute('data-z'));x.removeAttribute('data-i')})}
 var noClk=0,sIx=0,sN=0,sH=0,shMute=false,cmId='',curId='',vids=[],subs=[],cs={},q='',chip='',cur='home',pr='home',chan=null,ctab='v',io=null,hid=0;
 function $(i){return document.getElementById(i)}
+var MEM={};var LS={get:function(k,d){try{var v=localStorage.getItem('tw_'+k);return v?JSON.parse(v):d}catch(x){return MEM[k]!==undefined?MEM[k]:d}},set:function(k,v){MEM[k]=v;try{localStorage.setItem('tw_'+k,JSON.stringify(v))}catch(x){}}};
+var saved=LS.get('saved',[]),pos=LS.get('pos',{}),auto=LS.get('auto',1),rate=LS.get('rate',1),sortM='new',lsT=0;
+function isSv(id){return saved.indexOf(id)>=0}
+function toggleSv(id){var i=saved.indexOf(id);if(i<0)saved.unshift(id);else saved.splice(i,1);LS.set('saved',saved);if(cur=='svv')rSaved();return i<0}
+function savePos(id,d){var n=Date.now();if(n-lsT<3000||!d.duration||d.currentTime<1)return;lsT=n;pos[id]={t:Math.floor(d.currentTime),ts:n};LS.set('pos',pos)}
+function prog(v){var p=pos[v.id];if(!p||!v.dur)return'';var w=Math.max(0,Math.min(100,p.t*1000/v.dur*100));return w>1?'<u style="width:'+w+'%"></u>':''}
+function flash(side,txt){var w=$('pw');if(!w)return;var f=document.createElement('div');f.className='dt '+side;f.textContent=txt;w.appendChild(f);setTimeout(function(){if(f.parentNode)f.parentNode.removeChild(f)},520)}
+function seekBy(sec){var d=$('vd');if(!d)return;d.currentTime=Math.max(0,Math.min(d.duration||1e9,d.currentTime+sec));flash(sec<0?'l':'r',(sec<0?'⏪ ':'')+Math.abs(sec)+'s'+(sec>0?' ⏩':''));ctl(1)}
+function rSaved(){var l=saved.map(get).filter(Boolean);$('svv').innerHTML='<div class="hd">'+ic('save',22)+'Salvos</div>'+(l.length?'<div class="gr" style="padding-top:12px">'+l.map(card).join('')+'</div>':'<div class="emp">Nada salvo ainda.<br>Toque em Salvar num vídeo ou Short para guardar aqui.</div>')}
 function e(t){return String(t).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function fmt(ms){var s=Math.max(0,Math.round(ms/1000)),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+':'+('0'+m).slice(-2):('0'+m).slice(-2))+':'+('0'+s%60).slice(-2)}
 function ago(t){var d=(Date.now()-t)/1000;if(d<60)return'agora há pouco';if(d<3600)return'há '+Math.floor(d/60)+' min';if(d<86400)return'há '+Math.floor(d/3600)+' h';return'há '+Math.floor(d/86400)+' dias'}
@@ -206,17 +224,18 @@ function gsign(){if(!gcid){tt('Login com Google ainda não foi ligado neste serv
 function im(v){return'<img loading="lazy" src="/t/'+encodeURIComponent(v.id)+'" alt="">'}
 function get(id){return vids.filter(function(x){return x.id==id})[0]}
 function sc(n){return cs[n.toLowerCase()]||0}
-function card(v){return'<div class="cd" data-id="'+e(v.id)+'"><div class="th">'+im(v)+'<i>'+fmt(v.dur)+'</i></div><div class="mt">'+av(v.channel)+'<div style="min-width:0"><div class="t">'+e(v.title)+'</div><div class="s"><span data-ch="'+e(v.channel)+'">'+e(v.channel)+'</span><br>'+nv(v.views)+' vis. • '+ago(v.ts)+'</div></div></div></div>'}
+function card(v){return'<div class="cd" data-id="'+e(v.id)+'"><div class="th">'+im(v)+'<i>'+fmt(v.dur)+'</i>'+prog(v)+'</div><div class="mt">'+av(v.channel)+'<div style="min-width:0"><div class="t">'+e(v.title)+'</div><div class="s"><span data-ch="'+e(v.channel)+'">'+e(v.channel)+'</span><br>'+nv(v.views)+' vis. • '+ago(v.ts)+'</div></div></div></div>'}
 function sct(v){return'<div class="sc" data-s="'+e(v.id)+'"><div class="th">'+im(v)+'</div><div class="t" style="margin-top:6px;font-size:13px">'+e(v.title)+'</div><div class="s">'+nv(v.views)+' vis.</div></div>'}
 function sbtn(n,nc){var on=subs.indexOf(n)>=0;return'<button class="sub'+(nc?' nc':'')+(on?' on':'')+'" data-sub="'+e(n)+'">'+(on?'Inscrito':'Inscrever-se')+(nc?'':' '+nv(sc(n)))+'</button>'}
 function show(n){if(cur=='wp'&&n!='wp')stopV();if(cur=='shv'&&n!='shv')stopS();cur=n;
-  ['home','rs','wp','shv','sbv','ch','pv'].forEach(function(x){$(x).className='v'+(x==n?' on':'')});
+  ['home','rs','wp','shv','sbv','ch','pv','svv'].forEach(function(x){$(x).className='v'+(x==n?' on':'')});
   document.body.classList.toggle('wt',n=='wp');document.body.classList.toggle('sh',n=='shv');
   var m=n=='ch'&&chan&&chan.own?'you':n;[].forEach.call(document.querySelectorAll('.nv a'),function(a){a.classList.toggle('on',a.getAttribute('data-go')==m)})}
-function go(x){q='';$('q').value='';if(x=='home'){rHome();show('home')}else if(x=='shv')openS();else if(x=='sbv'){rSubs();show('sbv')}else if(x=='pv'){rPosts();show('pv')}else you()}
-function rHome(){var l=vids.filter(function(v){return!v.short&&(!chip||v.channel==chip)}),s=vids.filter(function(v){return v.short}),cn=[];
+function go(x){q='';$('q').value='';if(x=='home'){rHome();show('home')}else if(x=='shv')openS();else if(x=='sbv'){rSubs();show('sbv')}else if(x=='pv'){rPosts();show('pv')}else if(x=='svv'){rSaved();show('svv')}else you()}
+function rHome(){var l=vids.filter(function(v){return!v.short&&(!chip||v.channel==chip)}).sort(function(a,b){return sortM=='top'?(b.views-a.views):(b.ts-a.ts)}),s=vids.filter(function(v){return v.short}),cn=[],cw=vids.filter(function(v){var p=pos[v.id];return!v.short&&p&&p.t>5&&v.dur&&p.t*1000<v.dur-5000}).sort(function(a,b){return pos[b.id].ts-pos[a.id].ts}).slice(0,10);
   vids.forEach(function(v){if(cn.indexOf(v.channel)<0)cn.push(v.channel)});
-  var h='<div class="chips"><button class="chip'+(chip?'':' on')+'" data-chip="">Tudo</button>'+cn.slice(0,12).map(function(c){return'<button class="chip'+(chip==c?' on':'')+'" data-chip="'+e(c)+'">'+e(c)+'</button>'}).join('')+'</div>';
+  var h='<div class="chips"><button class="chip'+(sortM=='new'?' on':'')+'" data-sort="new">Recentes</button><button class="chip'+(sortM=='top'?' on':'')+'" data-sort="top">Mais vistos</button><span class="sep"></span><button class="chip'+(chip?'':' on')+'" data-chip="">Tudo</button>'+cn.slice(0,12).map(function(c){return'<button class="chip'+(chip==c?' on':'')+'" data-chip="'+e(c)+'">'+e(c)+'</button>'}).join('')+'</div>';
+  if(cw.length&&!chip)h+='<div class="hd">'+ic('play',22)+'Continuar assistindo</div><div class="shl">'+cw.map(function(v){return'<div class="sc" style="width:200px" data-id="'+e(v.id)+'"><div class="th" style="aspect-ratio:16/9;border-radius:12px">'+im(v)+prog(v)+'</div><div class="t" style="margin-top:6px;font-size:13px">'+e(v.title)+'</div><div class="s">'+e(v.channel)+'</div></div>'}).join('')+'</div>';
   if(s.length&&!chip)h+='<div class="hd">'+ic('bolt',22)+'Shorts</div><div class="shl">'+s.map(sct).join('')+'</div>';
   h+=l.length?'<div class="gr">'+l.map(card).join('')+'</div>':(s.length?'':'<div class="emp">Ainda não há vídeos.<br><br><button class="btn" data-a="pub">Publicar o primeiro</button></div>');
   $('home').innerHTML=h}
@@ -232,18 +251,24 @@ function tgl(n){var i=subs.indexOf(n),on=i<0,k=n.toLowerCase();if(on)subs.push(n
 function badge(){var b=$('bdg');b.style.display=subs.length?'block':'none';b.textContent=subs.length}
 function openV(id){var v=get(id);if(!v)return;if(cur!='wp')pr=cur;curId=id;
   var rel=vids.filter(function(x){return x.id!=id}).sort(function(a,b){return(b.channel==v.channel)-(a.channel==v.channel)});
-  $('wp').innerHTML='<div class="wp"><div class="wl"><div class="pw show" id="pw"><video id="vd" playsinline></video><div class="pc" id="pc"><div class="mid"><button class="rb" data-a="rst">'+ic('prev',22)+'</button><button class="rb big" data-a="pp" id="pp">'+ic('pause',30)+'</button><button class="rb" data-a="nx">'+ic('next',22)+'</button></div><div class="bot"><div class="pg" id="pg"><i id="pgf"></i><b id="pgk"></b></div><div class="tm"><span id="t1">00:00</span><span class="sp"></span><button data-a="vol" id="vb">'+ic('vol')+'</button><span id="t2">-00:00</span><button data-a="fs">'+ic('full')+'</button></div></div></div></div>'+
-  '<div class="w1">'+e(v.title)+'</div><div class="row"><span class="s">'+nv(v.views+1)+' visualizações • '+ago(v.ts)+'</span><span class="sp"></span><button class="pl'+(v.my==1?' on':'')+'" data-a="like" id="bl">'+ic('like')+'<span>'+nv(v.likes)+'</span></button><button class="pl dis'+(v.my==-1?' on':'')+'" data-a="dis" id="bd">'+ic('like')+'<span>'+nv(v.dislikes)+'</span></button><button class="pl" data-a="share">'+ic('share')+'Compartilhar</button><button class="pl" data-a="save">'+ic('save')+'Salvar</button></div><div class="hr"></div>'+
+  $('wp').innerHTML='<div class="wp"><div class="wl"><div class="pw show" id="pw"><video id="vd" playsinline></video><div class="bf" id="bf"></div><div class="pc" id="pc"><div class="mid"><button class="rb" data-a="rst">'+ic('prev',22)+'</button><button class="rb big" data-a="pp" id="pp">'+ic('pause',30)+'</button><button class="rb" data-a="nx">'+ic('next',22)+'</button></div><div class="bot"><div class="pg" id="pg"><i id="pgf"></i><b id="pgk"></b></div><div class="tm"><span id="t1">00:00</span><span class="sp"></span><button data-a="spd" id="spb" class="spd">'+rate+'x</button><button data-a="vol" id="vb">'+ic('vol')+'</button><span id="t2">-00:00</span><button data-a="fs">'+ic('full')+'</button></div></div></div></div>'+
+  '<div class="w1">'+e(v.title)+'</div><div class="row"><span class="s">'+nv(v.views+1)+' visualizações • '+ago(v.ts)+'</span><span class="sp"></span><button class="pl'+(v.my==1?' on':'')+'" data-a="like" id="bl">'+ic('like')+'<span>'+nv(v.likes)+'</span></button><button class="pl dis'+(v.my==-1?' on':'')+'" data-a="dis" id="bd">'+ic('like')+'<span>'+nv(v.dislikes)+'</span></button><button class="pl" data-a="share">'+ic('share')+'Compartilhar</button><button class="pl'+(isSv(id)?' on':'')+'" data-a="save">'+ic('save')+(isSv(id)?'Salvo':'Salvar')+'</button><button class="pl'+(auto?' on':'')+'" data-a="auto">Auto ▶</button></div><div class="hr"></div>'+
   '<div class="row">'+av(v.channel)+'<div><div class="nm" data-ch="'+e(v.channel)+'">'+e(v.channel)+'</div><div class="s">'+v.channelVideos+' vídeos</div></div><span class="sp"></span>'+sbtn(v.channel)+'</div><div class="hr"></div><div class="hd" style="padding:0 0 8px;font-size:15px" id="wct">Comentários</div><div class="cpi" style="padding:0 0 10px"><input id="wcin" placeholder="Adicione um comentário…" autocomplete="off"><button class="btn" data-a="wcsend">Comentar</button></div><div id="wcl"></div><div class="hr"></div><button class="btn al" data-a="back">Voltar</button></div>'+
   '<div class="wr"><div class="hd" style="padding:0 0 10px;font-size:15px">Próximos</div>'+rel.map(function(x){return'<div class="rl" data-id="'+e(x.id)+'"><div class="th">'+im(x)+'<i>'+fmt(x.dur)+'</i></div><div style="min-width:0"><div class="t">'+e(x.title)+'</div><div class="s">'+e(x.channel)+'<br>'+nv(x.views)+' vis. • '+ago(x.ts)+'</div></div></div>'}).join('')+'</div></div>';
-  var d=$('vd'),pg=$('pg');d.src='/v/'+encodeURIComponent(id);
-  d.ontimeupdate=function(){var f=d.duration?d.currentTime/d.duration:0;$('pgf').style.width=f*100+'%';$('pgk').style.left=f*100+'%';$('t1').textContent=fmt(d.currentTime*1000);$('t2').textContent='-'+fmt(((d.duration||0)-d.currentTime)*1000)};
+  var d=$('vd'),pg=$('pg');d.src='/v/'+encodeURIComponent(id);d.playbackRate=rate;
+  d.ontimeupdate=function(){var f=d.duration?d.currentTime/d.duration:0;$('pgf').style.width=f*100+'%';$('pgk').style.left=f*100+'%';$('t1').textContent=fmt(d.currentTime*1000);$('t2').textContent='-'+fmt(((d.duration||0)-d.currentTime)*1000);savePos(id,d)};
   d.onplay=d.onpause=function(){$('pp').innerHTML=ic(d.paused?'play':'pause',30);ctl(1)};
-  d.onended=nxt;
+  d.onloadedmetadata=function(){d.playbackRate=rate;var h=pos[id];if(h&&h.t>5&&h.t<(d.duration||0)-5){d.currentTime=h.t;tt('Continuando de '+fmt(h.t*1000))}};
+  d.onwaiting=function(){$('bf').classList.add('on')};d.onplaying=d.oncanplay=function(){$('bf').classList.remove('on')};
+  d.onerror=function(){$('bf').classList.remove('on');tt('Não consegui carregar o vídeo')};
+  d.onended=function(){delete pos[id];LS.set('pos',pos);if(auto)nxt()};
   function seek(ev){var r=pg.getBoundingClientRect();d.currentTime=Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width))*(d.duration||0)}
   pg.onpointerdown=function(ev){try{pg.setPointerCapture(ev.pointerId)}catch(x){}seek(ev);pg.onpointermove=seek;ctl(1)};
   pg.onpointerup=pg.onpointercancel=function(){pg.onpointermove=null};
-  $('pc').onclick=function(ev){if(ev.target==$('pc'))ctl(2)};
+  var lastTap=0,tapT=0;
+  $('pc').onclick=function(ev){if(ev.target!=$('pc'))return;var n=Date.now(),r=$('pw').getBoundingClientRect(),x=(ev.clientX-r.left)/r.width;
+    if(n-lastTap<300){clearTimeout(tapT);lastTap=0;if(x<.4)seekBy(-10);else if(x>.6)seekBy(10);else{if(d.paused)d.play();else d.pause()}}
+    else{lastTap=n;tapT=setTimeout(function(){ctl(2)},300)}};
   var p=d.play();if(p&&p.catch)p.catch(function(){});
   fetch('/api/view/'+encodeURIComponent(id));v.views++;show('wp');$('wp').scrollTop=0;loadWc(id)}
 function ctl(m){var w=$('pw');if(!w)return;clearTimeout(hid);if(m==2&&w.classList.contains('show'))w.classList.remove('show');else w.classList.add('show');
@@ -265,7 +290,7 @@ function openS(id){var l=vids.filter(function(v){return v.short}),el=$('shv'),ix
     '<button data-a="dis" class="dis'+(v.my==-1?' on':'')+'"><b>'+ic('like',20)+'</b><span>Não gostei</span></button>'+
     '<button data-a="cmt"><b>'+ic('cmt',20)+'</b><span>Comentar</span></button>'+
     '<button data-a="share"><b>'+ic('share',20)+'</b><span>Enviar</span></button>'+
-    '<button data-a="save"><b>'+ic('save',20)+'</b><span>Salvar</span></button>'+
+    '<button data-a="save" class="'+(isSv(v.id)?'on':'')+'"><b>'+ic('save',20)+'</b><span>'+(isSv(v.id)?'Salvo':'Salvar')+'</span></button>'+
     '<button data-ch="'+e(v.channel)+'"><span class="avb" style="background:'+col(v.channel)+'">'+e(v.channel.charAt(0).toUpperCase())+'</span><span>Canal</span></button></div></section>'}).join('')+'</div>';
   sIx=ix;show('shv');setTimeout(lay,30)}
 function lay(){var el=$('shv'),t=$('trk');if(!t)return;sH=el.clientHeight;[].forEach.call(t.children,function(c){c.style.height=sH+'px'});sgo(sIx,true)}
@@ -346,7 +371,9 @@ function act(a,n){var id=(n&&n.getAttribute('data-sh'))||curId,d=$('vd');
   else if(a=='back')show(pr==cur?'home':pr);
   else if(a=='like')react(id,1,n);
   else if(a=='dis')react(id,-1,n);
-  else if(a=='save'){n.classList.toggle('on');var sp=n.lastChild;if(sp&&sp.tagName=='SPAN')sp.textContent=n.classList.contains('on')?'Salvo':'Salvar';else n.lastChild.textContent=n.classList.contains('on')?'Salvo':'Salvar'}
+  else if(a=='save'){var sv4=n.closest('.sv'),sid2=sv4?sv4.getAttribute('data-v'):id,on=toggleSv(sid2);n.classList.toggle('on',on);if(n.lastChild)n.lastChild.textContent=on?'Salvo':'Salvar';tt(on?'Salvo em Salvos':'Removido de Salvos')}
+  else if(a=='spd'){var R=[0.5,0.75,1,1.25,1.5,2];rate=R[(R.indexOf(rate)+1)%R.length];LS.set('rate',rate);if(d)d.playbackRate=rate;n.textContent=rate+'x';tt('Velocidade '+rate+'x');ctl(1)}
+  else if(a=='auto'){auto=auto?0:1;LS.set('auto',auto);n.classList.toggle('on',!!auto);tt(auto?'Reprodução automática ligada':'Reprodução automática desligada')}
   else if(a=='share'){var sv3=n.closest('.sv'),sid=sv3?sv3.getAttribute('data-v'):id,u=location.origin+'/#'+sid;try{navigator.clipboard.writeText(u)}catch(x){}tt('Link copiado')}
   else if(a=='pp'){if(d.paused)d.play();else d.pause()}
   else if(a=='rst'){d.currentTime=0;ctl(1)}
@@ -363,6 +390,7 @@ document.addEventListener('click',function(ev){var t=ev.target;
     if(A('data-sub')!=null){tgl(A('data-sub'));return}
     if(A('data-ch')!=null){openChannel(A('data-ch'));return}
     if(A('data-a')){act(A('data-a'),n);return}
+    if(A('data-sort')!=null){sortM=A('data-sort');rHome();return}
     if(A('data-chip')!=null){chip=A('data-chip');rHome();return}
     if(A('data-tab')){ctab=A('data-tab');rCh();return}
     if(A('data-go')){go(A('data-go'));return}
@@ -374,6 +402,13 @@ function load(){var j=function(u,f){return fetch(u).then(function(r){return r.js
   Promise.all([j('/api/videos',[]),j('/api/subs',[]),j('/api/chsubs',{}),j('/api/avatars',{})]).then(function(a){vids=a[0];subs=a[1];cs=a[2];pics=a[3]||{};
   var cn={};vids.forEach(function(v){cn[v.channel]=(cn[v.channel]||0)+1});vids.forEach(function(v){v.channelVideos=cn[v.channel]});badge();
   if(cur=='home')rHome();else if(cur=='sbv')rSubs();else if(cur=='rs')rRes();else if(cur=='shv'&&!$('shv').querySelector('.sv'))openS()})}
+document.addEventListener('keydown',function(ev){if(cur!='wp'||/INPUT|TEXTAREA/.test(document.activeElement.tagName)||!$('vd'))return;var d=$('vd'),k=ev.key;
+  if(k==' '||k=='k'){ev.preventDefault();if(d.paused)d.play();else d.pause();ctl(1)}
+  else if(k=='ArrowRight'){ev.preventDefault();seekBy(5)}else if(k=='ArrowLeft'){ev.preventDefault();seekBy(-5)}
+  else if(k=='l')seekBy(10);else if(k=='j')seekBy(-10);
+  else if(k=='m'){d.muted=!d.muted;var b=$('vb');if(b)b.innerHTML=ic(d.muted?'mute':'vol')}
+  else if(k=='f')$('pw').classList.toggle('fs');
+  else if(k=='Escape')$('pw').classList.remove('fs')});
 icons();
 fetch('/api/me').then(function(r){return r.json()}).then(function(m){gcid=m.clientId||'';if(gcid&&!window.TW)gload(ginit);if(m.name){if(m.pic){$('hav').textContent='';$('hav').style.background=pu(m.pic)}else{$('hav').textContent=m.name.charAt(0).toUpperCase();$('hav').style.background=col(m.name)}}}).catch(function(){});
 rHome();load();
