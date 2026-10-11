@@ -126,6 +126,30 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
 
 #fatal{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px;text-align:center;z-index:90;flex-direction:column;gap:10px}
 
+
+#rigger{position:fixed;inset:0;z-index:45;background:#fff;color:#222;display:none;flex-direction:column}
+#rigger.on{display:flex}
+#rgHead{height:44px;flex:none;display:flex;align-items:center;justify-content:center;position:relative;font-weight:700;font-size:12px;letter-spacing:.12em}
+#rgHead button{position:absolute;right:8px;top:6px;width:32px;height:32px;border:0;background:transparent;font-size:18px;color:#555}
+#rgStage{flex:1;min-height:0;position:relative;background:#9b9b9b;overflow:hidden;touch-action:none;--mk:30px}
+#rgStage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#rgAxis{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:#fff;pointer-events:none;z-index:2}
+#rgList{position:absolute;left:8px;bottom:8px;z-index:3;display:flex;flex-direction:column;pointer-events:none}
+.rgRow{display:flex;align-items:center;height:calc(var(--mk) + 10px);gap:6px}
+.rgRow b{width:86px;color:#fff;font-size:11px;letter-spacing:.04em;text-shadow:0 1px 2px rgba(0,0,0,.55)}
+.slot{width:var(--mk);height:var(--mk)}
+.mk{position:absolute;z-index:6;width:var(--mk);height:var(--mk);transform:translate(-50%,-50%);border:3px solid;border-radius:50%;background:rgba(255,255,255,.08);touch-action:none;box-sizing:border-box}
+.mk::after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.45)}
+.mk.drag{z-index:9;background:rgba(255,255,255,.22)}
+#rgTip{position:absolute;z-index:10;transform:translate(-50%,-150%);background:#222;color:#fff;font-size:11px;padding:3px 8px;border-radius:4px;pointer-events:none;white-space:nowrap}
+#rgHint{position:absolute;top:8px;left:50%;transform:translateX(-50%);max-width:92%;background:rgba(0,0,0,.45);color:#fff;font-size:11.5px;padding:4px 10px;border-radius:8px;pointer-events:none;z-index:4;text-align:center}
+#rgFoot{flex:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid #ddd;font-size:12.5px}
+#rgFoot .g{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#rgFoot label{display:flex;align-items:center;gap:5px;color:#333}
+#rgFoot select{width:auto;height:34px;background:#fff;color:#222;border:1px solid #c8c8c8;border-bottom-color:#c8c8c8;border-radius:4px}
+.rgb{height:34px;padding:0 14px;border:1px solid #c8c8c8;background:#f4f4f4;color:#333;border-radius:4px;font-weight:600;text-transform:uppercase;font-size:12px}
+.rgb.go{background:#ff7a1a;border-color:#ff7a1a;color:#fff}
+@media (max-height:480px){#rgStage{--mk:24px}.rgRow b{font-size:10px;width:70px}}
 @media (max-aspect-ratio:1/1){
   #mid{flex-direction:column}
   #rail{width:auto;flex-direction:row;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;overflow-y:hidden;padding:4px 8px}
@@ -154,7 +178,7 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
       <button class="tool" data-tool="move"><svg class="ic"><use href="#i-move"/></svg><span>Mover</span></button>
       <button class="tool" data-tool="rotate"><svg class="ic"><use href="#i-rotate"/></svg><span>Girar</span></button>
       <div class="sep"></div>
-      <button class="tool" data-act="addbone"><svg class="ic"><use href="#i-bone"/></svg><span>Osso</span></button>
+      <button class="tool" data-act="manual"><svg class="ic"><use href="#i-bone"/></svg><span>Manual</span></button>
       <button class="tool" data-act="autorig"><svg class="ic"><use href="#i-wand"/></svg><span>Auto Rig</span></button>
       <button class="tool" data-act="autotex"><svg class="ic"><use href="#i-image"/></svg><span>Texturas</span></button>
       <div class="sep"></div>
@@ -217,8 +241,12 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
         <div class="card"><h3>Esqueleto</h3>
           <div id="skelInfo" class="note">Abra um modelo.</div>
           <div class="row2" style="margin-top:8px" id="skelBtns">
-            <button class="btn" data-act="addbone"><svg class="ic sm"><use href="#i-bone"/></svg>Osso</button>
+            <button class="btn" data-act="manual"><svg class="ic sm"><use href="#i-bone"/></svg>Manual (2D)</button>
             <button class="btn primary" data-act="autorig"><svg class="ic sm"><use href="#i-wand"/></svg>Auto Rig</button>
+          </div>
+          <div class="row2" style="margin-top:6px" id="skelBtns2" hidden>
+            <button class="btn" data-act="reskin">Recalcular pesos</button>
+            <button class="btn" data-act="addbone2">+ Osso extra</button>
           </div>
           <button class="btn sub full" data-act="clearbones" style="margin-top:6px">Limpar ossos e rig</button>
         </div>
@@ -237,7 +265,7 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
             <div class="row2"><select id="clipSel"></select><button class="btn" data-act="playclip" id="playBtn" style="flex:none;min-width:84px">Tocar</button></div>
           </div>
         </div>
-        <p class="note warn">O Auto Rig calcula pesos aproximados pela distância aos ossos. Confira o resultado antes de exportar; não é um rig no padrão Mixamo.</p>
+        <p class="note warn">O Auto Rig acha queixo, punhos, cotovelos, joelhos e virilha pela malha (modelo humanoide de pé, de frente, braços abertos funciona melhor). Se errar, use Manual (2D) e arraste os marcadores. Os pesos são aproximados: confira antes de exportar.</p>
       </div>
     </aside>
   </div>
@@ -258,6 +286,16 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
   </div>
 </div></div>
 
+<div id="rigger">
+  <div id="rgHead">CRIADOR DE ESQUELETO<button data-act="rgback" aria-label="Fechar">✕</button></div>
+  <div id="rgStage"><div id="rgAxis"></div><div id="rgHint">Vista 2D travada · arraste cada círculo para o ponto certo do corpo</div><div id="rgList"></div><div id="rgTip" hidden></div></div>
+  <div id="rgFoot">
+    <button class="rgb" data-act="rgback">Voltar</button>
+    <div class="g"><label><input type="checkbox" id="rgSym" checked>Usar simetria</label>
+      <select id="rgLod"><option value="27">Esqueleto padrão (27)</option><option value="17">Esqueleto simples (17)</option></select>
+      <button class="rgb" data-act="rgsuggest">Sugerir</button><button class="rgb go" data-act="rgdone">Concluir</button></div>
+  </div>
+</div>
 <div id="toast"></div>
 <div id="loader"><div class="spin"></div><div id="loaderTxt">Carregando…</div></div>
 <div id="fatal"><svg class="ic" style="width:42px;height:42px;color:var(--warn)"><use href="#i-cube"/></svg><b style="font-size:16px">Não consegui carregar o motor 3D</b><span class="note" id="fatalMsg"></span><button class="btn primary" onclick="location.reload()">Tentar de novo</button></div>
@@ -329,8 +367,9 @@ const fill=new THREE.DirectionalLight(0x9fd8ff,.8);fill.position.set(-5,3,-4);sc
 const tc=new TransformControls(camera,renderer.domElement);tc.setSize(.9);scene.add(tc);
 tc.addEventListener('dragging-changed',e=>{controls.enabled=!e.value});
 const raycaster=new THREE.Raycaster();
-function resize(){const r=viewEl.getBoundingClientRect();const w=Math.max(2,r.width),h=Math.max(2,r.height);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false)}
-new ResizeObserver(resize).observe(viewEl);resize();
+var rgOn=false,rgResize=null;
+function resize(){const p=renderer.domElement.parentElement||viewEl,r=p.getBoundingClientRect();const w=Math.max(2,r.width),h=Math.max(2,r.height);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);if(rgOn&&rgResize)rgResize()}
+const ro=new ResizeObserver(resize);ro.observe(viewEl);ro.observe($('rgStage'));resize();
 
 /* ============ estado ============ */
 let model=null,folder='',file='',manifest=[],fileMap=new Map(),exact=new Set();
@@ -369,7 +408,7 @@ async function loadModel(f,rel){
     for(const it of list){const b=it.p.split('/').pop().toLowerCase();if(!fm.has(b))fm.set(b,it.p);ex.add(it.p.toLowerCase())}
     if(!ex.has(rel.toLowerCase()))throw new Error('arquivo não está na pasta do app: '+rel);
     // tudo certo: troca o estado
-    clearRig(true);clearBones(true);
+    clearRig(true);clearBones(true);rgPts=null;lastMk=null;
     if(mixer){mixer.stopAllAction();mixer=null}
     if(skelHelper){scene.remove(skelHelper);skelHelper=null}
     if(model){tc.detach();scene.remove(model);disposeObj(model);model=null}
@@ -408,7 +447,7 @@ async function loadModel(f,rel){
     await Promise.race([allDone,sleep(20000)]);
     model=obj;model.name=rel.split('/').pop();clips=anims;$('clipSel').innerHTML='';scene.add(model);
     analyze();fitModel();
-    if(hasSkel){skelHelper=new THREE.SkeletonHelper(model);skelHelper.material.depthTest=false;skelHelper.visible=$('showBones').checked;scene.add(skelHelper)}
+    if(hasSkel){skelHelper=new THREE.SkeletonHelper(model);skelHelper.material.depthTest=false;skelHelper.material.vertexColors=false;skelHelper.material.color.set(0x39e06b);skelHelper.material.needsUpdate=true;skelHelper.visible=$('showBones').checked;scene.add(skelHelper)}
     if(clips.length){mixer=new THREE.AnimationMixer(model)}
     if(mats.length===1)selMat=mats[0];
     busy(true,'Montando texturas…');
@@ -531,7 +570,7 @@ renderer.domElement.addEventListener('pointerup',e=>{
   if(mv<7&&dt<500&&!tc.dragging)pickAt(e);
 });
 function pickAt(e){
-  if(!model)return;
+  if(!model||rgOn)return;
   const r=renderer.domElement.getBoundingClientRect();
   raycaster.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1),camera);
   if(boneObjs.length){const h=raycaster.intersectObjects(boneObjs,false)[0];if(h){selectBone(h.object.userData.bone);setTab('skel');return}}
@@ -540,26 +579,37 @@ function pickAt(e){
   if(hit){selectMesh(hit.object,hit.face?hit.face.materialIndex:0)}
 }
 
-/* ============ ossos ============ */
+/* ============ ossos (exibição em linhas verdes) ============ */
+const GREEN=0x39e06b,GSEL=0xffe14d;
 const boneR=()=>Math.max(modelSize*.012,.005);
+const cylGeo=new THREE.CylinderGeometry(1,1,1,8,1,false);
+const cylMat=new THREE.MeshBasicMaterial({color:GREEN,depthTest:false,transparent:true,opacity:.95});
+const Y_UP=new THREE.Vector3(0,1,0);
 function rebuildBoneObjs(){
   boneObjs.forEach(o=>{scene.remove(o);o.geometry.dispose();o.material.dispose()});boneObjs=[];
-  if(boneLines){scene.remove(boneLines);boneLines.geometry.dispose();boneLines=null}
+  if(boneLines){scene.remove(boneLines);boneLines=null}
+  const vis=$('showBones').checked&&!rgOn;
   bones.forEach((b,i)=>{
-    const o=new THREE.Mesh(new THREE.SphereGeometry(boneR(),14,10),new THREE.MeshBasicMaterial({color:i===selBone?0x3ddc84:0x60cdff,depthTest:false,transparent:true}));
-    o.position.copy(b.position);o.renderOrder=999;o.userData.bone=i;o.visible=$('showBones').checked;scene.add(o);boneObjs.push(o);
+    const o=new THREE.Mesh(new THREE.SphereGeometry(boneR(),14,10),new THREE.MeshBasicMaterial({color:i===selBone?GSEL:GREEN,depthTest:false,transparent:true}));
+    o.position.copy(b.position);o.renderOrder=999;o.userData.bone=i;o.visible=vis;scene.add(o);boneObjs.push(o);
   });
-  boneLines=new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x60cdff,depthTest:false,transparent:true,opacity:.8}));
-  boneLines.renderOrder=998;boneLines.frustumCulled=false;boneLines.visible=$('showBones').checked;scene.add(boneLines);
-  updateLines();attachGizmo();renderSkelTab();
+  boneLines=new THREE.Group();boneLines.visible=vis;
+  bones.forEach(b=>{if(b.parent){const c=new THREE.Mesh(cylGeo,cylMat);c.renderOrder=998;c.frustumCulled=false;boneLines.add(c)}});
+  scene.add(boneLines);updateLines();attachGizmo();renderSkelTab();
 }
 function updateLines(){
-  if(!boneLines)return;const p=[];
-  bones.forEach(b=>{if(b.parent)p.push(b.parent.position.x,b.parent.position.y,b.parent.position.z,b.position.x,b.position.y,b.position.z)});
-  boneLines.geometry.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
+  if(!boneLines)return;let k=0;const a=new THREE.Vector3(),b=new THREE.Vector3(),d=new THREE.Vector3(),r=boneR()*.35;
+  bones.forEach((bn,i)=>{
+    if(!bn.parent)return;const pi=bones.indexOf(bn.parent),c=boneLines.children[k++];
+    if(!c||!boneObjs[i]||!boneObjs[pi])return;
+    a.copy(boneObjs[pi].position);b.copy(boneObjs[i].position);d.subVectors(b,a);const len=d.length();
+    if(len<1e-6){c.visible=false;return}
+    c.visible=true;c.position.copy(a).addScaledVector(d,.5);c.quaternion.setFromUnitVectors(Y_UP,d.divideScalar(len));c.scale.set(r,len,r);
+  });
 }
+function syncBoneObjs(){bones.forEach((b,i)=>{if(boneObjs[i])boneObjs[i].position.copy(b.position)});updateLines()}
 function attachGizmo(){
-  tc.detach();if(tool==='orbit')return;
+  tc.detach();if(tool==='orbit'||rgOn)return;
   if(hasSkel){if(selReal){tc.setMode(tool==='rotate'?'rotate':'translate');tc.attach(selReal)}return}
   if(selBone>=0&&boneObjs[selBone]){tc.setMode('translate');tc.attach(boneObjs[selBone])}
 }
@@ -569,7 +619,7 @@ tc.addEventListener('objectChange',()=>{
 });
 function selectBone(i){
   if(hasSkel){selReal=realBones[i]||null;selBone=i}else{selBone=i;selReal=null}
-  boneObjs.forEach((o,k)=>o.material.color.set(k===selBone?0x3ddc84:0x60cdff));
+  boneObjs.forEach((o,k)=>o.material.color.set(k===selBone?GSEL:GREEN));
   attachGizmo();syncFields();renderSkelTab();
 }
 function syncFields(){
@@ -591,7 +641,7 @@ function addBone(){
   const parent=bones.length?bones[selBone>=0?selBone:bones.length-1]:null;
   const pos=parent?parent.position.clone().add(new THREE.Vector3(0,modelSize*.08,0)):new THREE.Vector3(0,modelH*.5,0);
   bones.push({name:'Osso_'+(bones.length+1),position:pos,parent});selBone=bones.length-1;
-  setTool('move');rebuildBoneObjs();setTab('skel');toast('Osso adicionado — arraste a esfera para posicionar');
+  setTool('move');rebuildBoneObjs();setTab('skel');toast('Osso adicionado — arraste a esfera e toque em Recalcular pesos');
 }
 function clearBones(silent){
   bones=[];selBone=-1;selReal=null;clearRig(silent);rebuildBoneObjs();
@@ -603,17 +653,109 @@ function clearRig(silent){
   rigBones=[];if(model)model.visible=true;
   if(!silent&&model)afterChange();
 }
-function defaultBones(){
-  const box=new THREE.Box3().setFromObject(model),h=box.max.y-box.min.y,c=box.getCenter(new THREE.Vector3());
-  const P=(fx,fy)=>new THREE.Vector3(c.x+fx*h,box.min.y+fy*h,c.z);
-  const spec=[['Hips',0,.52,null],['Spine',0,.60,'Hips'],['Chest',0,.71,'Spine'],['Neck',0,.84,'Chest'],['Head',0,.90,'Neck'],
-    ['LeftArm',.10,.80,'Chest'],['LeftForeArm',.22,.80,'LeftArm'],['LeftHand',.34,.80,'LeftForeArm'],
-    ['RightArm',-.10,.80,'Chest'],['RightForeArm',-.22,.80,'RightArm'],['RightHand',-.34,.80,'RightForeArm'],
-    ['LeftUpLeg',.06,.50,'Hips'],['LeftLeg',.06,.27,'LeftUpLeg'],['LeftFoot',.06,.04,'LeftLeg'],
-    ['RightUpLeg',-.06,.50,'Hips'],['RightLeg',-.06,.27,'RightUpLeg'],['RightFoot',-.06,.04,'RightLeg']];
-  bones=[];spec.forEach(s=>bones.push({name:s[0],position:P(s[1],s[2]),parent:bones.find(b=>b.name===s[3])||null}));
+
+/* ============ detecção do corpo ============ */
+let rgPts=null,rgZc=0,lastMk=null;
+function samplePts(){
+  const out=[];model.updateMatrixWorld(true);const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
+  const bb0=new THREE.Box3().setFromObject(model),h0=(bb0.max.y-bb0.min.y)||1,step=h0/200,CAP=2000000;
+  model.traverse(n=>{
+    if(!n.isMesh||!n.geometry||!n.geometry.attributes.position)return;
+    const p=n.geometry.attributes.position,ix=n.geometry.index,tc=ix?ix.count/3:p.count/3,st=Math.max(1,Math.ceil(tc/60000)),M=n.matrixWorld;
+    for(let t=0;t<tc;t+=st){
+      const i0=ix?ix.getX(t*3):t*3,i1=ix?ix.getX(t*3+1):t*3+1,i2=ix?ix.getX(t*3+2):t*3+2;
+      a.fromBufferAttribute(p,i0).applyMatrix4(M);b.fromBufferAttribute(p,i1).applyMatrix4(M);c.fromBufferAttribute(p,i2).applyMatrix4(M);
+      const me=Math.max(a.distanceTo(b),b.distanceTo(c),c.distanceTo(a));
+      const k=out.length>CAP*3?1:Math.min(24,Math.max(1,Math.ceil(me/step)));
+      for(let i=0;i<=k;i++)for(let j=0;j<=k-i;j++){
+        const u=i/k,w=j/k,r=1-u-w;
+        out.push(a.x*r+b.x*u+c.x*w,a.y*r+b.y*u+c.y*w,a.z*r+b.z*u+c.z*w);
+      }
+    }
+  });
+  if(!out.length)throw new Error('o modelo não tem malha');
+  const P=Float32Array.from(out);let z=0;for(let i=2;i<P.length;i+=3)z+=P[i];rgZc=z/(P.length/3);return P;
 }
-function segDist(p,a,b){const ab=b.clone().sub(a),l2=ab.lengthSq();if(l2<1e-12)return p.distanceTo(a);const t=Math.max(0,Math.min(1,p.clone().sub(a).dot(ab)/l2));return p.distanceTo(a.clone().addScaledVector(ab,t))}
+function rgDepth(x,y,H){
+  const P=rgPts,ty=H*.02,tx=H*.035;let mn=1e9,mx=-1e9;
+  for(let i=0;i<P.length;i+=3){if(Math.abs(P[i+1]-y)<ty&&Math.abs(P[i]-x)<tx){const z=P[i+2];if(z<mn)mn=z;if(z>mx)mx=z}}
+  return mx<mn?rgZc:(mn+mx)/2;
+}
+function footFront(x,H,minY,ref,fz){
+  const P=rgPts;let mn=1e9,mx=-1e9;
+  for(let i=0;i<P.length;i+=3){if(P[i+1]<minY+.06*H&&Math.abs(P[i]-x)<.06*H){const z=P[i+2];if(z<mn)mn=z;if(z>mx)mx=z}}
+  if(mx<mn)return fz+.1*H;return (mx-ref>ref-mn)?mx:mn;
+}
+function detectMarkers(){
+  const P=rgPts;let minY=1e9,maxY=-1e9;
+  for(let i=1;i<P.length;i+=3){const y=P[i];if(y<minY)minY=y;if(y>maxY)maxY=y}
+  const H=maxY-minY||1,N=120,mn=new Float32Array(N).fill(1e9),mx=new Float32Array(N).fill(-1e9);
+  const cnt=new Uint32Array(N),lmin=new Float32Array(N).fill(1e9),rmax=new Float32Array(N).fill(-1e9),bw=H*.025;
+  for(let i=0;i<P.length;i+=3){
+    const x=P[i],s=Math.min(N-1,Math.max(0,((P[i+1]-minY)/H*N)|0));
+    cnt[s]++;if(x<mn[s])mn[s]=x;if(x>mx[s])mx[s]=x;
+    if(x>0){if(x<lmin[s])lmin[s]=x}else if(x>rmax[s])rmax[s]=x;
+  }
+  const Y=s=>minY+(s+.5)/N*H;
+  // pescoço = fatia mais estreita entre 78% e 95% da altura
+  let ns=-1,nw=1e9;
+  for(let s=Math.floor(N*.78);s<=Math.floor(N*.95);s++){if(cnt[s]<3)continue;const w=mx[s]-mn[s];if(w<nw){nw=w;ns=s}}
+  const neckY=ns<0?minY+.86*H:Y(ns),chinY=neckY+.015*H;
+  // virilha = onde as pernas se separam (de cima para baixo)
+  let gy=minY+.47*H;const g=.012*H;
+  for(let s=Math.floor(N*.55),run=0,first=-1;s>=Math.floor(N*.3);s--){
+    if(cnt[s]<3)continue;
+    if(lmin[s]<1e8&&rmax[s]>-1e8&&lmin[s]>g&&rmax[s]<-g){if(!run)first=s;if(++run>=2){gy=minY+(first+1)/N*H;break}}else run=0;
+  }
+  gy=Math.max(minY+.35*H,Math.min(minY+.55*H,gy));
+  // braços: ponta da mão = maior |x| acima de 40% da altura
+  let pxm=0,nxm=0;
+  for(let i=0;i<P.length;i+=3){if(P[i+1]>minY+.4*H){if(P[i]>pxm)pxm=P[i];if(P[i]<nxm)nxm=P[i]}}
+  const tx=Math.max((pxm-nxm)/2,.15*H);let sy=0,sc=0;
+  for(let i=0;i<P.length;i+=3){if(P[i+1]>minY+.4*H&&Math.abs(P[i])>tx*.92){sy+=P[i+1];sc++}}
+  const ty=sc?sy/sc:neckY-.045*H,sx=.1*H,shy=neckY-.045*H;
+  const L=Math.hypot(tx-sx,ty-shy)||1,hl=Math.min(.11*H,.25*L),ux=(tx-sx)/L,uy=(ty-shy)/L;
+  const wx=tx-ux*hl,wy=ty-uy*hl,ex=sx+(wx-sx)*.5,ey=shy+(wy-shy)*.5;
+  // joelhos: centro de cada perna na altura do joelho
+  const ky=minY+(gy-minY)*.58;let kl=0,kc=0,kr=0,kn=0;
+  for(let i=0;i<P.length;i+=3){if(Math.abs(P[i+1]-ky)<.02*H){const x=P[i];if(x>bw){kl+=x;kc++}else if(x<-bw){kr+=x;kn++}}}
+  const kLx=kc?kl/kc:.06*H,kRx=kn?kr/kn:-.06*H;
+  const m={chin:{x:0,y:chinY},groin:{x:0,y:gy},wL:{x:wx,y:wy},wR:{x:-wx,y:wy},eL:{x:ex,y:ey},eR:{x:-ex,y:ey},kL:{x:kLx,y:ky},kR:{x:kRx,y:ky}};
+  for(const k in m)if(!isFinite(m[k].x)||!isFinite(m[k].y))throw new Error('não consegui medir o corpo do modelo');
+  return m;
+}
+function normMk(m){
+  const o={};for(const k in m)o[k]={x:m[k].x,y:m[k].y};
+  ['w','e','k'].forEach(c=>{if(o[c+'L'].x<o[c+'R'].x){const t=o[c+'L'];o[c+'L']=o[c+'R'];o[c+'R']=t}});
+  return o;
+}
+function skelFromMarkers(m0,lod){
+  const m=normMk(m0),bb=new THREE.Box3().setFromObject(model),H=bb.max.y-bb.min.y,minY=bb.min.y,maxY=bb.max.y;
+  const Z=(x,y)=>rgDepth(x,y,H),V=(x,y,z)=>new THREE.Vector3(x,y,z===undefined?Z(x,y):z);
+  const gy=m.groin.y,cy=m.chin.y,T=cy-gy,spec=[];
+  if(!(T>H*.1))throw new Error('queixo precisa ficar acima da virilha');
+  const add=(n,v,p)=>spec.push([n,v,p||null]);
+  add('Hips',V(0,gy+.12*T));add('Spine',V(0,gy+.3*T),'Hips');add('Spine1',V(0,gy+.5*T),'Spine');add('Spine2',V(0,gy+.7*T),'Spine1');
+  add('Neck',V(0,gy+.88*T),'Spine2');add('Head',V(0,cy),'Neck');add('Head_End',V(0,maxY),'Head');
+  [['Left','L',1],['Right','R',-1]].forEach(([nm,c,sg])=>{
+    const W=m['w'+c],E=m['e'+c],K=m['k'+c],dx=W.x-E.x,dy=W.y-E.y;
+    const ax=sg*Math.max(Math.abs(E.x-dx*.97),.04*H),ay=Math.min(E.y-dy*.97,cy);
+    add(nm+'Shoulder',V(ax*.3,ay),'Spine2');add(nm+'Arm',V(ax,ay),nm+'Shoulder');add(nm+'ForeArm',V(E.x,E.y),nm+'Arm');
+    add(nm+'Hand',V(W.x,W.y),nm+'ForeArm');add(nm+'Hand_End',V(W.x+dx*.45,W.y+dy*.45),nm+'Hand');
+    const kx=K.x,ank=minY+.042*H,fz0=Z(kx,ank),fz=footFront(kx,H,minY,Z(kx,K.y),fz0);
+    add(nm+'UpLeg',V(kx,gy+.035*H),'Hips');add(nm+'Leg',V(kx,K.y),nm+'UpLeg');add(nm+'Foot',V(kx,ank,fz0),nm+'Leg');
+    add(nm+'ToeBase',V(kx,minY+.014*H,fz0+(fz-fz0)*.55),nm+'Foot');add(nm+'Toe_End',V(kx,minY+.008*H,fz),nm+'ToeBase');
+  });
+  const dropRe=lod==='17'?/^(Spine1|Head_End|(Left|Right)(Shoulder|Hand_End|Toe_End|ToeBase))$/:null,drop={has:n=>!!dropRe&&dropRe.test(n)};
+  const par={};spec.forEach(q=>{par[q[0]]=q[2]});const out=[],by={};
+  spec.forEach(([n,v,p])=>{
+    if(drop.has(n))return;let pp=p;while(pp&&drop.has(pp))pp=par[pp];
+    const b={name:n,position:v,parent:pp?by[pp]:null};by[n]=b;out.push(b);
+  });
+  return out;
+}
+
+/* ============ rig: pesos da pele ============ */
 function buildRig(){
   clearRig(true);
   rigRoot=new THREE.Group();rigRoot.name='TermWin_Rig';scene.add(rigRoot);
@@ -622,15 +764,31 @@ function buildRig(){
   bones.forEach(b=>{const bn=map.get(b);if(b.parent){bn.position.copy(b.position).sub(b.parent.position);map.get(b.parent).add(bn)}else{bn.position.copy(b.position);rigRoot.add(bn)}});
   rigRoot.updateMatrixWorld(true);
   const skeleton=new THREE.Skeleton(rigBones);
+  // cada osso comanda o trecho entre ele e seus filhos
+  const kids=bones.map(()=>[]);bones.forEach(b=>{if(b.parent)kids[bones.indexOf(b.parent)].push(b)});
+  const S=[];
+  bones.forEach((b,i)=>{
+    const side=/^left/i.test(b.name)?1:/^right/i.test(b.name)?-1:0,ends=kids[i].length?kids[i].map(k=>k.position):[b.position];
+    ends.forEach(e=>{const ax=b.position.x,ay=b.position.y,az=b.position.z,dx=e.x-ax,dy=e.y-ay,dz=e.z-az;S.push({i,side,ax,ay,az,dx,dy,dz,l2:dx*dx+dy*dy+dz*dz})});
+  });
+  const nb=bones.length,eps=Math.max(modelH*.01,1e-4),sideEps=modelH*.015,dist=new Float32Array(nb);
   const srcs=[];model.updateMatrixWorld(true);model.traverse(n=>{if(n.isMesh&&n.geometry&&n.geometry.attributes&&n.geometry.attributes.position)srcs.push(n)});
   const v=new THREE.Vector3();
   srcs.forEach(src=>{
     const geo=src.geometry.clone(),pos=geo.attributes.position,idx=new Uint16Array(pos.count*4),wt=new Float32Array(pos.count*4);
     for(let i=0;i<pos.count;i++){
-      v.fromBufferAttribute(pos,i).applyMatrix4(src.matrixWorld);
-      const near=bones.map((b,j)=>({j,d:Math.max(1e-4,b.parent?segDist(v,b.parent.position,b.position):v.distanceTo(b.position))})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,bones.length));
-      let sum=0;near.forEach((q,k)=>{idx[i*4+k]=q.j;const w=1/(q.d*q.d);wt[i*4+k]=w;sum+=w});
-      for(let k=0;k<4;k++)wt[i*4+k]=sum?wt[i*4+k]/sum:0;
+      v.fromBufferAttribute(pos,i).applyMatrix4(src.matrixWorld);dist.fill(1e9);
+      for(let q=0;q<S.length;q++){
+        const s=S[q];if(s.side&&Math.abs(v.x)>sideEps&&(v.x>0)!==(s.side>0))continue;
+        let t=0;if(s.l2>1e-12){t=((v.x-s.ax)*s.dx+(v.y-s.ay)*s.dy+(v.z-s.az)*s.dz)/s.l2;t=t<0?0:t>1?1:t}
+        const px=s.ax+s.dx*t-v.x,py=s.ay+s.dy*t-v.y,pz=s.az+s.dz*t-v.z,d=Math.sqrt(px*px+py*py+pz*pz);
+        if(d<dist[s.i])dist[s.i]=d;
+      }
+      const bi=[-1,-1,-1,-1],bd=[1e9,1e9,1e9,1e9];
+      for(let j=0;j<nb;j++){const d=dist[j];if(d>=bd[3])continue;let k=3;while(k>0&&d<bd[k-1]){bd[k]=bd[k-1];bi[k]=bi[k-1];k--}bd[k]=d;bi[k]=j}
+      let sum=0;
+      for(let k=0;k<4;k++){if(bi[k]>=0){const w=1/((bd[k]+eps)*(bd[k]+eps));idx[i*4+k]=bi[k];wt[i*4+k]=w;sum+=w}}
+      if(!sum){idx[i*4]=0;wt[i*4]=1}else for(let k=0;k<4;k++)wt[i*4+k]/=sum;
     }
     geo.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(idx,4));geo.setAttribute('skinWeight',new THREE.Float32BufferAttribute(wt,4));
     const mat=Array.isArray(src.material)?src.material.map(m=>m.clone()):src.material.clone();
@@ -640,18 +798,121 @@ function buildRig(){
   });
   model.visible=false;if(wire)applyWire();
 }
+function makeSkeleton(m,how){
+  busy(true,'Criando esqueleto e pesos…');
+  setTimeout(()=>{
+    try{
+      if(!rgPts)rgPts=samplePts();
+      bones=skelFromMarkers(m,$('rgLod').value);selBone=0;selReal=null;
+      buildRig();rebuildBoneObjs();setTab('skel');setTool('orbit');
+      toast(`Esqueleto ${how} criado — ${bones.length} ossos (linhas verdes dentro do personagem)`,'ok');
+    }catch(e){console.error(e);toast('Falha ao criar esqueleto: '+(e&&e.message||e),'err')}
+    busy(false);afterChange();
+  },40);
+}
 function autoRig(){
   if(!model){toast('Abra um modelo primeiro','warn');return}
   if(hasSkel){toast('Este modelo já tem esqueleto — não precisa de Auto Rig','warn');setTab('skel');return}
-  busy(true,'Calculando pesos da pele…');
+  busy(true,'Analisando o corpo do modelo…');
   setTimeout(()=>{
-    try{
-      if(!bones.length){defaultBones();selBone=0}
-      buildRig();rebuildBoneObjs();setTab('skel');
-      toast('Rig criado. Ajuste os ossos e toque em Auto Rig de novo para reaplicar os pesos.','ok');
-    }catch(e){console.error(e);toast('Falha no Auto Rig: '+e.message,'err')}
-    busy(false);afterChange();
+    try{rgPts=samplePts();lastMk=detectMarkers();makeSkeleton(lastMk,'automático')}
+    catch(e){console.error(e);busy(false);toast('Auto Rig falhou: '+(e&&e.message||e)+' — use Manual (2D)','err')}
   },40);
+}
+function reskin(){
+  if(!model||!bones.length){toast('Crie o esqueleto primeiro (Manual ou Auto Rig)','warn');return}
+  busy(true,'Recalculando pesos…');
+  setTimeout(()=>{try{buildRig();toast('Pesos recalculados','ok')}catch(e){console.error(e);toast('Falha: '+e.message,'err')}busy(false);afterChange()},40);
+}
+
+/* ============ criador 2D (marcadores, vista travada) ============ */
+const rgCam=new THREE.OrthographicCamera(-1,1,1,-1,.01,100);let activeCam=camera,rgSave=null,rgDrag=null;
+const rgMk={},rgEl={};
+const MKD=[['chin','Queixo','#22d3d8',0,null],['wL','Punho esquerdo','#a6d933',1,'wR'],['wR','Punho direito','#a6d933',1,'wL'],
+  ['eL','Cotovelo esquerdo','#f4dc4a',2,'eR'],['eR','Cotovelo direito','#f4dc4a',2,'eL'],
+  ['kL','Joelho esquerdo','#f59a23',3,'kR'],['kR','Joelho direito','#f59a23',3,'kL'],['groin','Virilha','#ee6b9a',4,null]];
+const RGROWS=['QUEIXO','PUNHOS','COTOVELOS','JOELHOS','VIRILHA'];
+const rgRect=()=>$('rgStage').getBoundingClientRect();
+const rgPos=(el,x,y)=>{el.style.left=x+'px';el.style.top=y+'px'};
+function rgAxisPx(){const r=rgRect();return (new THREE.Vector3(0,0,0).project(rgCam).x+1)/2*r.width}
+function rgWorld(px,py){const r=rgRect(),v=new THREE.Vector3(px/r.width*2-1,-(py/r.height)*2+1,0).unproject(rgCam);return{x:v.x,y:v.y}}
+function rgOverList(px,py){const l=$('rgList').getBoundingClientRect(),r=rgRect();return px<l.right-r.left+8&&py>l.top-r.top-4}
+function rgFit(){
+  const r=rgRect(),W=r.width,H=r.height;if(W<2||H<2||!model)return;
+  const bb=new THREE.Box3().setFromObject(model),w=bb.max.x-bb.min.x,h=bb.max.y-bb.min.y,cy=(bb.max.y+bb.min.y)/2;
+  const halfH=Math.max(h*.56,w*.56*H/W),halfW=halfH*W/H;
+  rgCam.left=-halfW;rgCam.right=halfW;rgCam.top=halfH;rgCam.bottom=-halfH;rgCam.near=.01;rgCam.far=modelSize*20;
+  rgCam.position.set(0,cy,modelSize*6);rgCam.lookAt(0,cy,0);rgCam.updateProjectionMatrix();rgCam.updateMatrixWorld(true);
+}
+function rgPlaceAll(){
+  const r=rgRect(),W=r.width,H=r.height;$('rgAxis').style.left=rgAxisPx()+'px';
+  MKD.forEach(d=>{
+    const id=d[0],m=rgMk[id],el=rgEl[id];
+    if(m.placed){const v=new THREE.Vector3(m.x,m.y,0).project(rgCam);rgPos(el,(v.x+1)/2*W,(1-v.y)/2*H)}
+    else{const s=$('slot-'+id).getBoundingClientRect();rgPos(el,s.left-r.left+s.width/2,s.top-r.top+s.height/2)}
+  });
+}
+rgResize=()=>{rgFit();rgPlaceAll()};
+function rgSet(id,x,y){
+  const d=MKD.find(q=>q[0]===id);if(!d[4])x=0;rgMk[id]={placed:true,x,y};
+  if(d[4]&&$('rgSym').checked)rgMk[d[4]]={placed:true,x:-x,y};
+}
+function rgMove(e){
+  const r=rgRect(),px=e.clientX-r.left,py=e.clientY-r.top,id=rgDrag,d=MKD.find(q=>q[0]===id);
+  rgPos(rgEl[id],px,py);const t=$('rgTip');t.hidden=false;t.textContent=d[1];rgPos(t,px,py);
+  if(d[4]&&$('rgSym').checked&&!rgOverList(px,py))rgPos(rgEl[d[4]],2*rgAxisPx()-px,py);
+}
+function rgDrop(id,e){
+  const r=rgRect(),px=e.clientX-r.left,py=e.clientY-r.top,d=MKD.find(q=>q[0]===id);
+  if(rgOverList(px,py)){rgMk[id].placed=false;if(d[4]&&$('rgSym').checked)rgMk[d[4]].placed=false}
+  else{const w=rgWorld(px,py);rgSet(id,w.x,w.y)}
+  rgPlaceAll();$('rgTip').hidden=true;
+}
+function rgBuild(){
+  const list=$('rgList'),st=$('rgStage');
+  RGROWS.forEach((t,r)=>{
+    const row=document.createElement('div');row.className='rgRow';row.innerHTML=`<b>${t}</b>`;
+    MKD.filter(d=>d[3]===r).forEach(d=>{const s=document.createElement('div');s.className='slot';s.id='slot-'+d[0];row.appendChild(s)});list.appendChild(row);
+  });
+  MKD.forEach(d=>{
+    const id=d[0],el=document.createElement('div');el.className='mk';el.style.borderColor=d[2];st.appendChild(el);rgEl[id]=el;rgMk[id]={placed:false,x:0,y:0};
+    el.addEventListener('pointerdown',e=>{e.preventDefault();el.setPointerCapture(e.pointerId);rgDrag=id;el.classList.add('drag');rgMove(e)});
+    el.addEventListener('pointermove',e=>{if(rgDrag===id)rgMove(e)});
+    const up=e=>{if(rgDrag!==id)return;rgDrag=null;el.classList.remove('drag');rgDrop(id,e)};
+    el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+  });
+}
+rgBuild();
+function openRigger(){
+  if(!model){toast('Abra um modelo primeiro','warn');return}
+  if(hasSkel){toast('Este modelo já tem esqueleto — selecione um osso na lista e use Mover/Girar','warn');setTab('skel');return}
+  try{rgPts=samplePts()}catch(e){toast('Não consegui ler a malha: '+e.message,'err');return}
+  walk=false;$('walk').checked=false;rigBones.forEach(b=>b.rotation.set(0,0,0));
+  tc.detach();rgSave={ctl:controls.enabled};rgOn=true;
+  MKD.forEach(d=>{const k=d[0];rgMk[k]=lastMk?{placed:true,x:lastMk[k].x,y:lastMk[k].y}:{placed:false,x:0,y:0}});
+  $('rgStage').appendChild(renderer.domElement);$('rigger').classList.add('on');
+  scene.background=new THREE.Color(0x9b9b9b);if(grid)grid.visible=false;controls.enabled=false;activeCam=rgCam;
+  boneObjs.forEach(o=>o.visible=false);if(boneLines)boneLines.visible=false;if(selBox)selBox.visible=false;
+  requestAnimationFrame(()=>{resize();rgFit();rgPlaceAll()});
+}
+function closeRigger(){
+  if(!rgOn)return;
+  rgOn=false;$('rigger').classList.remove('on');viewEl.appendChild(renderer.domElement);
+  activeCam=camera;scene.background=new THREE.Color(BGS[bgIdx]);if(grid)grid.visible=gridOn;controls.enabled=true;
+  const on=$('showBones').checked;boneObjs.forEach(o=>o.visible=on);if(boneLines)boneLines.visible=on;if(selBox)selBox.visible=true;
+  requestAnimationFrame(resize);
+}
+function rgSuggest(){
+  try{
+    if(!rgPts)rgPts=samplePts();const m=detectMarkers();
+    MKD.forEach(d=>{rgMk[d[0]]={placed:true,x:m[d[0]].x,y:m[d[0]].y}});rgPlaceAll();toast('Marcadores sugeridos — ajuste se precisar');
+  }catch(e){toast('Não consegui sugerir: '+(e&&e.message||e),'err')}
+}
+function rgDone(){
+  const miss=MKD.filter(d=>!rgMk[d[0]].placed).length;
+  if(miss){toast(`Falta posicionar ${miss} marcador(es)`,'warn');return}
+  const m={};MKD.forEach(d=>{m[d[0]]={x:rgMk[d[0]].x,y:rgMk[d[0]].y}});
+  lastMk=m;closeRigger();makeSkeleton(m,'manual');
 }
 
 /* ============ ferramentas / painéis ============ */
@@ -703,11 +964,12 @@ function renderSkelTab(listOnly){
   const info=$('skelInfo');
   if(!model){info.textContent='Abra um modelo.';$('boneList').innerHTML='';$('boneCount').textContent='';$('boneEdit').hidden=true;return}
   const sb=$('skelBtns');
+  const sb2=$('skelBtns2');
   if(hasSkel){
-    info.innerHTML=`Este modelo <b style="color:var(--green)">já tem esqueleto</b> (${realBones.length} ossos). Selecione um osso e use <b>Mover</b> ou <b>Girar</b> para posar.`;sb.style.display='none';
+    info.innerHTML=`Este modelo <b style="color:var(--green)">já tem esqueleto</b> (${realBones.length} ossos, linhas verdes). Selecione um osso e use <b>Mover</b> ou <b>Girar</b> para posar.`;sb.style.display='none';sb2.hidden=true;
   }else{
-    info.textContent=rigRoot?'Auto Rig aplicado. Ajuste os ossos e toque em Auto Rig para recalcular os pesos.':bones.length?'Ossos de referência criados. Toque em Auto Rig para ligar a malha a eles.':'Sem esqueleto. Use Osso para criar do zero ou Auto Rig para um esqueleto humano editável.';
-    sb.style.display='flex';
+    info.textContent=rigRoot?`Esqueleto criado (${bones.length} ossos, linhas verdes). Mova os ossos e toque em Recalcular pesos.`:bones.length?'Ossos criados. Toque em Recalcular pesos para ligar a malha a eles.':'Sem esqueleto. Use Manual (2D) para marcar queixo, punhos, cotovelos, joelhos e virilha, ou Auto Rig para detectar tudo sozinho.';
+    sb.style.display='flex';sb2.hidden=!bones.length;
   }
   const items=hasSkel?realBones.map(b=>b.name||'(osso)'):bones.map(b=>b.name);
   $('boneCount').textContent=items.length||'';
@@ -770,7 +1032,7 @@ const ACT={
   open:openModal,closemodal:closeModal,
   pick:()=>{if(needBridge())BR.pick()},
   importpath:()=>{const v=$('pathIn').value.trim();if(!v){toast('Digite o caminho do modelo','warn');return}if(needBridge())BR.importPath(v)},
-  export:exportGLB,addbone:addBone,autorig:autoRig,
+  export:exportGLB,addbone:openRigger,manual:openRigger,addbone2:addBone,autorig:autoRig,reskin:reskin,rgback:closeRigger,rgsuggest:rgSuggest,rgdone:rgDone,
   autotex:async()=>{if(!model){toast('Abra um modelo primeiro','warn');return}busy(true,'Montando texturas…');try{await autoTextures(false)}finally{busy(false)}},
   clearbones:()=>{if(!model)return;clearBones(false)},
   wire:()=>{wire=!wire;$('btnWire').classList.toggle('on',wire);applyWire()},
@@ -806,7 +1068,7 @@ document.addEventListener('click',e=>{
 });
 $('modal').addEventListener('click',e=>{if(e.target===$('modal'))closeModal()});
 $('pathIn').addEventListener('keydown',e=>{if(e.key==='Enter')ACT.importpath()});
-$('walk').addEventListener('change',e=>{walk=e.target.checked;if(walk&&!rigRoot){toast('Crie um rig com o Auto Rig primeiro','warn');e.target.checked=false;walk=false}else toast(walk?'Caminhada ligada':'Caminhada parada');if(!walk)rigBones.forEach(b=>b.rotation.set(0,0,0))});
+$('walk').addEventListener('change',e=>{walk=e.target.checked;if(walk&&!rigRoot){toast('Crie um rig com o Auto Rig primeiro','warn');e.target.checked=false;walk=false}else toast(walk?'Caminhada ligada':'Caminhada parada');if(!walk){rigBones.forEach(b=>b.rotation.set(0,0,0));syncBoneObjs()}});
 $('showBones').addEventListener('change',e=>{const on=e.target.checked;if(skelHelper)skelHelper.visible=on;boneObjs.forEach(o=>o.visible=on);if(boneLines)boneLines.visible=on});
 $('clipSel').addEventListener('change',()=>{if(playing){mixer.stopAllAction();curAction=mixer.clipAction(clips[+$('clipSel').value||0]);curAction.reset().play()}});
 
@@ -822,9 +1084,10 @@ function loop(){
       if(n.endsWith('arm')&&!n.includes('fore'))b.rotation.x=Math.sin(walkT+ph+Math.PI)*.5;
       else if(n.endsWith('upleg'))b.rotation.x=Math.sin(walkT+ph)*.6;
     });
+    if(rigRoot){rigRoot.updateMatrixWorld(true);rigBones.forEach((b,i)=>{if(boneObjs[i])boneObjs[i].position.setFromMatrixPosition(b.matrixWorld)});updateLines()}
   }
   controls.update();if(selBox)selBox.update();
-  renderer.render(scene,camera);
+  renderer.render(scene,activeCam);
 }
 loop();
 
