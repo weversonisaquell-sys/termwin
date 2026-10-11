@@ -272,6 +272,7 @@ class MainActivity : Activity() {
   Roblox//asset format//arquivo.rbxl   acha o arquivo, mostra o caminho e salva uma versão em formato de modelo (.rbxm) na pasta Download
   open//github.com/usuario/repo   abre o site numa janela do app (movível) e dá para baixar arquivos de qualquer site
   ct arquivo.txt             cria o arquivo em Files/Files Created e abre o editor (sem nome: pergunta o nome)
+  editor//nome//tipo         cria nome.tipo em Files/Files Created (ex.: editor//site//html) e abre o editor numa janela movível
   cmd1 && cmd2 && cmd3       encadeia comandos como no Termux (help && clear funciona; até 1780 &&, com 1781 para e avisa)
   copy NomePasta             procura no celular todo e copia para Files/Copied/NomePasta
   copy                       abre o seletor para copiar pastas de OUTROS apps (ex.: Termux) para Files/Copied  |  depois: cd copied/NomePasta
@@ -342,6 +343,7 @@ Toque e segure numa aba para renomear.
   Roblox//asset format//file.rbxl   find the file, show its path and save a model-format copy (.rbxm) in the Download folder
   open//github.com/user/repo   open the site in an app window (movable); you can download files from any site
   ct file.txt                create the file in Files/Files Created and open the editor (no name: it asks)
+  editor//name//type         create name.type in Files/Files Created (e.g. editor//site//html) and open the editor in a movable window
   cmd1 && cmd2 && cmd3       chain commands like Termux (help && clear works; up to 1780 &&, 1781 stops and warns)
   copy FolderName            search the whole phone and copy to Files/Copied/FolderName
   copy                       opens the picker to copy folders from OTHER apps (e.g. Termux) to Files/Copied  |  then: cd copied/FolderName
@@ -2182,10 +2184,36 @@ Long-press a tab to rename it.
         }
     }
 
+    /** Moves a finished temp download into the "Downloaded" folder. If that folder cannot be written, falls back to the app's internal Downloaded folder. */
+    private fun storeDownload(tmp: File, name: String): File {
+        var target = uniqueDlFile(name)
+        try {
+            target.parentFile?.let { if (!it.isDirectory) { it.delete(); it.mkdirs() } }
+            tmp.copyTo(target, true)
+        } catch (e: Exception) {
+            logError("download", "Downloaded folder failed ($target): $e — using internal storage")
+            val alt = File(File(filesDir, "Downloaded").apply { mkdirs() }, target.name)
+            tmp.copyTo(alt, true)
+            target = alt
+        }
+        try { tmp.delete() } catch (e: Exception) { }
+        return target
+    }
+
+    /** Download error: short toast + the FULL message in the terminal and in errors.log. */
+    private fun dlFail(e: Exception) {
+        val full = e.toString()
+        logError("download", full)
+        ui.post {
+            toast(tr("download failed: ${e.message}", "falha no download: ${e.message}"))
+            tabs.getOrNull(cur)?.let { append(it, tr("download failed: ", "falha no download: ") + full + "\n") }
+        }
+    }
+
     private fun saveBytes(name: String, bytes: ByteArray) {
-        val f = uniqueDlFile(name)
-        f.writeBytes(bytes)
-        dlDone(f)
+        val tmp = File(cacheDir, "dl_" + System.nanoTime() + ".part")
+        tmp.writeBytes(bytes)
+        dlDone(storeDownload(tmp, name))
     }
 
     /** True when the address is clearly a file download (so we do not depend on the page's download callback). */
@@ -2240,10 +2268,11 @@ Long-press a tab to rename it.
                 }
                 val cdh = c.getHeaderField("Content-Disposition")
                 val nm = if (cdh != null) android.webkit.URLUtil.guessFileName(u, cdh, c.contentType) else name
-                val f = uniqueDlFile(nm)
-                c.inputStream.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
-                dlDone(f)
-            } catch (e: Exception) { ui.post { toast(tr("download failed: ${e.message}", "falha no download: ${e.message}")) } }
+                // download to a temp file first (always writable), then move it into Downloaded
+                val tmp = File(cacheDir, "dl_" + System.nanoTime() + ".part")
+                c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+                dlDone(storeDownload(tmp, nm))
+            } catch (e: Exception) { dlFail(e) }
         }
     }
 
@@ -2296,7 +2325,7 @@ Long-press a tab to rename it.
         return true
     }
 
-    private fun openSiteWindow(t: TabData, url: String, roblox: Boolean = true) {
+    private fun openSiteWindow(t: TabData, url: String, roblox: Boolean = false) {
         val host = try { Uri.parse(url).host ?: url } catch (e: Exception) { url }
         if (roblox && (host.equals("roblox.com", true) || host.equals("www.roblox.com", true)) && openRobloxApp(t, url)) return
         append(t, tr("opening $url in a window (you can download files here)\n", "abrindo $url numa janela (dá para baixar arquivos aqui)\n"))
@@ -3835,6 +3864,156 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         "uso: creat//Projeto//html//index.html   (também: creat//Projeto//py//main.py — salva em Files/Projects/Projeto)"))
 
     /** ct file.ext [other.ext…] — creates the file(s) in Files/Files Created and opens the editor on the last one. Without a name it asks. */
+    /** editor//name//type  (e.g. editor//site//html) — creates Files/Files Created/name.type and opens the floating editor window. */
+    private fun editorCmd(t: TabData, parts: List<String>) {
+        if (parts.isEmpty()) { err(t, tr("usage: editor//name//type   (e.g. editor//site//html)", "uso: editor//nome//tipo   (ex.: editor//site//html)")); return }
+        var name = safeSeg(parts[0].substringAfterLast('/'))
+        val typ = parts.getOrNull(1)?.trim()?.trimStart('.')?.lowercase()?.filter { it.isLetterOrDigit() } ?: ""
+        if (typ.isNotEmpty()) { if (!name.endsWith(".$typ", true)) name = name.substringBeforeLast('.', name) + "." + typ }
+        else if (!name.contains('.')) name += ".txt"
+        try {
+            val f = File(createdDir(), name)
+            if (!f.exists()) { f.writeText(STARTER[f.extension.lowercase()] ?: ""); append(t, tr("created ", "criado ") + short(f.path) + "\n") }
+            openEditorWindow(t, f)
+        } catch (e: Exception) { err(t, "editor: ${e.message}") }
+    }
+
+    /** Floating, movable editor (like nano, but nicer): line numbers, status bar, Exit without saving / Save / Save & exit. */
+    private fun openEditorWindow(t: TabData, f: File) {
+        if (f.isDirectory) { err(t, f.name + ": " + tr("is a folder", "é uma pasta")); return }
+        if (f.length() > 600_000) { err(t, f.name + ": " + tr("file too big", "arquivo muito grande")); return }
+        val init = try { if (f.exists()) f.readText() else "" } catch (e: Exception) { err(t, "${f.name}: ${e.message}"); return }
+        val dm = resources.displayMetrics
+        val ov = FrameLayout(this)
+        ov.elevation = dp(40).toFloat()
+        ov.outlineProvider = null // no dark scrim and not clickable: the screen behind stays usable while the editor floats
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.background = rounded(0xFF1B1B1F.toInt(), dp(14), 0xFF3A3A44.toInt())
+        card.clipToOutline = true
+        card.elevation = dp(18).toFloat()
+        lateinit var p: Panel
+        var saved = init
+
+        // title bar (drag here to move the window)
+        val tb = LinearLayout(this)
+        tb.orientation = LinearLayout.HORIZONTAL
+        tb.gravity = Gravity.CENTER_VERTICAL
+        tb.setBackgroundColor(0xFF24242B.toInt())
+        val ttl = tv("   ✎  ${f.name}", 14f, Color.WHITE).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }
+        val dirty = tv("●", 12f, 0xFFFFB454.toInt()).apply { visibility = View.INVISIBLE; setPadding(dp(8), 0, dp(4), 0) }
+        val ext = f.extension.uppercase().ifEmpty { "TXT" }
+        val badge = tv(ext, 10f, Color.BLACK).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; setPadding(dp(8), dp(2), dp(8), dp(2)); background = rounded(ACCENT, dp(8)) }
+        tb.addView(ttl, LinearLayout.LayoutParams(WRAP, dp(44)))
+        tb.addView(dirty, LinearLayout.LayoutParams(WRAP, WRAP))
+        tb.addView(badge, LinearLayout.LayoutParams(WRAP, WRAP).apply { leftMargin = dp(4) })
+        tb.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        var dx = 0f; var dy = 0f
+        tb.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { dx = card.translationX - e.rawX; dy = card.translationY - e.rawY }
+                MotionEvent.ACTION_MOVE -> { card.translationX = e.rawX + dx; card.translationY = e.rawY + dy }
+            }
+            true
+        }
+        card.addView(tb, LinearLayout.LayoutParams(MATCH, dp(44)))
+        card.addView(tv("  " + short(f.path), 10f, 0xFF8A8F9C.toInt()).apply { setPadding(dp(8), dp(4), dp(8), dp(4)); setSingleLine(true); setBackgroundColor(0xFF1F1F25.toInt()) }, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        // text area with line numbers (both scroll together)
+        var onSel: (() -> Unit)? = null
+        val et = object : EditText(this) {
+            override fun onSelectionChanged(selStart: Int, selEnd: Int) { super.onSelectionChanged(selStart, selEnd); onSel?.invoke() }
+        }
+        enableImagePaste(et)
+        et.setText(init)
+        et.typeface = Typeface.MONOSPACE
+        et.textSize = 13f
+        et.setTextColor(0xFFE6E6EA.toInt())
+        et.setHintTextColor(0xFF666B78.toInt())
+        et.hint = tr("empty file — start typing", "arquivo vazio — comece a digitar")
+        et.setBackgroundColor(Color.TRANSPARENT)
+        et.gravity = Gravity.TOP
+        et.setPadding(dp(8), dp(8), dp(12), dp(8))
+        et.setLineSpacing(0f, 1.1f)
+        et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        et.minLines = 10
+        val gutter = tv("1", 13f, 0xFF5C6270.toInt()).apply {
+            typeface = Typeface.MONOSPACE; gravity = Gravity.END or Gravity.TOP
+            setPadding(dp(10), dp(8), dp(8), dp(8)); setLineSpacing(0f, 1.1f); setBackgroundColor(0xFF1F1F25.toInt())
+        }
+        val status = tv("", 11f, 0xFF9AA0AE.toInt()).apply { setPadding(dp(12), dp(5), dp(12), dp(5)); setBackgroundColor(0xFF1F1F25.toInt()) }
+        fun refresh() {
+            try {
+                val tx = et.text.toString()
+                val lay = et.layout
+                if (lay != null) {
+                    val sb = StringBuilder(); var n = 0
+                    for (i in 0 until lay.lineCount) {
+                        val st = lay.getLineStart(i)
+                        if (st == 0 || tx[st - 1] == '\n') { n++; sb.append(n) }
+                        if (i < lay.lineCount - 1) sb.append('\n')
+                    }
+                    gutter.text = sb.toString()
+                }
+                val pos = et.selectionStart.coerceIn(0, tx.length)
+                val line = tx.substring(0, pos).count { it == '\n' } + 1
+                val col = pos - (tx.lastIndexOf('\n', pos - 1) + 1) + 1
+                status.text = "Ln $line, Col $col   •   " + tr("${tx.count { it == '\n' } + 1} lines", "${tx.count { it == '\n' } + 1} linhas") + "   •   " + tr("${tx.length} chars", "${tx.length} caracteres")
+                dirty.visibility = if (tx != saved) View.VISIBLE else View.INVISIBLE
+            } catch (e: Exception) { }
+        }
+        onSel = { refresh() }
+        et.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { refresh(); et.post { refresh() } }
+        })
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.addView(gutter, LinearLayout.LayoutParams(WRAP, MATCH))
+        row.addView(et, LinearLayout.LayoutParams(0, WRAP, 1f))
+        val sc = ScrollView(this)
+        sc.isFillViewport = true
+        sc.addView(row, FrameLayout.LayoutParams(MATCH, WRAP))
+        card.addView(sc, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        card.addView(status, LinearLayout.LayoutParams(MATCH, WRAP))
+        et.post { refresh() }
+
+        fun save(): Boolean = try {
+            f.parentFile?.mkdirs(); val tx = et.text.toString(); f.writeText(tx); saved = tx; refresh()
+            append(t, tr("saved ", "salvo ") + short(f.path) + "\n"); true
+        } catch (e: Exception) { err(t, "${f.name}: ${e.message}"); false }
+
+        // buttons: exit without saving | save | save & exit
+        fun big(txt: String, bg: Int, fg: Int, click: () -> Unit) = tv(txt, 12f, fg).apply {
+            gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD; setPadding(dp(6), dp(10), dp(6), dp(10))
+            background = rounded(bg, dp(10)); setOnClickListener { click() }
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { leftMargin = dp(4); rightMargin = dp(4) }
+        }
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.setBackgroundColor(0xFF24242B.toInt())
+        bar.setPadding(dp(8), dp(8), dp(8), dp(8))
+        bar.addView(big("✕  " + tr("Exit without saving", "Sair sem salvar"), 0xFF5A2A2E.toInt(), 0xFFFFC9CC.toInt()) {
+            if (et.text.toString() == saved) p.close()
+            else {
+                val q = panel(tr("Discard changes?", "Descartar alterações?"), 0.5f)
+                q.body.addView(tv(tr("You have unsaved changes in ${f.name}. Exit without saving?", "Você tem alterações não salvas em ${f.name}. Sair sem salvar?"), 13f, Color.WHITE))
+                q.button(tr("Keep editing", "Continuar editando")) { q.close() }
+                q.button(tr("Exit without saving", "Sair sem salvar"), true) { q.close(); p.close() }
+            }
+        })
+        bar.addView(big("💾  " + tr("Save", "Salvar"), 0xFF2D2D36.toInt(), Color.WHITE) { if (save()) toast(tr("Saved ✔", "Salvo ✔")) })
+        bar.addView(big("✔  " + tr("Save & exit", "Salvar e sair"), ACCENT, Color.BLACK) { if (save()) p.close() })
+        card.addView(bar, LinearLayout.LayoutParams(MATCH, WRAP))
+
+        ov.addView(card, FrameLayout.LayoutParams((dm.widthPixels * 0.9).toInt(), (dm.heightPixels * 0.8).toInt(), Gravity.CENTER))
+        root.addView(ov, FrameLayout.LayoutParams(MATCH, MATCH))
+        p = Panel(ov, LinearLayout(this), LinearLayout(this))
+        panels.add(p)
+        et.requestFocus()
+    }
+
     private fun ctCmd(t: TabData, rest: String) {
         val names = splitArgs(rest, emptyMap()).filter { it.isNotBlank() }
         if (names.isEmpty()) {
@@ -4975,7 +5154,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         append(t, sb.toString())
     }
 
-    private val SLASH_RE = Regex("^(creat|create|criar|open|abrir|roblox)\\s*//(.*)$", RegexOption.IGNORE_CASE)
+    private val SLASH_RE = Regex("^(creat|create|criar|open|abrir|roblox|editor|editar)\\s*//(.*)$", RegexOption.IGNORE_CASE)
 
     /** Commands shared by the terminal and every server template. Returns true when handled. */
     private fun fileCmd(t: TabData, line: String): Boolean {
@@ -4984,6 +5163,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         if (m != null) {
             val verb = m.groupValues[1].lowercase()
             if (verb == "roblox") { robloxCmd(t, m.groupValues[2].trim()); return true }
+            if (verb == "editor" || verb == "editar") { editorCmd(t, m.groupValues[2].split("//").map { it.trim() }.filter { it.isNotEmpty() }); return true }
             if (!(verb.startsWith("cre") || verb == "criar")) {
                 val site = webUrlOf(t, m.groupValues[2])
                 if (site != null) { openSiteWindow(t, site); return true }
