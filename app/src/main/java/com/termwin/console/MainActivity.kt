@@ -249,7 +249,7 @@ class MainActivity : Activity() {
   botão 📜 Savedata           comandos recentes (Files/Savedata.wintext); toque para executar
   apk//open//nome.apk        procura o APK, abre o app em uma janela e guarda a pasta dele em Files/App data
   skel//caminho/modelo.fbx    copia o modelo + texturas da pasta para Files/Models e abre o editor 3D (ex.: skel//storage/emulated/0/Download/Tobe/modelo.fbx)
-  skel//Vazio                abre o editor 3D com o modelo básico, sem importar nada (em Importar há o modelo de teste: Homem-Aranha)
+  skel//Vazio                abre o editor 3D com o modelo básico, sem importar nada (abre o Y Bot já com o esqueleto dele; em Importar há o modelo de teste)
   shizuku                    mostra o estado do Shizuku e pede a permissão (usado no lugar do root)
   dados                      onde seus arquivos ficam salvos
   erros                      mostra os erros salvos (erros limpar)
@@ -323,7 +323,7 @@ Toque e segure numa aba para renomear.
   📜 Savedata button         recent commands (Files/Savedata.wintext); tap one to run it
   apk//open//name.apk        find the APK, open the app in a window and keep its folder in Files/App data
   skel//path/model.fbx       copy the model + its folder textures into Files/Models and open the 3D editor (e.g. skel//storage/emulated/0/Download/Tobe/model.fbx)
-  skel//Vazio                open the 3D editor with the basic model, nothing imported (Import has the test model: Spider-Man)
+  skel//Vazio                open the 3D editor with the basic model, nothing imported (opens Y Bot with its own skeleton; Import has the test model)
   shizuku                    show Shizuku status and ask for permission (used instead of root)
   data                       where your files are saved
   errors                     show saved errors (errors clear)
@@ -5070,18 +5070,18 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             }
         }
 
-        /** Test model bundled in the app (Spider-Man FBX, no skeleton): copied to Files/Models/Teste_HomemAranha and opened. */
+        /** Test/base model bundled in the app (Y Bot FBX, comes with its own skeleton): copied to Files/Models/Teste_YBot and opened. */
         @android.webkit.JavascriptInterface fun testModel() {
             skelWv = web
             skelJs("if(window.onImporting)onImporting()")
             thread {
                 val o = JSONObject()
                 try {
-                    val name = "Spiderman_Maguire_UVs_CONLENTES.fbx"
-                    val dir = File(modelsDir(), "Teste_HomemAranha").apply { mkdirs() }
+                    val name = "Y_Bot.fbx"
+                    val dir = File(modelsDir(), "Teste_YBot").apply { mkdirs() }
                     val out = File(dir, name)
                     if (!out.isFile || out.length() < 1024L) assets.open("models/" + name).use { i -> out.outputStream().use { w -> i.copyTo(w) } }
-                    o.put("ok", true); o.put("folder", "Teste_HomemAranha"); o.put("file", name)
+                    o.put("ok", true); o.put("folder", "Teste_YBot"); o.put("file", name)
                     o.put("textures", 0); o.put("files", 1); o.put("missing", JSONArray())
                 } catch (e: Throwable) { logError("skel", "testModel: $e"); o.put("error", e.message ?: e.javaClass.simpleName) }
                 skelJs("if(window.onImported)onImported(" + o.toString() + ")")

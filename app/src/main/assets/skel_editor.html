@@ -111,11 +111,11 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
 .spin{width:34px;height:34px;border-radius:50%;border:3px solid #444;border-top-color:var(--accent);animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 
-#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:40;padding:12px}
-#modal.on{display:flex}
-#sheet{width:min(560px,100%);max-height:100%;overflow-y:auto;background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px;box-shadow:0 16px 48px rgba(0,0,0,.6)}
-#sheet header{display:flex;align-items:center;gap:8px}
-#sheet header h2{margin:0;font-size:16px;font-weight:600;flex:1}
+#modal,#xmodal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:40;padding:12px}
+#modal.on,#xmodal.on{display:flex}
+#sheet,#xsheet{width:min(560px,100%);max-height:100%;overflow-y:auto;background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px;box-shadow:0 16px 48px rgba(0,0,0,.6)}
+#sheet header,#xsheet header{display:flex;align-items:center;gap:8px}
+#sheet header h2,#xsheet header h2{margin:0;font-size:16px;font-weight:600;flex:1}
 .bigbtn{display:flex;align-items:center;gap:12px;padding:12px;background:var(--ctl);border:1px solid var(--line2);border-radius:10px;text-align:left;width:100%}
 .bigbtn:hover{background:var(--ctl-h)}
 .bigbtn .ico{width:40px;height:40px;border-radius:10px;background:#1c3a48;color:var(--accent);display:flex;align-items:center;justify-content:center;flex:none}
@@ -138,6 +138,14 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
 .fly.on{display:flex}
 .fly button{width:42px;height:42px;border-radius:50%;background:rgba(32,32,32,.55);border:2px solid rgba(255,255,255,.28);color:#fff;font-size:15px;touch-action:none;padding:0}
 @media (max-height:420px){.joy{width:92px;height:92px;bottom:34px}.joy i{width:38px;height:38px;margin:-19px}.fly{left:116px;bottom:36px}.fly button{width:36px;height:36px}}
+
+
+.chips{flex:1 1 0}
+.xrow{display:flex;gap:8px;align-items:center}.xrow>*{flex:1;min-width:0}
+.xan{display:grid;grid-template-columns:1fr 84px;gap:6px 10px;align-items:center;margin-top:8px}
+.xan .sw{padding:2px 0}
+@media (max-width:640px){#top .lbl{display:none}#top .btn{padding:0 10px}.brand b{display:none}}
+@media (max-width:420px){#top .chips{display:none}}
 
 #rigger{position:fixed;inset:0;z-index:45;background:#fff;color:#222;display:none;flex-direction:column}
 #rigger.on{display:flex}
@@ -179,9 +187,9 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
     <div class="brand"><svg class="ic"><use href="#i-cube"/></svg><b>Editor 3D</b></div>
     <div class="chips"><span class="chip" id="chipName">Nenhum modelo</span><span class="chip acc" id="chipFmt" hidden></span></div>
     <div class="grow"></div>
-    <button class="btn" data-act="open"><svg class="ic sm"><use href="#i-folder"/></svg>Abrir</button>
-    <button class="btn" data-act="pick"><svg class="ic sm"><use href="#i-import"/></svg>Importar</button>
-    <button class="btn primary" data-act="export"><svg class="ic sm"><use href="#i-export"/></svg>Exportar GLB</button>
+    <button class="btn" data-act="open" aria-label="Abrir"><svg class="ic sm"><use href="#i-folder"/></svg><span class="lbl">Abrir</span></button>
+    <button class="btn" data-act="pick" aria-label="Importar"><svg class="ic sm"><use href="#i-import"/></svg><span class="lbl">Importar</span></button>
+    <button class="btn primary" data-act="export" aria-label="Exportar" style="flex:none"><svg class="ic sm"><use href="#i-export"/></svg>Exportar</button>
   </header>
 
   <div id="mid">
@@ -294,8 +302,8 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
 <div id="modal"><div id="sheet">
   <header><svg class="ic" style="color:var(--accent)"><use href="#i-folder"/></svg><h2>Abrir modelo 3D</h2><button class="btn sub" data-act="closemodal" style="width:36px;padding:0">✕</button></header>
   <button class="bigbtn" data-act="pick"><span class="ico"><svg class="ic"><use href="#i-import"/></svg></span><span><b>Gerenciador de arquivos</b><small>Escolha qualquer arquivo 3D. As texturas da mesma pasta vão junto.</small></span></button>
-  <button class="bigbtn" data-act="testmodel"><span class="ico"><svg class="ic"><use href="#i-cube"/></svg></span><span><b>Ficar com o modelo de teste</b><small>Homem-Aranha (FBX, sem esqueleto) — ótimo para testar o Auto Rig e as animações.</small></span></button>
-  <button class="bigbtn" data-act="basicmodel"><span class="ico"><svg class="ic"><use href="#i-bone"/></svg></span><span><b>Modelo básico (boneco)</b><small>Boneco simples em pose de A, sem nada importado. Comando no terminal: skel//Vazio</small></span></button>
+  <button class="bigbtn" data-act="testmodel"><span class="ico"><svg class="ic"><use href="#i-cube"/></svg></span><span><b>Ficar com o modelo de teste</b><small>Y Bot (FBX) — já vem com o esqueleto dele, sem precisar de Auto Rig.</small></span></button>
+  <button class="bigbtn" data-act="basicmodel"><span class="ico"><svg class="ic"><use href="#i-bone"/></svg></span><span><b>Modelo básico (boneco)</b><small>Boneco simples sem esqueleto, para testar o Auto Rig. Terminal: skel//Vazio abre o Y Bot.</small></span></button>
   <div>
     <label class="f" for="pathIn" style="margin-top:0">Ou digite o caminho (igual ao comando skel//)</label>
     <div class="pathrow"><input type="text" id="pathIn" placeholder="/storage/emulated/0/Download/Tobe/modelo.fbx" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="importpath">Importar</button></div>
@@ -304,6 +312,30 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
     <label class="f" style="margin-top:0">Biblioteca do TermWin (Files/Models)</label>
     <div class="list" id="libList" style="max-height:240px"></div>
   </div>
+</div></div>
+
+
+<div id="xmodal"><div id="xsheet">
+  <header><svg class="ic" style="color:var(--accent)"><use href="#i-export"/></svg><h2>Exportar modelo</h2><button class="btn sub" data-act="xclose" style="width:36px;padding:0">✕</button></header>
+  <div class="xrow">
+    <div><label class="f" for="xEng" style="margin-top:0">Engine</label>
+      <select id="xEng"><option value="godot">Godot (mobile / 4.x)</option><option value="unity">Unity</option><option value="unreal">Unreal Engine</option><option value="blender">Blender</option><option value="web">Web (Three.js / Babylon.js)</option><option value="other">Outra / genérico</option></select></div>
+    <div><label class="f" for="xFmt" style="margin-top:0">Formato</label>
+      <select id="xFmt"><option value="glb">GLB (.glb) — recomendado</option><option value="gltf">glTF (.gltf)</option><option value="obj">OBJ (.obj) — só malha</option><option value="stl">STL (.stl) — só malha</option><option value="ply">PLY (.ply) — só malha</option></select></div>
+  </div>
+  <div><label class="f" for="xScale" style="margin-top:0">Tamanho</label>
+    <select id="xScale"><option value="fit">Ajustar para 1,8 m (padrão das engines)</option><option value="keep">Manter o tamanho original</option></select></div>
+  <div class="card" id="xAnimBox">
+    <h3>Animações</h3>
+    <label class="sw"><input type="checkbox" id="xAnimOn" checked><span>Incluir animações no arquivo</span></label>
+    <div id="xAnimInner">
+      <div class="xrow" style="margin-top:6px"><div><label class="f" for="xFps" style="margin-top:0">Frames por segundo</label><select id="xFps"><option>15</option><option>24</option><option selected>30</option><option>60</option></select></div><button class="btn" data-act="xfps" style="flex:none;align-self:flex-end">Aplicar a todas</button></div>
+      <div class="xan" id="xAnimList"></div>
+      <p class="note" style="margin:8px 0 0">Frames = quantidade de quadros de cada animação (mais frames = mais suave e mais pesado).</p>
+    </div>
+  </div>
+  <p class="note" id="xNote"></p>
+  <div class="row2"><button class="btn" data-act="xclose">Cancelar</button><button class="btn primary" data-act="xdo"><svg class="ic sm"><use href="#i-export"/></svg>Exportar</button></div>
 </div></div>
 
 <div id="rigger">
@@ -1304,8 +1336,11 @@ async function refreshLibrary(){
   try{lib=await (await fetch('/api/models')).json()}catch(e){lib=[]}
   $('libList').innerHTML=lib.map((m,i)=>`<button class="item" data-act="libopen" data-i="${i}"><span class="fmt">${esc(m.format.toUpperCase())}</span><span class="nm">${esc(m.file.split('/').pop())}<br><small>${esc(m.folder)} · ${m.textures} textura(s) · ${kb(m.size)}</small></span></button>`).join('')||'<div class="empty">Nenhum modelo importado ainda. Use o gerenciador de arquivos ou o comando skel// no terminal.</div>';
 }
+let initBase=false;
 window.onImported=res=>{
   busy(false);
+  if(initBase&&!(res&&res.ok)){initBase=false;loadBasicModel();return}
+  initBase=false;
   if(res&&res.ok){
     refreshLibrary();loadModel(res.folder,res.file).then(()=>{if(res.missing&&res.missing.length)toast(`${res.missing.length} textura(s) citada(s) no modelo não foram achadas na pasta`,'warn')});
   }else{
@@ -1409,22 +1444,24 @@ async function getSrcAnim(a){
   const evalSrc=t=>({q:keys.map((k,i)=>{const it=tq.get(k);return it?Array.from(it.evaluate(t)):S.restQ[i]}),p:keys.map((k,i)=>{const it=tp.get(k);return it?Array.from(it.evaluate(t)):S.restP[i]})});
   return animSrc[a.id]={S,evalSrc,dur:clip.duration};
 }
+function rigT(){return {names:bones.map(b=>b.name),parent:bones.map(b=>b.parent?bones.indexOf(b.parent):-1),pos:bones.map(b=>[b.position.x,b.position.y,b.position.z])}}
+// frames = número de quadros da animação (0 = padrão a 30 fps)
+async function makeRigClip(a,frames){
+  const T=rigT(),gy=new THREE.Box3().setFromObject(model).min.y,s=await getSrcAnim(a);
+  const fps=frames>1?(frames-1)/s.dur:30,r=retargetCore(s.S,T,s.evalSrc,s.dur,fps,gy),tracks=[];
+  r.map.forEach((si,i)=>{
+    if(si<0)return;const v=new Float32Array(r.times.length*4);r.Q.forEach((L,f)=>v.set(L[i],f*4));
+    tracks.push(new THREE.QuaternionKeyframeTrack(T.names[i]+'.quaternion',r.times,v));
+  });
+  const hv=new Float32Array(r.times.length*3),hp=T.pos[r.hipsT];
+  r.H.forEach((h,f)=>{hv[f*3]=hp[0]+h[0];hv[f*3+1]=hp[1]+h[1];hv[f*3+2]=hp[2]+h[2]});
+  tracks.push(new THREE.VectorKeyframeTrack(T.names[r.hipsT]+'.position',r.times,hv));
+  return new THREE.AnimationClip(a.clip,-1,tracks);
+}
 async function ensureRigClips(){
   if(rigClips)return rigClips;
   const rr=rigRoot;if(!rr||!bones.length)throw new Error('crie o rig com o Auto Rig primeiro');
-  const T={names:bones.map(b=>b.name),parent:bones.map(b=>b.parent?bones.indexOf(b.parent):-1),pos:bones.map(b=>[b.position.x,b.position.y,b.position.z])};
-  const gy=new THREE.Box3().setFromObject(model).min.y,out={};
-  for(const a of ANIMS){
-    const s=await getSrcAnim(a),r=retargetCore(s.S,T,s.evalSrc,s.dur,30,gy),tracks=[];
-    r.map.forEach((si,i)=>{
-      if(si<0)return;const v=new Float32Array(r.times.length*4);r.Q.forEach((L,f)=>v.set(L[i],f*4));
-      tracks.push(new THREE.QuaternionKeyframeTrack(T.names[i]+'.quaternion',r.times,v));
-    });
-    const hv=new Float32Array(r.times.length*3),hp=T.pos[r.hipsT];
-    r.H.forEach((h,f)=>{hv[f*3]=hp[0]+h[0];hv[f*3+1]=hp[1]+h[1];hv[f*3+2]=hp[2]+h[2]});
-    tracks.push(new THREE.VectorKeyframeTrack(T.names[r.hipsT]+'.position',r.times,hv));
-    out[a.id]=new THREE.AnimationClip(a.clip,-1,tracks);
-  }
+  const out={};for(const a of ANIMS)out[a.id]=await makeRigClip(a,0);
   if(rigRoot!==rr)throw new Error('o rig mudou durante o preparo, tente de novo');
   return rigClips=out;
 }
@@ -1452,39 +1489,104 @@ async function playRigAnim(id){
   finally{busy(false)}
 }
 
-/* ============ exportar ============ */
-async function exportGLB(){
+/* ============ exportar (janela: engine, formato, frames) ============ */
+let xAnims=[];
+const X_NOTES={godot:'Godot 4 (inclusive mobile) abre .glb direto: coloque o arquivo na pasta do projeto. As animações aparecem no AnimationPlayer.',
+  unity:'Unity abre .glb com o pacote glTFast (Package Manager). Sem o pacote, use OBJ só para a malha. Depois de importar, escolha Rig > Humanoid se for personagem.',
+  unreal:'Unreal Engine 5 importa glTF/GLB pelo plugin Interchange: confira se o plugin está ligado em Plugins.',
+  blender:'Blender importa .glb/.gltf direto (Arquivo > Importar).',web:'Three.js e Babylon.js carregam .glb direto.',other:''};
+const xfmt=()=>$('xFmt').value,xAnimOK=()=>['glb','gltf'].includes(xfmt());
+function xRefresh(){
+  const ok=xAnimOK();$('xAnimBox').style.display=ok?'':'none';
+  const inner=$('xAnimInner');inner.style.display=$('xAnimOn').checked?'':'none';
+  let n=X_NOTES[$('xEng').value]||'';
+  if(!ok)n+=(n?' ':'')+'Este formato guarda só a malha: sem esqueleto, animações nem texturas.';
+  else if(!xAnims.length)n+=(n?' ':'')+'Este modelo não tem animações para incluir.';
+  $('xNote').textContent=n;
+}
+function xRenderAnims(){
+  $('xAnimList').innerHTML=xAnims.map((a,i)=>`<label class="sw"><input type="checkbox" data-xi="${i}" ${a.on?'checked':''}><span>${esc(a.label)} <small style="color:var(--muted)">· ${a.dur.toFixed(1)} s</small></span></label><input type="number" min="2" max="1000" step="1" data-xf="${i}" value="${a.frames}">`).join('')||'<div class="empty" style="grid-column:1/-1">Nenhuma animação neste modelo.</div>';
+}
+$('xAnimList').addEventListener('input',e=>{const t=e.target;if(t.dataset.xf!==undefined){const a=xAnims[+t.dataset.xf];if(a)a.frames=Math.max(2,Math.min(1000,parseInt(t.value)||2))}});
+$('xAnimList').addEventListener('change',e=>{const t=e.target;if(t.dataset.xi!==undefined){const a=xAnims[+t.dataset.xi];if(a)a.on=t.checked}});
+$('xFmt').addEventListener('change',xRefresh);$('xAnimOn').addEventListener('change',xRefresh);
+$('xEng').addEventListener('change',()=>{const e=$('xEng').value;$('xFmt').value='glb';$('xScale').value=(e==='blender'||e==='other')?'keep':'fit';xRefresh()});
+function xApplyFps(){const f=+$('xFps').value||30;xAnims.forEach(a=>{a.frames=Math.max(2,Math.round(a.dur*f)+1)});xRenderAnims()}
+function closeX(){$('xmodal').classList.remove('on')}
+async function openExport(){
   if(!model){toast('Abra um modelo antes de exportar','warn');return}
-  const target=rigRoot||model;
-  busy(true,'Exportando GLB…');
-  let anims=null;
-  if(rigRoot){
-    try{busy(true,'Preparando animações…');const cl=await ensureRigClips();anims=ANIMS.map(a=>cl[a.id]).filter(Boolean)}
-    catch(e){console.error(e);toast('Exportando sem as animações: '+(e&&e.message||e),'warn')}
-    stopRigAnim(true);busy(true,'Exportando GLB…');
+  busy(true,'Lendo as animações…');xAnims=[];
+  try{
+    const f=+$('xFps').value||30;
+    if(rigRoot){for(const a of ANIMS){const s=await getSrcAnim(a);xAnims.push({kind:'rig',id:a.id,label:a.label,dur:s.dur,frames:Math.max(2,Math.round(s.dur*f)+1),on:true})}}
+    else clips.forEach((c,i)=>{if(c.duration>0)xAnims.push({kind:'clip',i,label:c.name||('Animação '+(i+1)),dur:c.duration,frames:Math.max(2,Math.round(c.duration*f)+1),on:true})});
+  }catch(e){console.error(e);toast('Não consegui ler as animações: '+(e&&e.message||e),'warn')}
+  busy(false);xRenderAnims();xRefresh();$('xmodal').classList.add('on');
+}
+function resampleClip(c,frames){
+  const dur=c.duration,N=Math.max(2,frames),times=new Array(N);for(let i=0;i<N;i++)times[i]=dur*i/(N-1);
+  const tr=c.tracks.map(t=>{const it=t.createInterpolant(),sz=t.getValueSize(),v=new Float32Array(N*sz);
+    for(let i=0;i<N;i++){const r=it.evaluate(times[i]);for(let k=0;k<sz;k++)v[i*sz+k]=r[k]}
+    return new t.constructor(t.name,times,v)});
+  return new THREE.AnimationClip(c.name,dur,tr);
+}
+async function saveBytes(name,bytes,mime){
+  if(BR){
+    const CH=3*131072;
+    if(!BR.saveBegin(folder,name))throw new Error('não consegui criar o arquivo');
+    for(let i=0;i<bytes.length;i+=CH){
+      const sub=bytes.subarray(i,i+CH);let bin='';
+      for(let j=0;j<sub.length;j+=0x8000)bin+=String.fromCharCode.apply(null,sub.subarray(j,j+0x8000));
+      if(!BR.saveChunk(btoa(bin)))throw new Error('falha ao gravar');
+      if((i/CH)%6===5)await sleep(0);
+    }
+    const r=JSON.parse(BR.saveEnd());if(!r.ok)throw new Error(r.error||'erro ao salvar');
+    return 'Salvo: '+r.app+(r.shown?' · cópia em '+r.shown:'');
   }
-  const opts={binary:true,onlyVisible:true};if(rigRoot){if(anims&&anims.length)opts.animations=anims}else if(clips.length)opts.animations=clips;
-  new GLTFExporter().parse(target,async buf=>{
-    try{
-      const stem=file.split('/').pop().replace(/\.[^.]+$/,'')+(rigRoot?'_rig':'_export');const name=stem+'.glb';
-      if(BR){
-        const bytes=new Uint8Array(buf);const CH=3*131072;
-        if(!BR.saveBegin(folder,name))throw new Error('não consegui criar o arquivo');
-        for(let i=0;i<bytes.length;i+=CH){
-          const sub=bytes.subarray(i,i+CH);let bin='';
-          for(let j=0;j<sub.length;j+=0x8000)bin+=String.fromCharCode.apply(null,sub.subarray(j,j+0x8000));
-          if(!BR.saveChunk(btoa(bin)))throw new Error('falha ao gravar');
-          if((i/CH)%6===5)await sleep(0);
-        }
-        const r=JSON.parse(BR.saveEnd());
-        if(!r.ok)throw new Error(r.error||'erro ao salvar');
-        toast('Salvo: '+r.app+(r.shown?' · cópia em '+r.shown:''),'ok');refreshLibrary();
-      }else{
-        const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([buf],{type:'model/gltf-binary'}));a.download=name;a.click();toast('Exportação iniciada: '+name,'ok');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([bytes],{type:mime}));a.download=name;a.click();
+  return 'Exportação iniciada: '+name;
+}
+async function doExport(){
+  const fmt=xfmt(),fit=$('xScale').value==='fit',useAnim=xAnimOK()&&$('xAnimOn').checked;
+  closeX();busy(true,'Exportando…');
+  const target=rigRoot||model,parent=target.parent;let wrap=null;
+  try{
+    let anims=null;
+    if(useAnim){
+      anims=[];
+      for(const a of xAnims){
+        if(!a.on)continue;busy(true,'Preparando '+a.label+'…');
+        if(a.kind==='rig')anims.push(await makeRigClip(ANIMS.find(x=>x.id===a.id),a.frames));
+        else anims.push(resampleClip(clips[a.i],a.frames));
       }
-    }catch(e){toast('Erro ao exportar: '+(e&&e.message||e),'err')}
+      if(rigRoot)stopRigAnim(true);
+    }
+    if(fit){wrap=new THREE.Group();wrap.name='Escala';wrap.scale.setScalar(1.8/(modelH||1));wrap.add(target);scene.add(wrap);wrap.updateMatrixWorld(true)}
+    const root=wrap||target;let bytes,ext,mime;
+    busy(true,'Gerando '+fmt.toUpperCase()+'…');
+    if(fmt==='glb'||fmt==='gltf'){
+      const opts={binary:fmt==='glb',onlyVisible:true};if(anims&&anims.length)opts.animations=anims;
+      const res=await new Promise((ok,no)=>{try{new GLTFExporter().parse(root,ok,no,opts)}catch(e){no(e)}});
+      if(fmt==='glb'){bytes=new Uint8Array(res);mime='model/gltf-binary'}else{bytes=new TextEncoder().encode(JSON.stringify(res));mime='model/gltf+json'}
+      ext=fmt;
+    }else if(fmt==='obj'){
+      const {OBJExporter}=await import('three/addons/exporters/OBJExporter.js');
+      bytes=new TextEncoder().encode(new OBJExporter().parse(root));ext='obj';mime='text/plain';
+    }else if(fmt==='stl'){
+      const {STLExporter}=await import('three/addons/exporters/STLExporter.js');
+      const d=new STLExporter().parse(root,{binary:true});bytes=new Uint8Array(d.buffer,d.byteOffset,d.byteLength);ext='stl';mime='model/stl';
+    }else{
+      const {PLYExporter}=await import('three/addons/exporters/PLYExporter.js');
+      bytes=await new Promise(ok=>new PLYExporter().parse(root,r=>ok(new Uint8Array(r)),{binary:true}));ext='ply';mime='application/octet-stream';
+    }
+    const stem=file.split('/').pop().replace(/\.[^.]+$/,'')+((rigRoot||hasSkel)?'_rig':'_export');
+    const msg=await saveBytes(stem+'.'+ext,bytes,mime);
+    toast(msg,'ok');refreshLibrary();
+  }catch(e){console.error(e);toast('Erro ao exportar: '+(e&&e.message||e),'err')}
+  finally{
+    if(wrap){scene.remove(wrap);wrap.remove(target);(parent||scene).add(target);target.updateMatrixWorld(true)}
     busy(false);
-  },e=>{busy(false);toast('Erro ao exportar: '+(e&&e.message||e),'err')},opts);
+  }
 }
 
 /* ============ cliques ============ */
@@ -1492,7 +1594,7 @@ const ACT={
   open:openModal,closemodal:closeModal,
   pick:()=>{if(needBridge())BR.pick()},
   importpath:()=>{const v=$('pathIn').value.trim();if(!v){toast('Digite o caminho do modelo','warn');return}if(needBridge())BR.importPath(v)},
-  export:exportGLB,addbone:openRigger,manual:openRigger,addbone2:addBone,autorig:autoRig,reskin:reskin,rgback:closeRigger,rgsuggest:rgSuggest,rgdone:rgDone,
+  export:openExport,xclose:closeX,xdo:doExport,xfps:xApplyFps,addbone:openRigger,manual:openRigger,addbone2:addBone,autorig:autoRig,reskin:reskin,rgback:closeRigger,rgsuggest:rgSuggest,rgdone:rgDone,
   autotex:async()=>{if(!model){toast('Abra um modelo primeiro','warn');return}busy(true,'Montando texturas…');try{await autoTextures(false)}finally{busy(false)}},
   clearbones:()=>{if(!model)return;clearBones(false)},
   wire:()=>{wire=!wire;$('btnWire').classList.toggle('on',wire);applyWire()},
@@ -1531,6 +1633,7 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-act]');if(a){e.stopPropagation();const f=ACT[a.dataset.act];if(f)f(a)}
 });
 $('modal').addEventListener('click',e=>{if(e.target===$('modal'))closeModal()});
+$('xmodal').addEventListener('click',e=>{if(e.target===$('xmodal'))closeX()});
 $('pathIn').addEventListener('keydown',e=>{if(e.key==='Enter')ACT.importpath()});
 $('skLod').addEventListener('change',e=>{$('rgLod').value=e.target.value});
 $('rgLod').addEventListener('change',e=>{$('skLod').value=e.target.value});
@@ -1552,7 +1655,7 @@ loop();
 renderModelTab();renderTexTab();renderSkelTab();setTool('orbit');
 const m0=qs.get('m'),f0=qs.get('f');
 if(m0&&f0&&!qs.get('empty'))loadModel(m0,f0);
-else{loadBasicModel();refreshLibrary()}
+else{if(BR){initBase=true;BR.testModel()}else loadBasicModel();refreshLibrary()}
 </script>
 </body>
 </html>
