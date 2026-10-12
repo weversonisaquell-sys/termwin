@@ -249,6 +249,7 @@ class MainActivity : Activity() {
   botão 📜 Savedata           comandos recentes (Files/Savedata.wintext); toque para executar
   apk//open//nome.apk        procura o APK, abre o app em uma janela e guarda a pasta dele em Files/App data
   skel//caminho/modelo.fbx    copia o modelo + texturas da pasta para Files/Models e abre o editor 3D (ex.: skel//storage/emulated/0/Download/Tobe/modelo.fbx)
+  skel//Vazio                abre o editor 3D com o modelo básico, sem importar nada (em Importar há o modelo de teste: Homem-Aranha)
   shizuku                    mostra o estado do Shizuku e pede a permissão (usado no lugar do root)
   dados                      onde seus arquivos ficam salvos
   erros                      mostra os erros salvos (erros limpar)
@@ -322,6 +323,7 @@ Toque e segure numa aba para renomear.
   📜 Savedata button         recent commands (Files/Savedata.wintext); tap one to run it
   apk//open//name.apk        find the APK, open the app in a window and keep its folder in Files/App data
   skel//path/model.fbx       copy the model + its folder textures into Files/Models and open the 3D editor (e.g. skel//storage/emulated/0/Download/Tobe/model.fbx)
+  skel//Vazio                open the 3D editor with the basic model, nothing imported (Import has the test model: Spider-Man)
   shizuku                    show Shizuku status and ask for permission (used instead of root)
   data                       where your files are saved
   errors                     show saved errors (errors clear)
@@ -4863,9 +4865,10 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         return null
     }
 
-    private fun skelOpenEditor(folder: String?, file: String?) {
+    private fun skelOpenEditor(folder: String?, file: String?, empty: Boolean = false) {
         var url = "https://$SKEL_HOST/skel_editor.html"
         if (!folder.isNullOrEmpty() && !file.isNullOrEmpty()) url += "?m=" + java.net.URLEncoder.encode(folder, "UTF-8") + "&f=" + java.net.URLEncoder.encode(file, "UTF-8")
+        else if (empty) url += "?empty=1"
         openWebWindow(tr("3D Editor", "Editor 3D"), url)
     }
 
@@ -4873,6 +4876,10 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
     private fun skelCmd(t: TabData, line: String): Boolean {
         val trimmed = line.trim()
         if (trimmed.equals("skel", true)) { skelOpenEditor(null, null); return true }
+        if (Regex("^skel\\s*//\\s*(vazio|vazia|empty|nada)$", RegexOption.IGNORE_CASE).matches(trimmed)) {
+            append(t, tr("Opening the 3D editor with the basic model (nothing imported)…\n", "Abrindo o editor 3D com o modelo básico (nada importado)…\n"))
+            skelOpenEditor(null, null, true); return true
+        }
         val m = Regex("^skel\\s*//\\s*(.+)$", RegexOption.IGNORE_CASE).matchEntire(trimmed) ?: return false
         var rawName = m.groupValues[1].trim().trim('"', '\'')
         Regex("^([a-z0-9]+)\\s*//\\s*(.+)$", RegexOption.IGNORE_CASE).matchEntire(rawName)?.let { o ->
@@ -5060,6 +5067,24 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
                 skelWv = web
                 try { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 82) }
                 catch (e: Exception) { toast(tr("No file manager found", "Nenhum gerenciador de arquivos encontrado")) }
+            }
+        }
+
+        /** Test model bundled in the app (Spider-Man FBX, no skeleton): copied to Files/Models/Teste_HomemAranha and opened. */
+        @android.webkit.JavascriptInterface fun testModel() {
+            skelWv = web
+            skelJs("if(window.onImporting)onImporting()")
+            thread {
+                val o = JSONObject()
+                try {
+                    val name = "Spiderman_Maguire_UVs_CONLENTES.fbx"
+                    val dir = File(modelsDir(), "Teste_HomemAranha").apply { mkdirs() }
+                    val out = File(dir, name)
+                    if (!out.isFile || out.length() < 1024L) assets.open("models/" + name).use { i -> out.outputStream().use { w -> i.copyTo(w) } }
+                    o.put("ok", true); o.put("folder", "Teste_HomemAranha"); o.put("file", name)
+                    o.put("textures", 0); o.put("files", 1); o.put("missing", JSONArray())
+                } catch (e: Throwable) { logError("skel", "testModel: $e"); o.put("error", e.message ?: e.javaClass.simpleName) }
+                skelJs("if(window.onImported)onImported(" + o.toString() + ")")
             }
         }
 

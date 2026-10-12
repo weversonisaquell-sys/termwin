@@ -128,6 +128,17 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
 #fatal{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px;text-align:center;z-index:90;flex-direction:column;gap:10px}
 
 
+
+.joy{position:absolute;bottom:44px;width:116px;height:116px;border-radius:50%;background:rgba(32,32,32,.45);border:2px solid rgba(255,255,255,.28);touch-action:none;z-index:5;display:none;-webkit-user-select:none}
+.joy.on{display:block}
+.joy i{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px;border-radius:50%;background:rgba(96,205,255,.78);border:2px solid #fff;pointer-events:none}
+.joy b{position:absolute;left:0;right:0;top:-17px;text-align:center;font-size:10px;font-weight:600;letter-spacing:.06em;color:#dfe7ee;text-shadow:0 1px 2px #000;pointer-events:none}
+#joyL{left:14px}#joyR{right:14px}
+.fly{position:absolute;left:142px;bottom:48px;display:none;flex-direction:column;gap:8px;z-index:5}
+.fly.on{display:flex}
+.fly button{width:42px;height:42px;border-radius:50%;background:rgba(32,32,32,.55);border:2px solid rgba(255,255,255,.28);color:#fff;font-size:15px;touch-action:none;padding:0}
+@media (max-height:420px){.joy{width:92px;height:92px;bottom:34px}.joy i{width:38px;height:38px;margin:-19px}.fly{left:116px;bottom:36px}.fly button{width:36px;height:36px}}
+
 #rigger{position:fixed;inset:0;z-index:45;background:#fff;color:#222;display:none;flex-direction:column}
 #rigger.on{display:flex}
 #rgHead{height:44px;flex:none;display:flex;align-items:center;justify-content:center;position:relative;font-weight:700;font-size:12px;letter-spacing:.12em}
@@ -187,12 +198,15 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
       <button class="tool on" id="btnGrid" data-act="grid"><svg class="ic"><use href="#i-grid"/></svg><span>Grade</span></button>
       <button class="tool" data-act="bg"><svg class="ic"><use href="#i-sun"/></svg><span>Fundo</span></button>
       <button class="tool" data-act="reset"><svg class="ic"><use href="#i-home"/></svg><span>Câmera</span></button>
+      <button class="tool on" id="btnJoy" data-act="joy"><svg class="ic"><use href="#i-joy"/></svg><span>Joystick</span></button>
     </nav>
 
     <section id="stage">
       <div id="viewEl"></div>
       <div class="pill" id="infoPill" hidden></div>
       <div class="pill" id="hintPill">Arraste: girar · Dois dedos: zoom/mover · Toque: selecionar</div>
+      <div class="joy on" id="joyL"><b>MOVER</b><i></i></div><div class="joy on" id="joyR"><b>CÂMERA</b><i></i></div>
+      <div class="fly on" id="flyBtns"><button id="flyUp" aria-label="Subir">▲</button><button id="flyDn" aria-label="Descer">▼</button></div>
       <div id="empty">
         <div class="card">
           <svg class="ic" style="width:42px;height:42px;color:var(--accent)"><use href="#i-cube"/></svg>
@@ -280,6 +294,8 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
 <div id="modal"><div id="sheet">
   <header><svg class="ic" style="color:var(--accent)"><use href="#i-folder"/></svg><h2>Abrir modelo 3D</h2><button class="btn sub" data-act="closemodal" style="width:36px;padding:0">✕</button></header>
   <button class="bigbtn" data-act="pick"><span class="ico"><svg class="ic"><use href="#i-import"/></svg></span><span><b>Gerenciador de arquivos</b><small>Escolha qualquer arquivo 3D. As texturas da mesma pasta vão junto.</small></span></button>
+  <button class="bigbtn" data-act="testmodel"><span class="ico"><svg class="ic"><use href="#i-cube"/></svg></span><span><b>Ficar com o modelo de teste</b><small>Homem-Aranha (FBX, sem esqueleto) — ótimo para testar o Auto Rig e as animações.</small></span></button>
+  <button class="bigbtn" data-act="basicmodel"><span class="ico"><svg class="ic"><use href="#i-bone"/></svg></span><span><b>Modelo básico (boneco)</b><small>Boneco simples em pose de A, sem nada importado. Comando no terminal: skel//Vazio</small></span></button>
   <div>
     <label class="f" for="pathIn" style="margin-top:0">Ou digite o caminho (igual ao comando skel//)</label>
     <div class="pathrow"><input type="text" id="pathIn" placeholder="/storage/emulated/0/Download/Tobe/modelo.fbx" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="importpath">Importar</button></div>
@@ -318,6 +334,7 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
 <symbol id="i-wire" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/><path d="M8 5.3l8 4.5M16 5.3L8 9.8" opacity=".5"/></symbol>
 <symbol id="i-grid" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/></symbol>
 <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></symbol>
+<symbol id="i-joy" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2"/></symbol>
 <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 6.1A9.8 9.8 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.3 7.6A17 17 0 0 0 2 12s4 7 10 7a9.6 9.6 0 0 0 4-.9"/></symbol>
@@ -385,6 +402,41 @@ const clock=new THREE.Clock();
 const baseUrl=()=>`/models/${encodeURIComponent(folder)}/`;
 const isGltf=()=>['glb','gltf'].includes(extOf(file));
 const IMG_OK=['png','jpg','jpeg','bmp','tga','webp','gif'];
+
+
+/* ============ joysticks (estilo Godot mobile): esquerdo = andar livre · direito = girar a câmera ============ */
+let joyOn=true,flyV=0;const joyV={L:{x:0,y:0},R:{x:0,y:0}};
+function joyBind(id,key){
+  const el=$(id),knob=el.querySelector('i');let pid=null;
+  const upd=e=>{const r=el.getBoundingClientRect(),R=r.width/2-8;let dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2);const l=Math.hypot(dx,dy);if(l>R){dx*=R/l;dy*=R/l}
+    knob.style.transform='translate('+dx+'px,'+dy+'px)';joyV[key].x=dx/R;joyV[key].y=dy/R};
+  el.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();pid=e.pointerId;try{el.setPointerCapture(pid)}catch(_){}upd(e)});
+  el.addEventListener('pointermove',e=>{if(e.pointerId===pid)upd(e)});
+  const end=e=>{if(e.pointerId!==pid)return;pid=null;knob.style.transform='';joyV[key].x=0;joyV[key].y=0};
+  el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);
+}
+joyBind('joyL','L');joyBind('joyR','R');
+[['flyUp',1],['flyDn',-1]].forEach(([id,s])=>{const b=$(id);
+  b.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();try{b.setPointerCapture(e.pointerId)}catch(_){}flyV=s});
+  const end=()=>{flyV=0};b.addEventListener('pointerup',end);b.addEventListener('pointercancel',end)});
+const _jf=new THREE.Vector3(),_jr=new THREE.Vector3(),_jm=new THREE.Vector3(),_jo=new THREE.Vector3(),_jUp=new THREE.Vector3(0,1,0);
+function joyStep(dt){
+  if(!joyOn||rgOn)return;
+  const L=joyV.L,R=joyV.R,sp=Math.max(modelSize,.5)*1.15;
+  if(L.x||L.y||flyV){
+    camera.getWorldDirection(_jf);_jf.y=0;if(_jf.lengthSq()<1e-6)_jf.set(0,0,-1);_jf.normalize();
+    _jr.crossVectors(_jf,_jUp).normalize();
+    _jm.set(0,0,0).addScaledVector(_jf,-L.y*sp*dt).addScaledVector(_jr,L.x*sp*dt);_jm.y+=flyV*sp*dt*.8;
+    camera.position.add(_jm);controls.target.add(_jm);
+  }
+  if(R.x||R.y){
+    _jo.copy(controls.target).sub(camera.position);const d=_jo.length()||1;
+    _jo.applyAxisAngle(_jUp,-R.x*2*dt);
+    const cur=Math.asin(Math.max(-1,Math.min(1,_jo.y/d))),nw=Math.max(-1.38,Math.min(1.38,cur-R.y*1.6*dt));
+    _jr.crossVectors(_jo,_jUp);if(_jr.lengthSq()>1e-9){_jr.normalize();_jo.applyAxisAngle(_jr,nw-cur)}
+    controls.target.copy(camera.position).add(_jo);
+  }
+}
 
 /* ============ grade / câmera ============ */
 function niceSize(v){const p=Math.pow(10,Math.floor(Math.log10(v)));const n=v/p;return (n<=1?1:n<=2?2:n<=5?5:10)*p}
@@ -485,6 +537,82 @@ function fitModel(){
   const c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());
   model.position.set(-c.x,-box.min.y,-c.z);model.updateMatrixWorld(true);
   modelSize=Math.max(s.x,s.y,s.z)||1;modelH=s.y||modelSize;buildGrid();resetCam();
+}
+
+
+/* ============ modelo básico (boneco de teste) — abre quando o editor entra sem nada ============ */
+
+// tubo suave: path=[[x,y,z],...] · radii=[[rx,rz],...] · devolve {pos,idx}
+function tubeData(path0,radii0,seg,sub){
+  seg=seg||14;sub=sub||6;
+  const path=[],radii=[];
+  for(let i=0;i<path0.length-1;i++)for(let k=0;k<sub;k++){const f=k/sub,a=path0[i],b=path0[i+1],ra=radii0[i],rb=radii0[i+1];
+    path.push([a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f]);radii.push([ra[0]+(rb[0]-ra[0])*f,ra[1]+(rb[1]-ra[1])*f])}
+  path.push(path0[path0.length-1].slice());radii.push(radii0[radii0.length-1].slice());
+  const pos=[],idx=[],m=path.length;
+  const tan=i=>{const a=path[Math.max(0,i-1)],b=path[Math.min(m-1,i+1)];let x=b[0]-a[0],y=b[1]-a[1],z=b[2]-a[2];const l=Math.hypot(x,y,z)||1;return [x/l,y/l,z/l]};
+  const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  const nrm=v=>{const l=Math.hypot(v[0],v[1],v[2])||1;return [v[0]/l,v[1]/l,v[2]/l]};
+  const ring=(i,r,off)=>{
+    const t=tan(i);let ref=Math.abs(t[2])<.9?[0,0,1]:[1,0,0];const u=nrm(cross(t,ref)),w=nrm(cross(t,u));
+    // u = lateral (x do corpo), w = frente/trás
+    const p=path[i],base=pos.length/3;
+    for(let k=0;k<seg;k++){const a=k/seg*Math.PI*2,c=Math.cos(a),s=Math.sin(a);
+      pos.push(p[0]+off*t[0]+u[0]*c*r[0]+w[0]*s*r[1],p[1]+off*t[1]+u[1]*c*r[0]+w[1]*s*r[1],p[2]+off*t[2]+u[2]*c*r[0]+w[2]*s*r[1])}
+    return base;
+  };
+  const rings=[];
+  // tampa arredondada no começo
+  const capN=3;
+  for(let c=capN;c>=1;c--){const f=c/(capN+1),sc=Math.sqrt(1-f*f);const t=tan(0);rings.push(ring(0,[radii[0][0]*sc,radii[0][1]*sc],-radii[0][0]*f))}
+  for(let i=0;i<m;i++)rings.push(ring(i,radii[i],0));
+  for(let c=1;c<=capN;c++){const f=c/(capN+1),sc=Math.sqrt(1-f*f);rings.push(ring(m-1,[radii[m-1][0]*sc,radii[m-1][1]*sc],radii[m-1][0]*f))}
+  for(let i=0;i<rings.length-1;i++)for(let k=0;k<seg;k++){const a=rings[i]+k,b=rings[i]+(k+1)%seg,c=rings[i+1]+k,d=rings[i+1]+(k+1)%seg;idx.push(a,c,b,b,c,d)}
+  // polos
+  const pa=pos.length/3;const p0=path[0],t0=tan(0);pos.push(p0[0]-t0[0]*radii[0][0],p0[1]-t0[1]*radii[0][0],p0[2]-t0[2]*radii[0][0]);
+  for(let k=0;k<seg;k++)idx.push(pa,rings[0]+k,rings[0]+(k+1)%seg);
+  const pb=pos.length/3,p1=path[m-1],t1=tan(m-1);pos.push(p1[0]+t1[0]*radii[m-1][0],p1[1]+t1[1]*radii[m-1][0],p1[2]+t1[2]*radii[m-1][0]);
+  const lr=rings[rings.length-1];for(let k=0;k<seg;k++)idx.push(pb,lr+(k+1)%seg,lr+k);
+  for(let i=0;i<idx.length;i+=3){const t=idx[i+1];idx[i+1]=idx[i+2];idx[i+2]=t}
+  return {pos:new Float32Array(pos),idx:new Uint32Array(idx)};
+}
+function basicParts(){
+  // altura 1,75 · de frente para +Z · lado esquerdo do personagem em +X · pose em A
+  const P=[],R=a=>[a,a],SK=0xd7b9a0,CL=0xb9c4d0;
+  P.push({n:'Tronco',path:[[0,.93,0],[0,1.02,0],[0,1.14,0],[0,1.3,0],[0,1.4,0],[0,1.47,0],[0,1.5,0]],radii:[[.12,.085],[.17,.10],[.145,.092],[.172,.105],[.18,.10],[.09,.07],[.06,.06]],c:CL});
+  P.push({n:'Pescoco',path:[[0,1.46,0],[0,1.55,.005],[0,1.61,.01]],radii:[R(.057),R(.05),R(.05)],c:SK});
+  P.push({n:'Cabeca',path:[[0,1.6,0],[0,1.665,.01],[0,1.75,0]],radii:[[.07,.08],[.095,.105],[.065,.075]],c:SK});
+  [['E',1],['D',-1]].forEach(([nm,s])=>{
+    P.push({n:'Braco_'+nm,path:[[s*.18,1.41,0],[s*.30,1.15,-.005],[s*.395,.93,.01]],radii:[R(.052),R(.042),R(.034)],c:SK});
+    P.push({n:'Mao_'+nm,path:[[s*.395,.93,.01],[s*.425,.86,.012],[s*.452,.79,.012]],radii:[[.026,.04],[.024,.036],[.016,.024]],c:SK});
+    P.push({n:'Perna_'+nm,path:[[s*.115,.92,0],[s*.118,.49,.004],[s*.12,.085,0]],radii:[R(.08),R(.056),R(.04)],c:CL});
+    P.push({n:'Pe_'+nm,path:[[s*.12,.05,-.06],[s*.12,.04,.04],[s*.12,.03,.17]],radii:[[.045,.04],[.05,.04],[.04,.025]],c:0x56606b});
+  });
+  return P;
+}
+
+const basicMats={};
+function basicMat(c,nm){return basicMats[c]||(basicMats[c]=new THREE.MeshStandardMaterial({name:nm,color:c,roughness:.7,metalness:0,side:THREE.DoubleSide}))}
+function basicModel(){
+  const g=new THREE.Group();g.name='Modelo_Basico';
+  basicParts().forEach(p=>{
+    const d=tubeData(p.path,p.radii,14,6),geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(d.pos,3));geo.setIndex(new THREE.BufferAttribute(d.idx,1));geo.computeVertexNormals();
+    const m=new THREE.Mesh(geo,basicMat(p.c,p.c===0xd7b9a0?'Pele':p.c===0x56606b?'Sapato':'Roupa'));m.name=p.n;g.add(m);
+  });
+  return g;
+}
+function loadBasicModel(){
+  clearRig(true);clearBones(true);rgPts=null;lastMk=null;
+  if(mixer){mixer.stopAllAction();mixer=null}
+  if(skelHelper){scene.remove(skelHelper);skelHelper=null}
+  if(model){tc.detach();scene.remove(model);disposeObj(model);model=null}
+  for(const k in basicMats)delete basicMats[k];
+  folder='Modelo_Basico';file='Modelo_Basico.glb';manifest=[];fileMap=new Map();exact=new Set();texCache=new Map();selMesh=null;selMat=null;playing=false;
+  model=basicModel();clips=[];$('clipSel').innerHTML='';scene.add(model);
+  analyze();fitModel();selMat=mats[0]||null;
+  if(wire)applyWire();afterChange();$('empty').style.display='none';
+  toast('Modelo básico aberto — toque em Auto Rig para testar','ok');
 }
 
 /* ============ texturas automáticas ============ */
@@ -828,7 +956,7 @@ function skelFromMarkers(m0,lod){
     });
     // perna: centraliza joelho e tornozelo no corte da malha e inclina a perna se preciso
     const yT=(gy+K.y)/2,cT=sliceC(K.x,yT,rgZc,.075*H,.011*H,.2*H,sg,.012*H);
-    const kn=refJoint(K.x,K.y,sg,'leg',H),ank=minY+.042*H,an=refJoint(kn.x,ank,sg,'leg',H),hipY=gy+.035*H;
+    const kn=refJoint(K.x,K.y,sg,'leg',H),ank=minY+.042*H,an=refJoint(kn.x,ank,sg,'leg',H),hipY=gy+.05*H;
     let hx=kn.x,hz2=kn.z;
     if(cT&&Math.abs(yT-K.y)>1e-6){const sl=(cT.x-kn.x)/(yT-K.y);hx=cT.x+Math.max(-.03*H,Math.min(.03*H,sl*(hipY-yT)));hz2=cT.z}
     const fz0=Z(an.x,ank),fz=footFront(an.x,H,minY,Z(an.x,K.y),fz0);
@@ -880,6 +1008,91 @@ function rigConfidence(list,m,H,minY,tips){
 }
 
 /* ============ rig: pesos da pele ============ */
+/* ============ pesos da pele (v2): raio do osso + suavização na superfície da malha ============ */
+// P: posições no mundo (Float32Array xyz) · F: índices dos triângulos (ou null) · bones: [{name,position,parent}] · H: altura do corpo
+function skinWeights(P,F,bones,H){
+  const n=P.length/3,nb=bones.length,M=8;
+  const ix=new Map();bones.forEach((b,i)=>ix.set(b,i));
+  const kids=bones.map(()=>[]);bones.forEach((b,i)=>{if(b.parent)kids[ix.get(b.parent)].push(i)});
+  const S=[];
+  bones.forEach((b,i)=>{
+    const side=/^left/i.test(b.name)?1:/^right/i.test(b.name)?-1:0,ends=kids[i].length?kids[i].map(k=>bones[k].position):[b.position];
+    ends.forEach(e=>{const ax=b.position.x,ay=b.position.y,az=b.position.z,dx=e.x-ax,dy=e.y-ay,dz=e.z-az;S.push({i,side,ax,ay,az,dx,dy,dz,l2:dx*dx+dy*dy+dz*dz})});
+  });
+  const sideEps=H*.015,dist=new Float32Array(nb);
+  const dists=(x,y,z)=>{
+    dist.fill(1e9);
+    for(let q=0;q<S.length;q++){
+      const s=S[q];if(s.side&&Math.abs(x)>sideEps&&(x>0)!==(s.side>0))continue;
+      let t=0;if(s.l2>1e-12){t=((x-s.ax)*s.dx+(y-s.ay)*s.dy+(z-s.az)*s.dz)/s.l2;t=t<0?0:t>1?1:t}
+      const px=s.ax+s.dx*t-x,py=s.ay+s.dy*t-y,pz=s.az+s.dz*t-z,d=Math.sqrt(px*px+py*py+pz*pz);
+      if(d<dist[s.i])dist[s.i]=d;
+    }
+  };
+  // 1ª passada: osso mais próximo → raio (mediana) de cada osso = espessura local do corpo
+  const near=new Int16Array(n),dm=new Float32Array(n),lists=bones.map(()=>[]);
+  for(let v=0;v<n;v++){
+    dists(P[v*3],P[v*3+1],P[v*3+2]);let bj=0,bd=1e9;
+    for(let j=0;j<nb;j++)if(dist[j]<bd){bd=dist[j];bj=j}
+    near[v]=bj;dm[v]=bd;lists[bj].push(bd);
+  }
+  const rad=new Float32Array(nb);
+  for(let j=0;j<nb;j++){const a=lists[j];if(a.length>=5){a.sort((x,y)=>x-y);rad[j]=a[a.length>>1]}else rad[j]=H*.02;rad[j]=Math.max(H*.004,Math.min(H*.14,rad[j]))}
+  // soldagem de vértices repetidos (UV/normais dividem vértices na mesma posição)
+  const q=H*2e-5,key=new Map(),rep=new Int32Array(n);let nr=0;const repV=[];
+  for(let v=0;v<n;v++){const k=Math.round(P[v*3]/q)+','+Math.round(P[v*3+1]/q)+','+Math.round(P[v*3+2]/q);let r=key.get(k);if(r===undefined){r=nr++;key.set(k,r);repV.push(v)}rep[v]=r}
+  // vizinhos (CSR)
+  const nt=F?F.length/3:n/3,deg=new Int32Array(nr+1);
+  const tv=(t,k)=>rep[F?F[t*3+k]:t*3+k];
+  for(let t=0;t<nt;t++){const a=tv(t,0),b=tv(t,1),c=tv(t,2);if(a===b||b===c||a===c)continue;deg[a]+=2;deg[b]+=2;deg[c]+=2}
+  const off=new Int32Array(nr+1);for(let r=0;r<nr;r++)off[r+1]=off[r]+deg[r];
+  const fill=new Int32Array(nr),nbr=new Int32Array(off[nr]);let elen=0,ecnt=0;
+  const link=(a,b)=>{nbr[off[a]+fill[a]++]=b};
+  for(let t=0;t<nt;t++){const a=tv(t,0),b=tv(t,1),c=tv(t,2);if(a===b||b===c||a===c)continue;link(a,b);link(b,a);link(b,c);link(c,b);link(c,a);link(a,c);
+    const A=repV[a]*3,B=repV[b]*3;elen+=Math.hypot(P[A]-P[B],P[A+1]-P[B+1],P[A+2]-P[B+2]);ecnt++}
+  const L=ecnt?elen/ecnt:H*.01;
+  // 2ª passada: distância normalizada pelo raio do osso → pesos quase rígidos
+  let bi=new Int16Array(nr*M).fill(-1),bw=new Float32Array(nr*M),bc=new Uint8Array(nr);
+  const nd=new Float32Array(nb);
+  for(let r=0;r<nr;r++){
+    const v=repV[r];dists(P[v*3],P[v*3+1],P[v*3+2]);let m0=1e9;
+    for(let j=0;j<nb;j++){nd[j]=dist[j]/rad[j];if(nd[j]<m0)m0=nd[j]}
+    const c=.3,cand=[];
+    for(let j=0;j<nb;j++){if(nd[j]>m0*1.6+.3)continue;const w=Math.pow((m0+c)/(nd[j]+c),5);if(w>.03)cand.push([j,w])}
+    cand.sort((a,b)=>b[1]-a[1]);let sum=0;const k=Math.min(M,cand.length);for(let i=0;i<k;i++)sum+=cand[i][1];
+    for(let i=0;i<k;i++){bi[r*M+i]=cand[i][0];bw[r*M+i]=cand[i][1]/sum}bc[r]=k;
+  }
+  // suavização na superfície: espalha os pesos pelos vizinhos (transição suave nas juntas, sem vazar entre partes distantes)
+  const sigma=H*.016,iters=Math.max(4,Math.min(34,Math.round(Math.pow(2*sigma/L,2))));
+  let bi2=new Int16Array(nr*M),bw2=new Float32Array(nr*M),bc2=new Uint8Array(nr);
+  const acc=new Float32Array(nb),touched=new Int32Array(nb*2);
+  for(let it=0;it<iters;it++){
+    for(let r=0;r<nr;r++){
+      const o=r*M,s0=off[r],s1=off[r+1];
+      let same=bc[r]===1;if(same){const b0=bi[o];for(let e=s0;e<s1;e++){const q2=nbr[e];if(bc[q2]!==1||bi[q2*M]!==b0){same=false;break}}}
+      if(same||s1===s0){bi2.set(bi.subarray(o,o+M),o);bw2.set(bw.subarray(o,o+M),o);bc2[r]=bc[r];continue}
+      let nt2=0;const selfW=.5,nW=.5/(s1-s0);
+      for(let k=0;k<bc[r];k++){const j=bi[o+k];if(acc[j]===0)touched[nt2++]=j;acc[j]+=selfW*bw[o+k]}
+      for(let e=s0;e<s1;e++){const q2=nbr[e],oq=q2*M;for(let k=0;k<bc[q2];k++){const j=bi[oq+k];if(acc[j]===0)touched[nt2++]=j;acc[j]+=nW*bw[oq+k]}}
+      // fica com os M maiores
+      const arr=[];for(let k=0;k<nt2;k++){const j=touched[k];arr.push([j,acc[j]]);acc[j]=0}
+      arr.sort((a,b)=>b[1]-a[1]);let kk=0,sum=0;while(kk<arr.length&&kk<M&&arr[kk][1]>.01){sum+=arr[kk][1];kk++}
+      if(!kk){bi2.set(bi.subarray(o,o+M),o);bw2.set(bw.subarray(o,o+M),o);bc2[r]=bc[r];continue}
+      for(let k=0;k<M;k++){if(k<kk){bi2[o+k]=arr[k][0];bw2[o+k]=arr[k][1]/sum}else{bi2[o+k]=-1;bw2[o+k]=0}}bc2[r]=kk;
+    }
+    let t1=bi;bi=bi2;bi2=t1;let t2=bw;bw=bw2;bw2=t2;let t3=bc;bc=bc2;bc2=t3;
+  }
+  // final: 4 maiores influências por vértice
+  const idx=new Uint16Array(n*4),wt=new Float32Array(n*4);
+  for(let v=0;v<n;v++){
+    const r=rep[v],o=r*M,k=Math.min(4,bc[r]);let sum=0;
+    for(let i=0;i<k;i++)sum+=bw[o+i];
+    if(!k||sum<=0){idx[v*4]=near[v];wt[v*4]=1;continue}
+    for(let i=0;i<k;i++){idx[v*4+i]=bi[o+i];wt[v*4+i]=bw[o+i]/sum}
+  }
+  return {idx,wt,rad,iters,L};
+}
+
 function buildRig(){
   clearRig(true);
   rigRoot=new THREE.Group();rigRoot.name='TermWin_Rig';scene.add(rigRoot);
@@ -888,33 +1101,13 @@ function buildRig(){
   bones.forEach(b=>{const bn=map.get(b);if(b.parent){bn.position.copy(b.position).sub(b.parent.position);map.get(b.parent).add(bn)}else{bn.position.copy(b.position);rigRoot.add(bn)}});
   rigRoot.updateMatrixWorld(true);
   const skeleton=new THREE.Skeleton(rigBones);
-  // cada osso comanda o trecho entre ele e seus filhos
-  const kids=bones.map(()=>[]);bones.forEach(b=>{if(b.parent)kids[bones.indexOf(b.parent)].push(b)});
-  const S=[];
-  bones.forEach((b,i)=>{
-    const side=/^left/i.test(b.name)?1:/^right/i.test(b.name)?-1:0,ends=kids[i].length?kids[i].map(k=>k.position):[b.position];
-    ends.forEach(e=>{const ax=b.position.x,ay=b.position.y,az=b.position.z,dx=e.x-ax,dy=e.y-ay,dz=e.z-az;S.push({i,side,ax,ay,az,dx,dy,dz,l2:dx*dx+dy*dy+dz*dz})});
-  });
-  const nb=bones.length,eps=Math.max(modelH*.01,1e-4),sideEps=modelH*.015,dist=new Float32Array(nb);
   const srcs=[];model.updateMatrixWorld(true);model.traverse(n=>{if(n.isMesh&&n.geometry&&n.geometry.attributes&&n.geometry.attributes.position)srcs.push(n)});
   const v=new THREE.Vector3();
   srcs.forEach(src=>{
-    const geo=src.geometry.clone(),pos=geo.attributes.position,idx=new Uint16Array(pos.count*4),wt=new Float32Array(pos.count*4);
-    for(let i=0;i<pos.count;i++){
-      v.fromBufferAttribute(pos,i).applyMatrix4(src.matrixWorld);dist.fill(1e9);
-      for(let q=0;q<S.length;q++){
-        const s=S[q];if(s.side&&Math.abs(v.x)>sideEps&&(v.x>0)!==(s.side>0))continue;
-        let t=0;if(s.l2>1e-12){t=((v.x-s.ax)*s.dx+(v.y-s.ay)*s.dy+(v.z-s.az)*s.dz)/s.l2;t=t<0?0:t>1?1:t}
-        const px=s.ax+s.dx*t-v.x,py=s.ay+s.dy*t-v.y,pz=s.az+s.dz*t-v.z,d=Math.sqrt(px*px+py*py+pz*pz);
-        if(d<dist[s.i])dist[s.i]=d;
-      }
-      const bi=[-1,-1,-1,-1],bd=[1e9,1e9,1e9,1e9];
-      for(let j=0;j<nb;j++){const d=dist[j];if(d>=bd[3])continue;let k=3;while(k>0&&d<bd[k-1]){bd[k]=bd[k-1];bi[k]=bi[k-1];k--}bd[k]=d;bi[k]=j}
-      let sum=0;
-      for(let k=0;k<4;k++){if(bi[k]>=0){const w=1/((bd[k]+eps)*(bd[k]+eps));idx[i*4+k]=bi[k];wt[i*4+k]=w;sum+=w}}
-      if(!sum){idx[i*4]=0;wt[i*4]=1}else for(let k=0;k<4;k++)wt[i*4+k]/=sum;
-    }
-    geo.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(idx,4));geo.setAttribute('skinWeight',new THREE.Float32BufferAttribute(wt,4));
+    const geo=src.geometry.clone(),pos=geo.attributes.position,P=new Float32Array(pos.count*3);
+    for(let i=0;i<pos.count;i++){v.fromBufferAttribute(pos,i).applyMatrix4(src.matrixWorld);P[i*3]=v.x;P[i*3+1]=v.y;P[i*3+2]=v.z}
+    const r=skinWeights(P,geo.index?geo.index.array:null,bones,modelH);
+    geo.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(r.idx,4));geo.setAttribute('skinWeight',new THREE.Float32BufferAttribute(r.wt,4));
     const mat=Array.isArray(src.material)?src.material.map(m=>m.clone()):src.material.clone();
     const sk=new THREE.SkinnedMesh(geo,mat);sk.name=bones.some(b=>b.name===src.name)?src.name+'_mesh':(src.name||'Malha');
     src.matrixWorld.decompose(sk.position,sk.quaternion,sk.scale);
@@ -1044,7 +1237,7 @@ function rgDone(){
 function setTool(t){
   tool=t;document.querySelectorAll('.tool[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t));
   attachGizmo();
-  $('hintPill').textContent=t==='orbit'?'Arraste: girar · Dois dedos: zoom/mover · Toque: selecionar':hasSkel?'Selecione um osso na lista (aba Esqueleto) e arraste o gizmo':'Toque numa esfera de osso e arraste o gizmo para mover';
+  $('hintPill').textContent=t==='orbit'?'Arraste: girar · 2 dedos: zoom · Joystick esq.: andar · dir.: câmera':hasSkel?'Selecione um osso na lista (aba Esqueleto) e arraste o gizmo':'Toque numa esfera de osso e arraste o gizmo para mover';
 }
 function applyWire(){eachMat(m=>{m.wireframe=wire})}
 function afterChange(){
@@ -1306,6 +1499,9 @@ const ACT={
   grid:()=>{gridOn=!gridOn;$('btnGrid').classList.toggle('on',gridOn);if(grid)grid.visible=gridOn},
   bg:()=>{bgIdx=(bgIdx+1)%BGS.length;scene.background=new THREE.Color(BGS[bgIdx]);buildGrid()},
   reset:()=>resetCam(),
+  joy:()=>{joyOn=!joyOn;$('btnJoy').classList.toggle('on',joyOn);['joyL','joyR','flyBtns'].forEach(i=>$(i).classList.toggle('on',joyOn));joyV.L.x=joyV.L.y=joyV.R.x=joyV.R.y=0;flyV=0;toast(joyOn?'Joysticks ligados':'Joysticks desligados')},
+  testmodel:()=>{if(needBridge())BR.testModel()},
+  basicmodel:()=>{closeModal();loadBasicModel()},
   libopen:b=>{const m=lib[+b.dataset.i];if(m){closeModal();loadModel(m.folder,m.file)}},
   meshsel:b=>{const m=meshes[+b.dataset.i];if(m)selectMesh(m.mesh,0)},
   meshvis:b=>{const m=meshes[+b.dataset.i];if(m){m.mesh.visible=!m.mesh.visible;renderModelTab()}},
@@ -1347,7 +1543,7 @@ function loop(){
   const dt=clock.getDelta();
   if(mixer&&playing)mixer.update(dt);
   if(rigMixer&&rigAnimId){rigMixer.update(dt);syncRigVis()}
-  controls.update();if(selBox)selBox.update();
+  joyStep(dt);controls.update();if(selBox)selBox.update();
   renderer.render(scene,activeCam);
 }
 loop();
@@ -1355,8 +1551,8 @@ loop();
 /* ============ início ============ */
 renderModelTab();renderTexTab();renderSkelTab();setTool('orbit');
 const m0=qs.get('m'),f0=qs.get('f');
-if(m0&&f0)loadModel(m0,f0);
-else{refreshLibrary().then(()=>{if(!lib.length)$('statusMsg').textContent='Importe um modelo para começar';});}
+if(m0&&f0&&!qs.get('empty'))loadModel(m0,f0);
+else{loadBasicModel();refreshLibrary()}
 </script>
 </body>
 </html>
