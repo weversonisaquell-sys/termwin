@@ -264,8 +264,14 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
             <label class="f" for="clipSel">Animação do arquivo</label>
             <div class="row2"><select id="clipSel"></select><button class="btn" data-act="playclip" id="playBtn" style="flex:none;min-width:84px">Tocar</button></div>
           </div>
+          <div class="card" style="padding:8px;margin-top:8px">
+            <h3>Animações adicionadas</h3>
+            <div class="row2"><button class="btn full" data-act="animPunch">Punch Combo</button><button class="btn full" data-act="animJump">Jumping</button></div>
+            <button class="btn full" data-act="animSneak" style="margin-top:6px">Sneak Walk</button>
+            <p class="note" style="margin:7px 0 0">Fontes FBX incluídas em assets/animations. Para reproduzir no personagem, o clipe precisa ter ossos compatíveis ou ser retargeteado.</p>
+          </div>
         </div>
-        <p class="note warn">O Auto Rig acha queixo, punhos, cotovelos, joelhos e virilha pela malha (modelo humanoide de pé, de frente, braços abertos funciona melhor). Se errar, use Manual (2D) e arraste os marcadores. Os pesos são aproximados: confira antes de exportar.</p>
+        <p class="note warn">Meta de qualidade: até 89% em humanoides compatíveis, sem garantia automática. O Auto Rig analisa a malha para estimar queixo, punhos, cotovelos, joelhos e virilha; funciona melhor com o modelo de pé, de frente e braços abertos. O esqueleto pode ter até 122 ossos. Confira marcadores, dedos e pesos antes de exportar.</p>
       </div>
     </aside>
   </div>
@@ -292,7 +298,7 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
   <div id="rgFoot">
     <button class="rgb" data-act="rgback">Voltar</button>
     <div class="g"><label><input type="checkbox" id="rgSym" checked>Usar simetria</label>
-      <select id="rgLod"><option value="27">Esqueleto padrão (27)</option><option value="17">Esqueleto simples (17)</option></select>
+      <select id="rgLod"><option value="57">Humanoide completo com dedos (57+)</option><option value="27">Esqueleto padrão (27)</option><option value="17">Esqueleto simples (17)</option></select>
       <button class="rgb" data-act="rgsuggest">Sugerir</button><button class="rgb go" data-act="rgdone">Concluir</button></div>
   </div>
 </div>
@@ -637,6 +643,7 @@ function applyFields(){
 $('bname').addEventListener('input',()=>{const b=bones[selBone];if(b){b.name=$('bname').value||b.name;renderSkelTab(true)}});
 function addBone(){
   if(!model){toast('Abra um modelo primeiro','warn');return}
+  if(bones.length>=122){toast('Limite máximo de 122 ossos atingido','warn');return}
   if(hasSkel){toast('Este modelo já tem esqueleto — selecione um osso na lista e use Mover/Girar','warn');setTab('skel');return}
   const parent=bones.length?bones[selBone>=0?selBone:bones.length-1]:null;
   const pos=parent?parent.position.clone().add(new THREE.Vector3(0,modelSize*.08,0)):new THREE.Vector3(0,modelH*.5,0);
@@ -746,6 +753,19 @@ function skelFromMarkers(m0,lod){
     add(nm+'UpLeg',V(kx,gy+.035*H),'Hips');add(nm+'Leg',V(kx,K.y),nm+'UpLeg');add(nm+'Foot',V(kx,ank,fz0),nm+'Leg');
     add(nm+'ToeBase',V(kx,minY+.014*H,fz0+(fz-fz0)*.55),nm+'Foot');add(nm+'Toe_End',V(kx,minY+.008*H,fz),nm+'ToeBase');
   });
+  // Add finger chains to both hands for detailed posing.
+  [['Left',m.wL,1],['Right',m.wR,-1]].forEach(([side,w,sg])=>{
+    const span=Math.max(H*.012,Math.abs(w.x-m.groin.x)*.035);
+    ['Thumb','Index','Middle','Ring','Pinky'].forEach((fn,fi)=>{
+      const spread=(fi-2)*span*.42;
+      const x=w.x+sg*(span*.22+Math.abs(fi-2)*span*.10);
+      const y=w.y-H*.012-Math.abs(fi-2)*span*.08;
+      add(side+fn+'1',V(x,y,w.z),side+'Hand');
+      add(side+fn+'2',V(x+sg*span*.45+spread*.15,y-H*.012,w.z),side+fn+'1');
+      add(side+fn+'3',V(x+sg*span*.85+spread*.30,y-H*.022,w.z),side+fn+'2');
+      add(side+fn+'Tip',V(x+sg*span*1.15+spread*.45,y-H*.030,w.z),side+fn+'3');
+    });
+  });
   const dropRe=lod==='17'?/^(Spine1|Head_End|(Left|Right)(Shoulder|Hand_End|Toe_End|ToeBase))$/:null,drop={has:n=>!!dropRe&&dropRe.test(n)};
   const par={};spec.forEach(q=>{par[q[0]]=q[2]});const out=[],by={};
   spec.forEach(([n,v,p])=>{
@@ -803,9 +823,9 @@ function makeSkeleton(m,how){
   setTimeout(()=>{
     try{
       if(!rgPts)rgPts=samplePts();
-      bones=skelFromMarkers(m,$('rgLod').value);selBone=0;selReal=null;
+      bones=skelFromMarkers(m,$('rgLod').value).slice(0,122);selBone=0;selReal=null;
       buildRig();rebuildBoneObjs();setTab('skel');setTool('orbit');
-      toast(`Esqueleto ${how} criado — ${bones.length} ossos (linhas verdes dentro do personagem)`,'ok');
+      toast(`Esqueleto ${how} criado — ${bones.length}/122 ossos. Revise marcadores e pesos antes de exportar.`,'ok');
     }catch(e){console.error(e);toast('Falha ao criar esqueleto: '+(e&&e.message||e),'err')}
     busy(false);afterChange();
   },40);
@@ -1003,7 +1023,7 @@ async function exportGLB(){
   if(!model){toast('Abra um modelo antes de exportar','warn');return}
   const target=rigRoot||model;
   busy(true,'Exportando GLB…');
-  const opts={binary:true,onlyVisible:true};if(!rigRoot&&clips.length)opts.animations=clips;
+  const opts={binary:true,onlyVisible:true};if(clips.length)opts.animations=clips;
   new GLTFExporter().parse(target,async buf=>{
     try{
       const stem=file.split('/').pop().replace(/\.[^.]+$/,'')+(rigRoot?'_rig':'_export');const name=stem+'.glb';
@@ -1025,6 +1045,18 @@ async function exportGLB(){
     }catch(e){toast('Erro ao exportar: '+(e&&e.message||e),'err')}
     busy(false);
   },e=>{busy(false);toast('Erro ao exportar: '+(e&&e.message||e),'err')},opts);
+}
+
+function playNamedAnimation(re,label){
+  if(!clips.length||!mixer){
+    toast('Nenhuma animação carregada. Carregue o FBX de animação e confirme a compatibilidade do esqueleto.','warn');
+    return;
+  }
+  const i=clips.findIndex(c=>re.test(c.name||''));
+  if(i<0){toast('A animação '+label+' não está no arquivo carregado.','warn');return;}
+  $('clipSel').value=String(i);
+  mixer.stopAllAction();curAction=mixer.clipAction(clips[i]);curAction.reset().play();playing=true;
+  renderSkelTab(true);toast('Reproduzindo '+label);
 }
 
 /* ============ cliques ============ */
@@ -1054,7 +1086,7 @@ const ACT={
     catch(e){toast('Não consegui aplicar: '+e.message,'err')}
     busy(false);
   },
-  playclip:()=>{
+  animPunch:()=>playNamedAnimation(/punch|combo/i,'Punch Combo'),\n  animJump:()=>playNamedAnimation(/jump/i,'Jumping'),\n  animSneak:()=>playNamedAnimation(/sneak|walk/i,'Sneak Walk'),\n  playclip:()=>{
     if(!mixer||!clips.length)return;
     if(playing){mixer.stopAllAction();playing=false}
     else{const c=clips[+$('clipSel').value||0];curAction=mixer.clipAction(c);curAction.reset().play();playing=true}
