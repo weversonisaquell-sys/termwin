@@ -4957,6 +4957,11 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             val path = u.path ?: "/"
             when {
                 path == "/" || path == "/skel_editor.html" -> ok("text/html", "utf-8", assets.open("skel_editor.html"))
+                path.startsWith("/anim/") -> {
+                    val n = path.removePrefix("/anim/")
+                    if (!Regex("[A-Za-z0-9_\\-]+\\.fbx").matches(n)) nf()
+                    else ok("application/octet-stream", null, assets.open("anim/$n"))
+                }
                 path == "/api/models" -> text("application/json", skelModelsJson())
                 path == "/api/list" -> text("application/json", skelListJson(u.getQueryParameter("m") ?: "") ?: "[]")
                 path.startsWith("/models/") -> {

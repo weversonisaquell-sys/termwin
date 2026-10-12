@@ -26,6 +26,7 @@ svg.ic.sm{width:16px;height:16px}
 .chip.acc{color:#00131c;background:var(--accent);border-color:var(--accent);font-weight:700}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;background:var(--ctl);border:1px solid var(--line2);border-radius:6px;white-space:nowrap}
 .btn:hover{background:var(--ctl-h)}.btn:active{background:#262626;transform:scale(.98)}
+.btn.on{background:var(--accent);border-color:var(--accent);color:#00131c;font-weight:700}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#00131c;font-weight:700}
 .btn.primary:hover{background:var(--accent-h)}
 .btn.sub{background:transparent;border-color:transparent;color:var(--muted)}
@@ -240,6 +241,8 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
       <div class="pane" id="pane-skel">
         <div class="card"><h3>Esqueleto</h3>
           <div id="skelInfo" class="note">Abra um modelo.</div>
+          <label class="f" for="skLod">Nível do Auto Rig</label>
+          <select id="skLod"><option value="65">Completo com dedos (65 ossos)</option><option value="106">Máximo: dedos, pés, rosto, twist (106)</option><option value="27">Padrão sem dedos (27)</option><option value="17">Simples (17)</option></select>
           <div class="row2" style="margin-top:8px" id="skelBtns">
             <button class="btn" data-act="manual"><svg class="ic sm"><use href="#i-bone"/></svg>Manual (2D)</button>
             <button class="btn primary" data-act="autorig"><svg class="ic sm"><use href="#i-wand"/></svg>Auto Rig</button>
@@ -258,20 +261,15 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
           <p class="note" style="margin:8px 0 0">Ou use a ferramenta <b>Mover</b> e arraste a esfera no modelo.</p>
         </div>
         <div class="card"><h3>Testar</h3>
-          <label class="sw"><input type="checkbox" id="walk"><span>Movimento de caminhada (ossos do Auto Rig)</span></label>
+          <label class="f" style="margin-top:0">Animações no rig do Auto Rig</label>
+          <div class="row2" id="animBtns" style="margin-bottom:8px"><button class="btn" data-act="anim" data-id="walk">Andar</button><button class="btn" data-act="anim" data-id="jump">Pular</button><button class="btn" data-act="anim" data-id="punch">Socar</button></div>
           <label class="sw"><input type="checkbox" id="showBones" checked><span>Mostrar ossos</span></label>
           <div id="animBox" hidden>
             <label class="f" for="clipSel">Animação do arquivo</label>
             <div class="row2"><select id="clipSel"></select><button class="btn" data-act="playclip" id="playBtn" style="flex:none;min-width:84px">Tocar</button></div>
           </div>
-          <div class="card" style="padding:8px;margin-top:8px">
-            <h3>Animações adicionadas</h3>
-            <div class="row2"><button class="btn full" data-act="animPunch">Punch Combo</button><button class="btn full" data-act="animJump">Jumping</button></div>
-            <button class="btn full" data-act="animSneak" style="margin-top:6px">Sneak Walk</button>
-            <p class="note" style="margin:7px 0 0">Fontes FBX incluídas em assets/animations. Para reproduzir no personagem, o clipe precisa ter ossos compatíveis ou ser retargeteado.</p>
-          </div>
         </div>
-        <p class="note warn">Meta de qualidade: até 89% em humanoides compatíveis, sem garantia automática. O Auto Rig analisa a malha para estimar queixo, punhos, cotovelos, joelhos e virilha; funciona melhor com o modelo de pé, de frente e braços abertos. O esqueleto pode ter até 122 ossos. Confira marcadores, dedos e pesos antes de exportar.</p>
+        <p class="note warn">O Auto Rig mede a malha e acha queixo, punhos, mãos (dedos), cotovelos, joelhos, pés e virilha (modelo humanoide de pé, de frente, braços abertos funciona melhor). Se errar, use Manual (2D) e arraste os marcadores. Os pesos são aproximados: confira antes de exportar.</p>
       </div>
     </aside>
   </div>
@@ -298,7 +296,7 @@ label.f{display:block;color:var(--muted);font-size:11.5px;margin:8px 0 3px}
   <div id="rgFoot">
     <button class="rgb" data-act="rgback">Voltar</button>
     <div class="g"><label><input type="checkbox" id="rgSym" checked>Usar simetria</label>
-      <select id="rgLod"><option value="57">Humanoide completo com dedos (57+)</option><option value="27">Esqueleto padrão (27)</option><option value="17">Esqueleto simples (17)</option></select>
+      <select id="rgLod"><option value="65">Completo com dedos (65)</option><option value="106">Máximo (106)</option><option value="27">Padrão sem dedos (27)</option><option value="17">Simples (17)</option></select>
       <button class="rgb" data-act="rgsuggest">Sugerir</button><button class="rgb go" data-act="rgdone">Concluir</button></div>
   </div>
 </div>
@@ -381,7 +379,7 @@ const ro=new ResizeObserver(resize);ro.observe(viewEl);ro.observe($('rgStage'));
 let model=null,folder='',file='',manifest=[],fileMap=new Map(),exact=new Set();
 let meshes=[],mats=[],hasSkel=false,realBones=[],skelHelper=null,mixer=null,clips=[],playing=false,curAction=null;
 let selMesh=null,selMat=null,selBox=null,stats={verts:0,tris:0};
-let bones=[],boneObjs=[],boneLines=null,selBone=-1,selReal=null,rigRoot=null,rigBones=[],walk=false,walkT=0;
+let bones=[],boneObjs=[],boneLines=null,selBone=-1,selReal=null,rigRoot=null,rigBones=[],rigMixer=null,rigClips=null,rigAnimId='',rigRest=null;
 let tool='orbit',lib=[],grid=null,gridOn=true,wire=false,modelSize=1,modelH=1,texCache=new Map();
 const clock=new THREE.Clock();
 const baseUrl=()=>`/models/${encodeURIComponent(folder)}/`;
@@ -643,7 +641,6 @@ function applyFields(){
 $('bname').addEventListener('input',()=>{const b=bones[selBone];if(b){b.name=$('bname').value||b.name;renderSkelTab(true)}});
 function addBone(){
   if(!model){toast('Abra um modelo primeiro','warn');return}
-  if(bones.length>=122){toast('Limite máximo de 122 ossos atingido','warn');return}
   if(hasSkel){toast('Este modelo já tem esqueleto — selecione um osso na lista e use Mover/Girar','warn');setTab('skel');return}
   const parent=bones.length?bones[selBone>=0?selBone:bones.length-1]:null;
   const pos=parent?parent.position.clone().add(new THREE.Vector3(0,modelSize*.08,0)):new THREE.Vector3(0,modelH*.5,0);
@@ -655,7 +652,7 @@ function clearBones(silent){
   if(!silent)toast('Ossos removidos');
 }
 function clearRig(silent){
-  walk=false;$('walk').checked=false;
+  stopRigAnim(false);rigMixer=null;rigClips=null;rigRest=null;
   if(rigRoot){scene.remove(rigRoot);rigRoot.traverse(n=>{if(n.isSkinnedMesh){n.geometry.dispose()}});rigRoot=null}
   rigBones=[];if(model)model.visible=true;
   if(!silent&&model)afterChange();
@@ -736,43 +733,150 @@ function normMk(m){
   ['w','e','k'].forEach(c=>{if(o[c+'L'].x<o[c+'R'].x){const t=o[c+'L'];o[c+'L']=o[c+'R'];o[c+'R']=t}});
   return o;
 }
+/* --- análise extra da malha: cortes, mão, rosto --- */
+function sliceC(cx,cy,cz,rx,ry,rz,sg,g){
+  const P=rgPts;let sx=0,sy=0,sz=0,n=0;
+  for(let i=0;i<P.length;i+=3){
+    const x=P[i];if(Math.abs(x-cx)>=rx)continue;if(Math.abs(P[i+1]-cy)>=ry)continue;if(Math.abs(P[i+2]-cz)>=rz)continue;
+    if(sg&&x*sg<=g)continue;sx+=x;sy+=P[i+1];sz+=P[i+2];n++;
+  }
+  return n>=8?{x:sx/n,y:sy/n,z:sz/n,n}:null;
+}
+// centraliza uma articulação no meio do corpo (corte da malha); nunca move mais que 4% da altura
+function refJoint(x,y,sg,mode,H){
+  const rz=.2*H,g=.012*H;
+  const c=mode==='leg'?sliceC(x,y,rgZc,.075*H,.011*H,rz,sg,g):sliceC(x,y,rgZc,.011*H,.055*H,rz,sg,g);
+  if(!c)return {x,y,z:rgDepth(x,y,H),ok:false};
+  const lim=.04*H,cl=v=>Math.max(-lim,Math.min(lim,v));
+  return {x:mode==='leg'?x+cl((c.x-x)*.8):x,y:mode==='arm'?y+cl((c.y-y)*.8):y,z:c.z,ok:true};
+}
+// mede a mão na malha: comprimento até a ponta dos dedos, largura (profundidade) e centro
+function handGeom(W,E,H,f){
+  let ux=W.x-E.x,uy=W.y-E.y;const L=Math.hypot(ux,uy)||1;ux/=L;uy/=L;
+  const nx=-uy,ny=ux,P=rgPts,zc=rgDepth(W.x,W.y,H);let tip=0,cnt=0;
+  for(let i=0;i<P.length;i+=3){
+    const dx=P[i]-W.x,dy=P[i+1]-W.y,t=dx*ux+dy*uy;if(t<-.01*H||t>.22*H)continue;
+    if(Math.abs(dx*nx+dy*ny)>.055*H||Math.abs(P[i+2]-zc)>.1*H)continue;
+    cnt++;if(t>tip)tip=t;
+  }
+  const found=cnt>=30;if(!found)tip=.1*H;
+  const tipC=Math.max(.06*H,Math.min(.16*H,tip));
+  let zmn=1e9,zmx=-1e9,sn=0,sc=0;
+  for(let i=0;i<P.length;i+=3){
+    const dx=P[i]-W.x,dy=P[i+1]-W.y,t=dx*ux+dy*uy;if(t<.4*tipC||t>.92*tipC)continue;
+    const nn=dx*nx+dy*ny;if(Math.abs(nn)>.055*H||Math.abs(P[i+2]-zc)>.1*H)continue;
+    const z=P[i+2];if(z<zmn)zmn=z;if(z>zmx)zmx=z;sn+=nn;sc++;
+  }
+  const good=sc>20,Wz=good?Math.max(.025*H,Math.min(.1*H,zmx-zmn)):.05*H;
+  return {ux,uy,nx,ny,tip:tipC,found,cn:good?sn/sc:0,zf:good?(f>0?zmx:zmn):zc+f*Wz/2,Wz};
+}
+function frontZ(x,y,H,f){
+  const P=rgPts;let mn=1e9,mx=-1e9;
+  for(let i=0;i<P.length;i+=3){if(Math.abs(P[i]-x)<.025*H&&Math.abs(P[i+1]-y)<.012*H){const z=P[i+2];if(z<mn)mn=z;if(z>mx)mx=z}}
+  return mx<mn?rgDepth(x,y,H)+f*.04*H:(f>0?mx:mn);
+}
+function headHalfW(y,H){
+  const P=rgPts;let m=0;
+  for(let i=0;i<P.length;i+=3){if(Math.abs(P[i+1]-y)<.012*H&&Math.abs(P[i])<.15*H){const a=Math.abs(P[i]);if(a>m)m=a}}
+  return m||.04*H;
+}
+const FINGERS=[['Thumb',0,.7],['Index',.12,.92],['Middle',.38,1],['Ring',.62,.9],['Pinky',.86,.72]];
+const LODS={'17':1,'27':1,'65':1,'106':1};
 function skelFromMarkers(m0,lod){
   const m=normMk(m0),bb=new THREE.Box3().setFromObject(model),H=bb.max.y-bb.min.y,minY=bb.min.y,maxY=bb.max.y;
   const Z=(x,y)=>rgDepth(x,y,H),V=(x,y,z)=>new THREE.Vector3(x,y,z===undefined?Z(x,y):z);
   const gy=m.groin.y,cy=m.chin.y,T=cy-gy,spec=[];
   if(!(T>H*.1))throw new Error('queixo precisa ficar acima da virilha');
-  const add=(n,v,p)=>spec.push([n,v,p||null]);
-  add('Hips',V(0,gy+.12*T));add('Spine',V(0,gy+.3*T),'Hips');add('Spine1',V(0,gy+.5*T),'Spine');add('Spine2',V(0,gy+.7*T),'Spine1');
-  add('Neck',V(0,gy+.88*T),'Spine2');add('Head',V(0,cy),'Neck');add('Head_End',V(0,maxY),'Head');
+  if(!LODS[lod])lod='65';
+  // tags: b=corpo base · e=ponta da mão (só no 27) · f=dedos · x=extras (nível máximo)
+  const add=(n,v,p,tag)=>spec.push([n,v,p||null,tag||'b']);
+  let fs=0;
+  // frente do personagem (para onde apontam os pés)
+  ['L','R'].forEach(c=>{const K=m['k'+c],ank=minY+.042*H,z0=Z(K.x,ank);fs+=footFront(K.x,H,minY,Z(K.x,K.y),z0)-z0});
+  const f=fs<0?-1:1,tips=[];
+  add('Hips',V(0,gy+.12*T),null);add('Spine',V(0,gy+.3*T),'Hips');add('Spine1',V(0,gy+.5*T),'Spine');add('Spine2',V(0,gy+.7*T),'Spine1');
+  add('Neck',V(0,gy+.88*T),'Spine2');add('Neck1',V(0,gy+.94*T),'Neck','x');add('Head',V(0,cy),'Neck1');add('Head_End',V(0,maxY),'Head');
+  // rosto (só nível máximo)
+  {const hh=maxY-cy,ey=cy+.58*hh,hw=headHalfW(ey,H),fz=frontZ(0,ey,H,f)-f*.02*H;
+   [['Left',1],['Right',-1]].forEach(([nm,sg])=>add(nm+'Eye',V(sg*.32*hw,ey,fz),'Head','x'));
+   const jy=cy+.28*hh;add('Jaw',V(0,jy,Z(0,jy)),'Head','x');add('Jaw_End',V(0,cy+.03*hh,frontZ(0,cy+.03*hh,H,f)-f*.01*H),'Jaw','x');}
   [['Left','L',1],['Right','R',-1]].forEach(([nm,c,sg])=>{
     const W=m['w'+c],E=m['e'+c],K=m['k'+c],dx=W.x-E.x,dy=W.y-E.y;
     const ax=sg*Math.max(Math.abs(E.x-dx*.97),.04*H),ay=Math.min(E.y-dy*.97,cy);
-    add(nm+'Shoulder',V(ax*.3,ay),'Spine2');add(nm+'Arm',V(ax,ay),nm+'Shoulder');add(nm+'ForeArm',V(E.x,E.y),nm+'Arm');
-    add(nm+'Hand',V(W.x,W.y),nm+'ForeArm');add(nm+'Hand_End',V(W.x+dx*.45,W.y+dy*.45),nm+'Hand');
-    const kx=K.x,ank=minY+.042*H,fz0=Z(kx,ank),fz=footFront(kx,H,minY,Z(kx,K.y),fz0);
-    add(nm+'UpLeg',V(kx,gy+.035*H),'Hips');add(nm+'Leg',V(kx,K.y),nm+'UpLeg');add(nm+'Foot',V(kx,ank,fz0),nm+'Leg');
-    add(nm+'ToeBase',V(kx,minY+.014*H,fz0+(fz-fz0)*.55),nm+'Foot');add(nm+'Toe_End',V(kx,minY+.008*H,fz),nm+'ToeBase');
-  });
-  // Add finger chains to both hands for detailed posing.
-  [['Left',m.wL,1],['Right',m.wR,-1]].forEach(([side,w,sg])=>{
-    const span=Math.max(H*.012,Math.abs(w.x-m.groin.x)*.035);
-    ['Thumb','Index','Middle','Ring','Pinky'].forEach((fn,fi)=>{
-      const spread=(fi-2)*span*.42;
-      const x=w.x+sg*(span*.22+Math.abs(fi-2)*span*.10);
-      const y=w.y-H*.012-Math.abs(fi-2)*span*.08;
-      add(side+fn+'1',V(x,y,w.z),side+'Hand');
-      add(side+fn+'2',V(x+sg*span*.45+spread*.15,y-H*.012,w.z),side+fn+'1');
-      add(side+fn+'3',V(x+sg*span*.85+spread*.30,y-H*.022,w.z),side+fn+'2');
-      add(side+fn+'Tip',V(x+sg*span*1.15+spread*.45,y-H*.030,w.z),side+fn+'3');
+    // braço: centraliza ombro, cotovelo e punho nos cortes da malha
+    const sh=refJoint(ax,ay,sg,'arm',H),el=refJoint(E.x,E.y,sg,'arm',H),wr=refJoint(W.x,W.y,sg,'arm',H);
+    add(nm+'Shoulder',V(ax*.3,sh.y),'Spine2');add(nm+'Arm',V(ax,sh.y,sh.z),nm+'Shoulder');
+    add(nm+'ForeArm',V(E.x,el.y,el.z),nm+'Arm');add(nm+'Hand',V(W.x,wr.y,wr.z),nm+'ForeArm');
+    add(nm+'Hand_End',V(W.x+dx*.45,W.y+dy*.45),nm+'Hand','e');
+    add(nm+'ArmTwist',V(ax*.5+E.x*.5,(sh.y+el.y)/2,(sh.z+el.z)/2),nm+'Arm','x');
+    add(nm+'ForeArmTwist',V((E.x+W.x)/2,(el.y+wr.y)/2,(el.z+wr.z)/2),nm+'ForeArm','x');
+    // mão: dedos pela forma da malha (comprimento, largura e centro da mão)
+    const hg=handGeom({x:W.x,y:wr.y},{x:E.x,y:el.y},H,f);tips.push(hg.found&&hg.tip>.07*H&&hg.tip<.155*H);
+    const hz=wr.z,hp=(t,z)=>V(W.x+hg.ux*t+hg.nx*hg.cn,wr.y+hg.uy*t+hg.ny*hg.cn,z);
+    const tipT=hg.tip,t0=.44*tipT,ell=tipT-t0,J=[0,.36,.7,1];
+    FINGERS.forEach(([fn,zf,lf])=>{
+      const pre=nm+'Hand'+fn;
+      if(fn==='Thumb'){
+        const zb=hg.zf-f*.02*hg.Wz,len=lf*ell,dT=.62,dZ=.78,nn=Math.hypot(dT,dZ);
+        let prev=nm+'Hand';
+        for(let j=0;j<4;j++){const k=len*J[j];add(pre+(j+1),hp(.12*tipT+dT/nn*k,zb+f*dZ/nn*k),prev,'f');prev=pre+(j+1)}
+      }else{
+        const zz=hg.zf-f*zf*hg.Wz,bt=fn==='Pinky'?t0*.96:t0,len=(tipT-bt)*lf;let prev=nm+'Hand';
+        add(pre+'0',hp(.16*tipT,zz),prev,'x');prev=pre+'0';
+        for(let j=0;j<4;j++){add(pre+(j+1),hp(bt+len*J[j],zz),prev,'f');prev=pre+(j+1)}
+      }
+    });
+    // perna: centraliza joelho e tornozelo no corte da malha e inclina a perna se preciso
+    const yT=(gy+K.y)/2,cT=sliceC(K.x,yT,rgZc,.075*H,.011*H,.2*H,sg,.012*H);
+    const kn=refJoint(K.x,K.y,sg,'leg',H),ank=minY+.042*H,an=refJoint(kn.x,ank,sg,'leg',H),hipY=gy+.035*H;
+    let hx=kn.x,hz2=kn.z;
+    if(cT&&Math.abs(yT-K.y)>1e-6){const sl=(cT.x-kn.x)/(yT-K.y);hx=cT.x+Math.max(-.03*H,Math.min(.03*H,sl*(hipY-yT)));hz2=cT.z}
+    const fz0=Z(an.x,ank),fz=footFront(an.x,H,minY,Z(an.x,K.y),fz0);
+    const tbz=fz0+(fz-fz0)*.55;
+    add(nm+'UpLeg',V(hx,hipY,hz2),'Hips');add(nm+'Leg',V(kn.x,K.y,kn.z),nm+'UpLeg');add(nm+'Foot',V(an.x,ank,fz0),nm+'Leg');
+    add(nm+'ToeBase',V(an.x,minY+.014*H,tbz),nm+'Foot');add(nm+'Toe_End',V(an.x,minY+.008*H,fz),nm+'ToeBase');
+    add(nm+'UpLegTwist',V((hx+kn.x)/2,(hipY+K.y)/2,(hz2+kn.z)/2),nm+'UpLeg','x');
+    add(nm+'LegTwist',V((kn.x+an.x)/2,(K.y+ank)/2,(kn.z+fz0)/2),nm+'Leg','x');
+    // dedos do pé (nível máximo)
+    const dz=fz-tbz;
+    [1,.97,.9,.8,.7].forEach((sc,i)=>{
+      const x=an.x+sg*(-.02+i*.01)*H,pre=nm+'Toe'+(i+1);
+      add(pre+'_1',V(x,minY+.012*H,tbz+dz*.2*sc),nm+'ToeBase','x');add(pre+'_2',V(x,minY+.009*H,tbz+dz*.65*sc),pre+'_1','x');
     });
   });
-  const dropRe=lod==='17'?/^(Spine1|Head_End|(Left|Right)(Shoulder|Hand_End|Toe_End|ToeBase))$/:null,drop={has:n=>!!dropRe&&dropRe.test(n)};
-  const par={};spec.forEach(q=>{par[q[0]]=q[2]});const out=[],by={};
+  const keep=(tag,n)=>{
+    if(lod==='17')return tag==='b'&&!/^(Spine1|Head_End|(Left|Right)(Shoulder|Hand_End|Toe_End|ToeBase))$/.test(n);
+    if(lod==='27')return tag==='b'||tag==='e';
+    if(lod==='65')return tag==='b'||tag==='f';
+    return tag!=='e';
+  };
+  const par={},keepSet=new Set();spec.forEach(q=>{par[q[0]]=q[2];if(keep(q[3],q[0]))keepSet.add(q[0])});
+  const out=[],by={};
   spec.forEach(([n,v,p])=>{
-    if(drop.has(n))return;let pp=p;while(pp&&drop.has(pp))pp=par[pp];
+    if(!keepSet.has(n))return;let pp=p;while(pp&&!keepSet.has(pp))pp=par[pp];
     const b={name:n,position:v,parent:pp?by[pp]:null};by[n]=b;out.push(b);
   });
+  if(out.length>122)throw new Error('esqueleto passou do limite de 122 ossos ('+out.length+')');
+  out.conf=rigConfidence(out,m,H,minY,tips);
   return out;
+}
+// nota de confiança (0-100): simetria, proporções do corpo, ossos dentro da malha e mãos medidas
+function rigConfidence(list,m,H,minY,tips){
+  const by={};list.forEach(b=>{by[b.name]=b});const d3=(a,b)=>Math.hypot(a.position.x-b.position.x,a.position.y-b.position.y,a.position.z-b.position.z);
+  let sym=0,sn=0;
+  ['Arm','ForeArm','Hand','UpLeg','Leg','Foot'].forEach(n=>{const a=by['Left'+n],b=by['Right'+n];if(!a||!b)return;sn++;
+    if(Math.abs(a.position.y-b.position.y)<.03*H&&Math.abs(a.position.x+b.position.x)<.05*H&&Math.abs(a.position.z-b.position.z)<.04*H)sym++});
+  let pr=0,pn=0;const chk=(v,lo,hi)=>{pn++;if(v>=lo&&v<=hi)pr++};
+  chk((m.groin.y-minY)/H,.38,.56);chk((m.chin.y-minY)/H,.78,.93);
+  if(by.LeftHand&&by.RightHand)chk(Math.abs(by.LeftHand.position.x-by.RightHand.position.x)/H,.5,1.2);
+  if(by.LeftArm&&by.LeftForeArm&&by.LeftHand)chk((d3(by.LeftArm,by.LeftForeArm)+d3(by.LeftForeArm,by.LeftHand))/H,.2,.42);
+  if(by.LeftUpLeg&&by.LeftLeg&&by.LeftFoot)chk((d3(by.LeftUpLeg,by.LeftLeg)+d3(by.LeftLeg,by.LeftFoot))/H,.28,.52);
+  const P=rgPts,body=list.filter(b=>/^(Hips|Spine\d?|Neck|Head|(Left|Right)(Shoulder|Arm|ForeArm|Hand|UpLeg|Leg|Foot))$/.test(b.name));
+  let ins=0;
+  body.forEach(b=>{let n=0;const p=b.position,r=.03*H;for(let i=0;i<P.length&&n<6;i+=3){if(Math.abs(P[i]-p.x)<r&&Math.abs(P[i+1]-p.y)<r&&Math.abs(P[i+2]-p.z)<r)n++}if(n>=6)ins++});
+  const hs=tips.length?tips.filter(Boolean).length/tips.length:.5;
+  const s=.25*(sn?sym/sn:.5)+.25*(pn?pr/pn:.5)+.35*(body.length?ins/body.length:.5)+.15*hs;
+  return Math.round(100*s);
 }
 
 /* ============ rig: pesos da pele ============ */
@@ -812,20 +916,21 @@ function buildRig(){
     }
     geo.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(idx,4));geo.setAttribute('skinWeight',new THREE.Float32BufferAttribute(wt,4));
     const mat=Array.isArray(src.material)?src.material.map(m=>m.clone()):src.material.clone();
-    const sk=new THREE.SkinnedMesh(geo,mat);sk.name=src.name||'Malha';
+    const sk=new THREE.SkinnedMesh(geo,mat);sk.name=bones.some(b=>b.name===src.name)?src.name+'_mesh':(src.name||'Malha');
     src.matrixWorld.decompose(sk.position,sk.quaternion,sk.scale);
     rigRoot.add(sk);sk.updateMatrixWorld(true);sk.bind(skeleton);
   });
   model.visible=false;if(wire)applyWire();
+  rigRest=rigBones.map(b=>({p:b.position.clone(),q:b.quaternion.clone()}));
 }
 function makeSkeleton(m,how){
   busy(true,'Criando esqueleto e pesos…');
   setTimeout(()=>{
     try{
       if(!rgPts)rgPts=samplePts();
-      bones=skelFromMarkers(m,$('rgLod').value).slice(0,122);selBone=0;selReal=null;
+      bones=skelFromMarkers(m,$('rgLod').value);selBone=0;selReal=null;
       buildRig();rebuildBoneObjs();setTab('skel');setTool('orbit');
-      toast(`Esqueleto ${how} criado — ${bones.length}/122 ossos. Revise marcadores e pesos antes de exportar.`,'ok');
+      toast(`Esqueleto ${how} criado — ${bones.length} ossos · confiança estimada ${bones.conf}%`+(bones.conf<70?' (baixa: confira os ossos ou use Manual)':''),bones.conf<70?'warn':'ok');
     }catch(e){console.error(e);toast('Falha ao criar esqueleto: '+(e&&e.message||e),'err')}
     busy(false);afterChange();
   },40);
@@ -907,7 +1012,7 @@ function openRigger(){
   if(!model){toast('Abra um modelo primeiro','warn');return}
   if(hasSkel){toast('Este modelo já tem esqueleto — selecione um osso na lista e use Mover/Girar','warn');setTab('skel');return}
   try{rgPts=samplePts()}catch(e){toast('Não consegui ler a malha: '+e.message,'err');return}
-  walk=false;$('walk').checked=false;rigBones.forEach(b=>b.rotation.set(0,0,0));
+  stopRigAnim(true);
   tc.detach();rgSave={ctl:controls.enabled};rgOn=true;
   MKD.forEach(d=>{const k=d[0];rgMk[k]=lastMk?{placed:true,x:lastMk[k].x,y:lastMk[k].y}:{placed:false,x:0,y:0}});
   $('rgStage').appendChild(renderer.domElement);$('rigger').classList.add('on');
@@ -988,7 +1093,7 @@ function renderSkelTab(listOnly){
   if(hasSkel){
     info.innerHTML=`Este modelo <b style="color:var(--green)">já tem esqueleto</b> (${realBones.length} ossos, linhas verdes). Selecione um osso e use <b>Mover</b> ou <b>Girar</b> para posar.`;sb.style.display='none';sb2.hidden=true;
   }else{
-    info.textContent=rigRoot?`Esqueleto criado (${bones.length} ossos, linhas verdes). Mova os ossos e toque em Recalcular pesos.`:bones.length?'Ossos criados. Toque em Recalcular pesos para ligar a malha a eles.':'Sem esqueleto. Use Manual (2D) para marcar queixo, punhos, cotovelos, joelhos e virilha, ou Auto Rig para detectar tudo sozinho.';
+    info.textContent=rigRoot?`Esqueleto criado (${bones.length} ossos, linhas verdes).${bones.conf!=null?' Confiança estimada: '+bones.conf+'%.':''} Mova os ossos e toque em Recalcular pesos.`:bones.length?'Ossos criados. Toque em Recalcular pesos para ligar a malha a eles.':'Sem esqueleto. Use Manual (2D) para marcar queixo, punhos, cotovelos, joelhos e virilha, ou Auto Rig para detectar tudo sozinho.';
     sb.style.display='flex';sb2.hidden=!bones.length;
   }
   const items=hasSkel?realBones.map(b=>b.name||'(osso)'):bones.map(b=>b.name);
@@ -1018,12 +1123,154 @@ window.onImported=res=>{
 };
 function needBridge(){if(BR)return true;toast('Importar só funciona dentro do app TermWin','warn');return false}
 
+/* ============ animações: retarget Mixamo -> esqueleto do Auto Rig (sem depender do three) ============ */
+const qm=(a,b)=>[a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];
+const qi=a=>[-a[0],-a[1],-a[2],a[3]];
+const qv=(q,v)=>{const x=q[0],y=q[1],z=q[2],w=q[3],tx=2*(y*v[2]-z*v[1]),ty=2*(z*v[0]-x*v[2]),tz=2*(x*v[1]-y*v[0]);return [v[0]+w*tx+(y*tz-z*ty),v[1]+w*ty+(z*tx-x*tz),v[2]+w*tz+(x*ty-y*tx)]};
+const vnorm=v=>{const l=Math.hypot(v[0],v[1],v[2]);return l>1e-9?[v[0]/l,v[1]/l,v[2]/l]:null};
+function qfu(a,b){ // menor rotação que leva o vetor unitário a no vetor unitário b
+  const d=a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  if(d<-.999999){const ax=Math.abs(a[0])<.9?[1,0,0]:[0,1,0],c=[a[1]*ax[2]-a[2]*ax[1],a[2]*ax[0]-a[0]*ax[2],a[0]*ax[1]-a[1]*ax[0]],l=Math.hypot(c[0],c[1],c[2]);return [c[0]/l,c[1]/l,c[2]/l,0]}
+  const q=[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0],1+d],l=Math.hypot(q[0],q[1],q[2],q[3]);
+  return [q[0]/l,q[1]/l,q[2]/l,q[3]/l];
+}
+const nk=n=>String(n).replace(/^mixamorig:?/i,'').replace(/[\s_:]/g,'').toLowerCase();
+/* S: esqueleto da animação {names,parent,restQ,restP(local)} · T: esqueleto do rig {names,parent,pos(mundo)}
+   evalSrc(t)->{q:[quat local por osso],p:[pos local por osso]} · devolve quats locais por frame para cada osso mapeado */
+function retargetCore(S,T,evalSrc,dur,fps,groundY){
+  const ns=S.names.length,nt=T.names.length,sKey=S.names.map(nk),sIdx=new Map();sKey.forEach((k,i)=>sIdx.set(k,i));
+  const alias=k=>{
+    if(sIdx.has(k))return sIdx.get(k);
+    if(k==='headend'&&sIdx.has('headtopend'))return sIdx.get('headtopend');
+    const m=k.match(/^(left|right)hand(ring|pinky)(\d)$/);
+    if(m){const kk=m[1]+'hand'+(m[2]==='ring'?'middle':'index')+m[3];if(sIdx.has(kk))return sIdx.get(kk)}
+    return -1;
+  };
+  const map=T.names.map(n=>alias(nk(n))),tOf=new Array(ns).fill(-1);
+  map.forEach((s,i)=>{if(s>=0&&tOf[s]<0)tOf[s]=i});
+  const hipsT=T.names.findIndex(n=>nk(n)==='hips'),hipsS=sIdx.has('hips')?sIdx.get('hips'):-1;
+  if(hipsT<0||hipsS<0)throw new Error('a animação precisa de um osso Hips');
+  // pose de repouso da animação no mundo
+  const rW=new Array(ns),rP=new Array(ns);
+  for(let i=0;i<ns;i++){const p=S.parent[i];rW[i]=p<0?S.restQ[i]:qm(rW[p],S.restQ[i]);rP[i]=p<0?S.restP[i].slice():(()=>{const o=qv(rW[p],S.restP[i]);return [rP[p][0]+o[0],rP[p][1]+o[1],rP[p][2]+o[2]]})()}
+  // K = diferença entre a direção do osso no rig (T-pose) e na animação (repouso), para compensar pose em A x T
+  const kids=S.names.map(()=>[]);S.parent.forEach((p,i)=>{if(p>=0)kids[p].push(i)});
+  const rank=i=>/middle/.test(sKey[i])?-1:/shoulder|upleg|thumb|index|ring|pinky/.test(sKey[i])?1:0;
+  const pickDesc=s=>{const q=[s];for(let h=0;h<q.length;h++){const ks=kids[q[h]].slice().sort((a,b)=>rank(a)-rank(b));for(const c of ks){if(tOf[c]>=0)return c;q.push(c)}}return -1};
+  const isAnc=(a,j)=>{let p=T.parent[j];while(p>=0){if(p===a)return true;p=T.parent[p]}return false};
+  const K=new Array(nt);
+  for(let i=0;i<nt;i++){
+    K[i]=[0,0,0,1];const s=map[i];if(s<0)continue;const d=pickDesc(s);if(d<0)continue;
+    let j=-1;for(let k=0;k<nt;k++)if(map[k]===d&&isAnc(i,k)){j=k;break}
+    if(j<0)j=tOf[d];if(j<0)continue;
+    const dt=vnorm([T.pos[j][0]-T.pos[i][0],T.pos[j][1]-T.pos[i][1],T.pos[j][2]-T.pos[i][2]]),ds=vnorm([rP[d][0]-rP[s][0],rP[d][1]-rP[s][1],rP[d][2]-rP[s][2]]);
+    if(dt&&ds)K[i]=qfu(dt,ds);
+  }
+  // escala (altura do quadril em relação ao chão) e frames
+  let sFloor=1e9;for(let i=0;i<ns;i++)if(rP[i][1]<sFloor)sFloor=rP[i][1];
+  const sc=(T.pos[hipsT][1]-groundY)/Math.max(rP[hipsS][1]-sFloor,1e-6);
+  const F=Math.max(2,Math.round(dur*fps)+1),times=[],Q=[],H=[];
+  let Yc=null;
+  for(let f=0;f<F;f++){
+    const t=Math.min(dur,f/fps);times.push(t);const ev=evalSrc(t),Wq=new Array(ns),Wp=new Array(ns);
+    for(let i=0;i<ns;i++){const p=S.parent[i];Wq[i]=p<0?ev.q[i]:qm(Wq[p],ev.q[i]);Wp[i]=p<0?ev.p[i].slice():(()=>{const o=qv(Wq[p],ev.p[i]);return [Wp[p][0]+o[0],Wp[p][1]+o[1],Wp[p][2]+o[2]]})()}
+    if(!Yc){ // corrige a direção inicial do corpo (algumas animações vêm giradas): o eixo lateral do quadril no frame 0 passa a apontar para +X
+      const r=qv(Wq[hipsS],[1,0,0]),th=Math.atan2(-r[2],r[0]);
+      Yc=[0,Math.sin(-th/2),0,Math.cos(-th/2)];
+    }
+    const QT=new Array(nt),L=new Array(nt);
+    for(let i=0;i<nt;i++){
+      const s=map[i],p=T.parent[i];
+      QT[i]=s>=0?qm(Yc,qm(qm(Wq[s],qi(rW[s])),K[i])):(p>=0?QT[p]:[0,0,0,1]);
+      let l=p>=0?qm(qi(QT[p]),QT[i]):QT[i];
+      if(f>0&&Q[f-1]){const pq=Q[f-1][i];if(pq[0]*l[0]+pq[1]*l[1]+pq[2]*l[2]+pq[3]*l[3]<0)l=[-l[0],-l[1],-l[2],-l[3]]}
+      {const ln=Math.hypot(l[0],l[1],l[2],l[3])||1;l=[l[0]/ln,l[1]/ln,l[2]/ln,l[3]/ln]}
+      L[i]=l;
+    }
+    Q.push(L);
+    const o=qv(Yc,[Wp[hipsS][0]-rP[hipsS][0],Wp[hipsS][1]-rP[hipsS][1],Wp[hipsS][2]-rP[hipsS][2]]);
+    H.push([o[0]*sc,o[1]*sc,o[2]*sc]);
+  }
+  // animação "no lugar": tira o deslocamento horizontal (início e deriva linear), mantém o balanço e a altura
+  const h0=H[0].slice(),hN=H[F-1].slice();
+  for(let f=0;f<F;f++){const u=f/(F-1);H[f][0]-=h0[0]+u*(hN[0]-h0[0]);H[f][2]-=h0[2]+u*(hN[2]-h0[2])}
+  return {times,Q,hipsT,H,map,scale:sc,K};
+}
+
+/* ---- animações no rig: carrega os FBX (sem modelo), ajusta ao esqueleto do Auto Rig e toca/exporta ---- */
+const ANIMS=[{id:'walk',label:'Andar',file:'Sneak_Walk.fbx',clip:'Sneak_Walk'},{id:'jump',label:'Pular',file:'Jumping.fbx',clip:'Jumping'},{id:'punch',label:'Socar',file:'Punch_Combo.fbx',clip:'Punch_Combo'}];
+const animSrc={};
+async function getSrcAnim(a){
+  if(animSrc[a.id])return animSrc[a.id];
+  const {FBXLoader}=await import('three/addons/loaders/FBXLoader.js');
+  const obj=await new FBXLoader().loadAsync('/anim/'+a.file);
+  const bl=[];obj.traverse(n=>{if(n.isBone)bl.push(n)});
+  if(!bl.length)throw new Error('animação sem esqueleto: '+a.file);
+  const clip=(obj.animations||[])[0];if(!clip)throw new Error('arquivo sem animação: '+a.file);
+  const idx=new Map(bl.map((b,i)=>[b,i]));
+  const parent=bl.map(b=>{let p=b.parent;while(p&&!idx.has(p))p=p.parent;return p?idx.get(p):-1});
+  const S={names:bl.map(b=>b.name),parent,restQ:bl.map(b=>[b.quaternion.x,b.quaternion.y,b.quaternion.z,b.quaternion.w]),restP:bl.map(b=>[b.position.x,b.position.y,b.position.z])};
+  const tq=new Map(),tp=new Map();
+  clip.tracks.forEach(t=>{const d=t.name.lastIndexOf('.'),k=nk(t.name.slice(0,d)),pr=t.name.slice(d+1);if(pr==='quaternion')tq.set(k,t.createInterpolant());else if(pr==='position')tp.set(k,t.createInterpolant())});
+  const keys=bl.map(b=>nk(b.name));
+  const evalSrc=t=>({q:keys.map((k,i)=>{const it=tq.get(k);return it?Array.from(it.evaluate(t)):S.restQ[i]}),p:keys.map((k,i)=>{const it=tp.get(k);return it?Array.from(it.evaluate(t)):S.restP[i]})});
+  return animSrc[a.id]={S,evalSrc,dur:clip.duration};
+}
+async function ensureRigClips(){
+  if(rigClips)return rigClips;
+  const rr=rigRoot;if(!rr||!bones.length)throw new Error('crie o rig com o Auto Rig primeiro');
+  const T={names:bones.map(b=>b.name),parent:bones.map(b=>b.parent?bones.indexOf(b.parent):-1),pos:bones.map(b=>[b.position.x,b.position.y,b.position.z])};
+  const gy=new THREE.Box3().setFromObject(model).min.y,out={};
+  for(const a of ANIMS){
+    const s=await getSrcAnim(a),r=retargetCore(s.S,T,s.evalSrc,s.dur,30,gy),tracks=[];
+    r.map.forEach((si,i)=>{
+      if(si<0)return;const v=new Float32Array(r.times.length*4);r.Q.forEach((L,f)=>v.set(L[i],f*4));
+      tracks.push(new THREE.QuaternionKeyframeTrack(T.names[i]+'.quaternion',r.times,v));
+    });
+    const hv=new Float32Array(r.times.length*3),hp=T.pos[r.hipsT];
+    r.H.forEach((h,f)=>{hv[f*3]=hp[0]+h[0];hv[f*3+1]=hp[1]+h[1];hv[f*3+2]=hp[2]+h[2]});
+    tracks.push(new THREE.VectorKeyframeTrack(T.names[r.hipsT]+'.position',r.times,hv));
+    out[a.id]=new THREE.AnimationClip(a.clip,-1,tracks);
+  }
+  if(rigRoot!==rr)throw new Error('o rig mudou durante o preparo, tente de novo');
+  return rigClips=out;
+}
+function syncRigVis(){
+  if(!rigRoot)return;rigRoot.updateMatrixWorld(true);
+  rigBones.forEach((b,i)=>{if(boneObjs[i])boneObjs[i].position.setFromMatrixPosition(b.matrixWorld)});updateLines();
+}
+function markAnimBtns(){document.querySelectorAll('#animBtns .btn').forEach(b=>b.classList.toggle('on',b.dataset.id===rigAnimId))}
+function stopRigAnim(restore){
+  if(rigMixer)rigMixer.stopAllAction();rigAnimId='';
+  if(restore&&rigRest&&rigBones.length){rigBones.forEach((b,i)=>{if(rigRest[i]){b.position.copy(rigRest[i].p);b.quaternion.copy(rigRest[i].q)}});syncRigVis()}
+  markAnimBtns();
+}
+async function playRigAnim(id){
+  const a=ANIMS.find(x=>x.id===id);if(!a)return;
+  if(!rigRoot){toast('Crie um rig com o Auto Rig primeiro','warn');return}
+  if(rigAnimId===id){stopRigAnim(true);toast('Animação parada');return}
+  const rr=rigRoot;busy(true,'Preparando animação…');
+  try{
+    const cl=await ensureRigClips();if(rigRoot!==rr)return;
+    if(!rigMixer)rigMixer=new THREE.AnimationMixer(rigRoot);
+    rigMixer.stopAllAction();const act=rigMixer.clipAction(cl[id]);act.reset();act.setLoop(THREE.LoopRepeat,Infinity);act.play();
+    rigAnimId=id;markAnimBtns();toast('Tocando: '+a.label+' (toque de novo para parar)','ok');
+  }catch(e){console.error(e);toast('Não consegui preparar a animação: '+(e&&e.message||e),'err')}
+  finally{busy(false)}
+}
+
 /* ============ exportar ============ */
 async function exportGLB(){
   if(!model){toast('Abra um modelo antes de exportar','warn');return}
   const target=rigRoot||model;
   busy(true,'Exportando GLB…');
-  const opts={binary:true,onlyVisible:true};if(clips.length)opts.animations=clips;
+  let anims=null;
+  if(rigRoot){
+    try{busy(true,'Preparando animações…');const cl=await ensureRigClips();anims=ANIMS.map(a=>cl[a.id]).filter(Boolean)}
+    catch(e){console.error(e);toast('Exportando sem as animações: '+(e&&e.message||e),'warn')}
+    stopRigAnim(true);busy(true,'Exportando GLB…');
+  }
+  const opts={binary:true,onlyVisible:true};if(rigRoot){if(anims&&anims.length)opts.animations=anims}else if(clips.length)opts.animations=clips;
   new GLTFExporter().parse(target,async buf=>{
     try{
       const stem=file.split('/').pop().replace(/\.[^.]+$/,'')+(rigRoot?'_rig':'_export');const name=stem+'.glb';
@@ -1045,18 +1292,6 @@ async function exportGLB(){
     }catch(e){toast('Erro ao exportar: '+(e&&e.message||e),'err')}
     busy(false);
   },e=>{busy(false);toast('Erro ao exportar: '+(e&&e.message||e),'err')},opts);
-}
-
-function playNamedAnimation(re,label){
-  if(!clips.length||!mixer){
-    toast('Nenhuma animação carregada. Carregue o FBX de animação e confirme a compatibilidade do esqueleto.','warn');
-    return;
-  }
-  const i=clips.findIndex(c=>re.test(c.name||''));
-  if(i<0){toast('A animação '+label+' não está no arquivo carregado.','warn');return;}
-  $('clipSel').value=String(i);
-  mixer.stopAllAction();curAction=mixer.clipAction(clips[i]);curAction.reset().play();playing=true;
-  renderSkelTab(true);toast('Reproduzindo '+label);
 }
 
 /* ============ cliques ============ */
@@ -1086,7 +1321,8 @@ const ACT={
     catch(e){toast('Não consegui aplicar: '+e.message,'err')}
     busy(false);
   },
-  animPunch:()=>playNamedAnimation(/punch|combo/i,'Punch Combo'),\n  animJump:()=>playNamedAnimation(/jump/i,'Jumping'),\n  animSneak:()=>playNamedAnimation(/sneak|walk/i,'Sneak Walk'),\n  playclip:()=>{
+  anim:b=>playRigAnim(b.dataset.id),
+  playclip:()=>{
     if(!mixer||!clips.length)return;
     if(playing){mixer.stopAllAction();playing=false}
     else{const c=clips[+$('clipSel').value||0];curAction=mixer.clipAction(c);curAction.reset().play();playing=true}
@@ -1100,7 +1336,8 @@ document.addEventListener('click',e=>{
 });
 $('modal').addEventListener('click',e=>{if(e.target===$('modal'))closeModal()});
 $('pathIn').addEventListener('keydown',e=>{if(e.key==='Enter')ACT.importpath()});
-$('walk').addEventListener('change',e=>{walk=e.target.checked;if(walk&&!rigRoot){toast('Crie um rig com o Auto Rig primeiro','warn');e.target.checked=false;walk=false}else toast(walk?'Caminhada ligada':'Caminhada parada');if(!walk){rigBones.forEach(b=>b.rotation.set(0,0,0));syncBoneObjs()}});
+$('skLod').addEventListener('change',e=>{$('rgLod').value=e.target.value});
+$('rgLod').addEventListener('change',e=>{$('skLod').value=e.target.value});
 $('showBones').addEventListener('change',e=>{const on=e.target.checked;if(skelHelper)skelHelper.visible=on;boneObjs.forEach(o=>o.visible=on);if(boneLines)boneLines.visible=on});
 $('clipSel').addEventListener('change',()=>{if(playing){mixer.stopAllAction();curAction=mixer.clipAction(clips[+$('clipSel').value||0]);curAction.reset().play()}});
 
@@ -1109,15 +1346,7 @@ function loop(){
   requestAnimationFrame(loop);
   const dt=clock.getDelta();
   if(mixer&&playing)mixer.update(dt);
-  if(walk&&rigBones.length){
-    walkT+=dt*4;
-    rigBones.forEach(b=>{
-      const n=b.name.toLowerCase(),ph=n.startsWith('left')?0:Math.PI;
-      if(n.endsWith('arm')&&!n.includes('fore'))b.rotation.x=Math.sin(walkT+ph+Math.PI)*.5;
-      else if(n.endsWith('upleg'))b.rotation.x=Math.sin(walkT+ph)*.6;
-    });
-    if(rigRoot){rigRoot.updateMatrixWorld(true);rigBones.forEach((b,i)=>{if(boneObjs[i])boneObjs[i].position.setFromMatrixPosition(b.matrixWorld)});updateLines()}
-  }
+  if(rigMixer&&rigAnimId){rigMixer.update(dt);syncRigVis()}
   controls.update();if(selBox)selBox.update();
   renderer.render(scene,activeCam);
 }
