@@ -9,7 +9,7 @@ android {
         applicationId = "com.termwin.console"
         minSdk = 28          // Android 9+
         targetSdk = 34
-        versionCode = 20
+        versionCode = 21
         versionName = "2.9"
     }
     compileOptions {

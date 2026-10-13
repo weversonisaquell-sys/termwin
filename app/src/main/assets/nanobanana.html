@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nano Banana</title>
+<style>
+:root{
+  --bg:#131314; --surface:#1e1f20; --surface2:#282a2c; --surface3:#333537;
+  --text:#e3e3e3; --muted:#9aa0a6; --line:#3c4043; --accent:#a8c7fa; --accent-ink:#062e6f;
+  --g1:#4285f4; --g2:#9b72cb; --g3:#d96570; --danger:#f28b82; --ok:#81c995;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+  font:15px/1.5 "Google Sans",Roboto,"Segoe UI",system-ui,sans-serif;overflow:hidden}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+.grad{background:linear-gradient(90deg,var(--g1),var(--g2) 55%,var(--g3));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hidden{display:none!important}
+
+/* ---------- app shell ---------- */
+#app{position:absolute;inset:0;display:flex;flex-direction:column}
+header{flex:none;display:flex;align-items:center;gap:6px;padding:6px 10px;height:48px}
+.ib{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-size:18px;color:var(--text);flex:none}
+.ib:active{background:var(--surface2)}
+#modelBtn{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:18px;font-size:16px;font-weight:500}
+#modelBtn:active{background:var(--surface2)}
+#modelBtn small{color:var(--muted);font-size:11px;font-weight:400;display:block;line-height:1}
+.sp{flex:1}
+#avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--g1),var(--g2));color:#fff;font-weight:600;font-size:14px;display:grid;place-items:center}
+
+/* ---------- conversation ---------- */
+#scroll{flex:1;overflow-y:auto;padding:4px 14px 12px;scroll-behavior:smooth}
+#hero{max-width:640px;margin:0 auto;padding-top:clamp(6px,5vh,40px)}
+#hero h1{font-size:clamp(26px,6vw,40px);line-height:1.15;margin:0;font-weight:500;letter-spacing:-.5px}
+#hero h2{font-size:clamp(22px,5vw,34px);line-height:1.2;margin:2px 0 14px;font-weight:500;color:#5f6368}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:var(--surface);border-radius:14px;padding:10px 14px;font-size:13px;text-align:left;max-width:100%}
+.chip:active{background:var(--surface2)}
+.chip b{display:block;font-weight:500;color:var(--text)}
+.chip span{color:var(--muted);font-size:12px}
+#msgs{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.u{align-self:flex-end;max-width:85%;background:var(--surface2);border-radius:20px 20px 6px 20px;padding:10px 14px;word-break:break-word;white-space:pre-wrap}
+.u .th{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.u .th img{width:72px;height:72px;object-fit:cover;border-radius:10px}
+.m{display:flex;gap:10px;align-items:flex-start}
+.m .star{flex:none;width:28px;height:28px;font-size:22px;line-height:28px;text-align:center}
+.m .body{min-width:0;flex:1}
+.m p{margin:0 0 8px;white-space:pre-wrap;word-break:break-word}
+.imgcard{position:relative;display:inline-block;max-width:100%;border-radius:18px;overflow:hidden;background:var(--surface);margin:2px 8px 8px 0;vertical-align:top}
+.imgcard img{display:block;max-width:100%;max-height:min(52vh,420px);min-width:220px;width:auto;height:auto}
+.imgcard .act{position:absolute;right:8px;bottom:8px;display:flex;gap:6px}
+.act button{height:34px;padding:0 12px;border-radius:17px;white-space:nowrap;background:rgba(19,19,20,.78);backdrop-filter:blur(6px);font-size:13px}
+.act button:active{background:rgba(60,64,67,.95)}
+.err{color:var(--danger);background:rgba(242,139,130,.08);border:1px solid rgba(242,139,130,.25);border-radius:14px;padding:10px 12px;font-size:13px}
+.load{display:flex;flex-direction:column;gap:8px;width:min(100%,360px)}
+.load i{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--surface2) 0%,#4a4d52 40%,var(--surface2) 80%);background-size:300% 100%;animation:sh 1.3s linear infinite}
+.load i:nth-child(2){width:80%}.load i:nth-child(3){width:55%}
+.load .box{height:150px;border-radius:18px}
+@keyframes sh{from{background-position:100% 0}to{background-position:-100% 0}}
+.spin{animation:rot 2.2s linear infinite;display:inline-block}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* ---------- prompt bar ---------- */
+#bar{flex:none;padding:6px 12px calc(8px + env(safe-area-inset-bottom))}
+#box{max-width:720px;margin:0 auto;background:var(--surface);border-radius:26px;padding:8px 10px 6px}
+#atts{display:flex;gap:8px;flex-wrap:wrap;padding:2px 4px 8px}
+#atts .a{position:relative;width:56px;height:56px}
+#atts img{width:56px;height:56px;object-fit:cover;border-radius:12px;display:block}
+#atts .x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--surface3);border:1px solid var(--bg);font-size:11px;display:grid;place-items:center}
+#txt{display:block;width:100%;resize:none;border:0;outline:0;background:none;color:var(--text);font:inherit;font-size:16px;line-height:1.4;padding:6px 8px;max-height:30vh;min-height:30px}
+#txt::placeholder{color:var(--muted)}
+#row{display:flex;align-items:center;gap:4px;padding-top:2px}
+#plus{width:38px;height:38px;border-radius:50%;font-size:24px;line-height:1;display:grid;place-items:center;color:var(--text)}
+#plus:active{background:var(--surface2)}
+.tool{display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:17px;font-size:13px;color:var(--accent);background:rgba(168,199,250,.1)}
+#send{width:38px;height:38px;border-radius:50%;background:#e3e3e3;color:#131314;font-size:19px;display:grid;place-items:center;font-weight:700}
+#send[disabled]{background:transparent;color:#5f6368}
+#foot{text-align:center;color:#6f7378;font-size:11px;padding:6px 0 0}
+
+/* ---------- menus ---------- */
+.pop{position:absolute;z-index:30;background:var(--surface2);border-radius:16px;padding:6px;min-width:210px;box-shadow:0 8px 30px rgba(0,0,0,.55)}
+.pop button{display:flex;width:100%;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;text-align:left;font-size:14px}
+.pop button:active,.pop button.sel{background:var(--surface3)}
+.pop small{display:block;color:var(--muted);font-size:11px}
+.pop hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+#shade{position:absolute;inset:0;z-index:20;background:rgba(0,0,0,.45)}
+#drawer{position:absolute;z-index:25;top:0;bottom:0;left:0;width:min(78%,280px);background:var(--surface);padding:10px;display:flex;flex-direction:column;gap:8px;transform:translateX(-102%);transition:transform .2s}
+#drawer.open{transform:none}
+#newchat{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:20px;background:var(--surface2);font-size:14px}
+#drawer h4{margin:10px 8px 2px;color:var(--muted);font-size:12px;font-weight:500}
+#recents{overflow-y:auto;flex:1}
+#recents button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:10px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+#recents button:active{background:var(--surface2)}
+
+/* ---------- login ---------- */
+#login{position:absolute;inset:0;overflow-y:auto;display:flex;padding:18px}
+#login .card{margin:auto;width:min(100%,440px)}
+#login h1{font-size:clamp(24px,5.5vw,32px);font-weight:500;margin:0 0 4px;line-height:1.2}
+#login p{color:var(--muted);margin:0 0 12px;font-size:14px}
+#login ol{margin:0 0 14px;padding-left:20px;color:#c4c7c5;font-size:13px}
+#login li{margin:3px 0}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;height:44px;border-radius:22px;font-weight:500;width:100%}
+.btn.p{background:var(--accent);color:var(--accent-ink)}
+.btn.p:active{filter:brightness(.9)}
+.btn.s{background:var(--surface2)}
+.field{display:flex;gap:8px;margin:10px 0}
+.field input{flex:1;min-width:0;height:44px;border-radius:22px;border:1px solid var(--line);background:var(--surface);color:var(--text);padding:0 16px;font:inherit;font-size:14px;outline:0}
+.field input:focus{border-color:var(--accent)}
+.field button{height:44px;padding:0 16px;border-radius:22px;background:var(--surface2);font-size:14px}
+#lerr{min-height:20px;font-size:13px;margin:4px 2px;color:var(--danger)}
+#lerr.ok{color:var(--ok)}
+.link{color:var(--accent);font-size:13px;text-decoration:underline;display:block;text-align:center;margin-top:10px}
+.note{margin-top:14px;font-size:11.5px;color:#7d8186;line-height:1.45}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="login" class="hidden">
+  <div class="card">
+    <div class="grad" style="font-size:34px;line-height:1">✦</div>
+    <h1 id="lTitle"></h1>
+    <p id="lSub"></p>
+    <ol id="lSteps"></ol>
+    <button class="btn p" id="lGoogle"></button>
+    <div class="field">
+      <input id="lKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…">
+      <button id="lPaste"></button>
+    </div>
+    <button class="btn s" id="lOk"></button>
+    <div id="lerr"></div>
+    <button class="link hidden" id="lUse"></button>
+    <div class="note" id="lNote"></div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hidden">
+  <header>
+    <button class="ib" id="menu" aria-label="menu">☰</button>
+    <button id="modelBtn"><span><span class="grad" style="font-weight:600">Nano Banana</span><small id="modelSub"></small></span><span style="color:var(--muted);font-size:11px">▾</span></button>
+    <div class="sp"></div>
+    <button class="ib" id="renew" aria-label="new chat" title="">✎</button>
+    <button id="avatar" aria-label="account">G</button>
+  </header>
+
+  <div id="scroll">
+    <div id="hero">
+      <h1><span class="grad" id="hi"></span></h1>
+      <h2 id="hi2"></h2>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div id="msgs"></div>
+  </div>
+
+  <div id="bar">
+    <div id="box">
+      <div id="atts" class="hidden"></div>
+      <textarea id="txt" rows="1"></textarea>
+      <div id="row">
+        <button id="plus" aria-label="add">+</button>
+        <span class="tool"><span>🍌</span><span id="toolName"></span></span>
+        <div class="sp"></div>
+        <button id="send" disabled aria-label="send">➤</button>
+      </div>
+    </div>
+    <div id="foot"></div>
+  </div>
+
+  <div id="shade" class="hidden"></div>
+  <div id="drawer">
+    <button id="newchat"><span>✎</span><span id="ncTxt"></span></button>
+    <h4 id="recTitle"></h4>
+    <div id="recents"></div>
+  </div>
+</div>
+
+<input type="file" id="file" accept="image/*" multiple class="hidden">
+
+<script>
+(function(){
+"use strict";
+var $=function(id){return document.getElementById(id)};
+var qs=new URLSearchParams(location.search);
+var PT=(qs.get('lang')||'pt')!=='en';
+var T={
+  pt:{
+    lTitle:'Entre para usar o Nano Banana',
+    lSub:'Primeiro você entra com a sua conta Google. Depois o Nano Banana fica liberado aqui, pelo plano grátis do Google AI Studio.',
+    steps:['Toque em “Entrar com Google” e entre na sua conta.','No Google AI Studio, toque em “Criar chave de API” e copie a chave (começa com AIza).','Volte para cá, toque em “Colar” e depois em “Continuar”.'],
+    google:'Entrar com Google', paste:'Colar', ok:'Continuar', use:'Usar a chave do Gemini que já está salva no app',
+    checking:'Verificando a chave…', empty:'Cole a sua chave de API primeiro.', badfmt:'Essa chave não parece certa. Ela começa com AIza.',
+    note:'A chave fica salva só neste aparelho, dentro do TermWin. O plano grátis do Google tem limite de uso e ele pode mudar; se o Google cobrar ou bloquear, aparece o erro aqui.',
+    hi:'Olá!', hi2:'O que vamos criar hoje?',
+    ph:'Descreva a imagem ou o que mudar na foto', tool:'Criar imagem', newchat:'Nova conversa', recents:'Recentes', renew:'Nova conversa',
+    foot:'O Nano Banana pode errar. Plano grátis do Google: os limites variam.', free:'plano grátis do Google',
+    c1:['Gato astronauta','um gato astronauta flutuando perto da Lua, estilo cinematográfico'],
+    c2:['Deixar em estilo anime','transforme a foto anexada em um desenho de anime'],
+    c3:['Trocar o fundo','troque o fundo da foto por uma praia ao pôr do sol'],
+    c4:['Logo simples','um logo minimalista de uma banana com raio, fundo escuro'],
+    add:'Enviar fotos', addS:'Da galeria ou dos arquivos', logout:'Sair da conta', conn:'Conectado pelo Google AI Studio', key:'chave',
+    model:'Modelo', paidHint:'pode exigir plano pago', gen:'Criando…', dl:'⬇ Baixar', edit:'✎ Editar', saved:'Salvo em Downloads', maxImgs:'No máximo 6 fotos.',
+    noimg:'O modelo respondeu sem imagem.', fail:'Não deu certo', retry:'Tente de novo.'
+  },
+  en:{
+    lTitle:'Sign in to use Nano Banana',
+    lSub:'First sign in with your Google account. Then Nano Banana unlocks here, through the free Google AI Studio plan.',
+    steps:['Tap “Sign in with Google” and sign in to your account.','In Google AI Studio tap “Create API key” and copy it (starts with AIza).','Come back here, tap “Paste” and then “Continue”.'],
+    google:'Sign in with Google', paste:'Paste', ok:'Continue', use:'Use the Gemini key already saved in the app',
+    checking:'Checking the key…', empty:'Paste your API key first.', badfmt:'That key does not look right. It starts with AIza.',
+    note:'The key is stored only on this device, inside TermWin. Google’s free plan has usage limits that may change; if Google blocks or charges, the error shows up here.',
+    hi:'Hello!', hi2:'What shall we create today?',
+    ph:'Describe the image or what to change in the photo', tool:'Create image', newchat:'New chat', recents:'Recent', renew:'New chat',
+    foot:'Nano Banana can make mistakes. Google free plan: limits vary.', free:'Google free plan',
+    c1:['Astronaut cat','an astronaut cat floating near the Moon, cinematic style'],
+    c2:['Make it anime','turn the attached photo into an anime drawing'],
+    c3:['Change background','replace the photo background with a beach at sunset'],
+    c4:['Simple logo','a minimalist logo of a banana with a lightning bolt, dark background'],
+    add:'Upload photos', addS:'From gallery or files', logout:'Sign out', conn:'Connected via Google AI Studio', key:'key',
+    model:'Model', paidHint:'may need a paid plan', gen:'Creating…', dl:'⬇ Download', edit:'✎ Edit', saved:'Saved to Downloads', maxImgs:'At most 6 photos.',
+    noimg:'The model answered without an image.', fail:'Did not work', retry:'Try again.'
+  }
+};
+var L=PT?T.pt:T.en;
+document.documentElement.lang=PT?'pt':'en';
+
+var MODELS=[
+  {id:'gemini-2.5-flash-image',name:'Nano Banana',sub:L.free},
+  {id:'gemini-3.1-flash-image',name:'Nano Banana 2',sub:L.paidHint},
+  {id:'gemini-3-pro-image',name:'Nano Banana Pro',sub:L.paidHint}
+];
+var model=safeGet('nb_model')||MODELS[0].id;
+if(!MODELS.some(function(m){return m.id===model}))model=MODELS[0].id;
+
+function safeGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function safeSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function J(s){try{return JSON.parse(s)}catch(e){return null}}
+
+/* ======== texts ======== */
+$('lTitle').textContent=L.lTitle; $('lSub').textContent=L.lSub;
+$('lSteps').innerHTML=L.steps.map(function(s){return '<li>'+esc(s)+'</li>'}).join('');
+$('lGoogle').textContent=L.google; $('lPaste').textContent=L.paste; $('lOk').textContent=L.ok;
+$('lUse').textContent=L.use; $('lNote').textContent=L.note;
+$('hi').textContent=L.hi; $('hi2').textContent=L.hi2;
+$('txt').placeholder=L.ph; $('toolName').textContent=L.tool;
+$('ncTxt').textContent=L.newchat; $('recTitle').textContent=L.recents; $('foot').textContent=L.foot;
+$('renew').title=L.renew;
+$('chips').innerHTML=[L.c1,L.c2,L.c3,L.c4].map(function(c,i){return '<button class="chip" data-p="'+esc(c[1])+'"><b>'+esc(c[0])+'</b><span>'+esc(c[1].length>34?c[1].slice(0,34)+'…':c[1])+'</span></button>'}).join('');
+
+/* ======== login ======== */
+function showLogin(st){
+  $('app').classList.add('hidden'); $('login').classList.remove('hidden');
+  $('lUse').classList.toggle('hidden',!(st&&st.hasGemini));
+}
+function showApp(st){
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+  $('avatar').dataset.tail=(st&&st.tail)||'';
+  renderModel();
+  renderRecents();
+}
+function lmsg(m,ok){var e=$('lerr');e.textContent=m||'';e.className=ok?'ok':''}
+$('lGoogle').onclick=function(){try{NB.openLogin()}catch(e){lmsg(String(e))}};
+$('lPaste').onclick=function(){try{var t=NB.paste();if(t){$('lKey').value=t.trim();lmsg('')}}catch(e){lmsg(String(e))}};
+$('lOk').onclick=function(){
+  var k=$('lKey').value.replace(/\s/g,'');
+  if(!k){lmsg(L.empty);return}
+  if(k.indexOf('AIza')!==0){lmsg(L.badfmt);return}
+  lmsg(L.checking,true);
+  NB.saveKey(k);
+};
+$('lUse').onclick=function(){lmsg(L.checking,true);NB.useGeminiKey()};
+window.onKey=function(ok,msg){
+  if(ok){lmsg('');$('lKey').value='';showApp(J(NB.status()))}
+  else lmsg(msg);
+};
+
+/* ======== model menu ======== */
+function renderModel(){
+  var m=MODELS.filter(function(x){return x.id===model})[0];
+  $('modelSub').textContent=m.sub;
+  document.querySelector('#modelBtn .grad').textContent=m.name;
+}
+function closePops(){
+  var ps=document.querySelectorAll('.pop');for(var i=0;i<ps.length;i++)ps[i].remove();
+  $('shade').classList.add('hidden');$('shade').onclick=null;
+}
+function openPop(anchor,html,place){
+  closePops();
+  var d=document.createElement('div');d.className='pop';d.innerHTML=html;
+  $('app').appendChild(d);
+  var r=anchor.getBoundingClientRect();
+  if(place==='up'){d.style.left=Math.max(8,r.left)+'px';d.style.bottom=(window.innerHeight-r.top+6)+'px'}
+  else if(place==='right'){d.style.right='10px';d.style.top=(r.bottom+6)+'px'}
+  else{d.style.left=Math.max(8,Math.min(r.left,window.innerWidth-230))+'px';d.style.top=(r.bottom+6)+'px'}
+  $('shade').classList.remove('hidden');$('shade').style.background='transparent';$('shade').onclick=closePops;
+  return d;
+}
+$('modelBtn').onclick=function(){
+  var d=openPop($('modelBtn'),'<div style="padding:6px 12px;color:var(--muted);font-size:12px">'+esc(L.model)+'</div>'+MODELS.map(function(m){
+    return '<button data-m="'+m.id+'" class="'+(m.id===model?'sel':'')+'"><span><b style="font-weight:500">'+esc(m.name)+'</b><small>'+esc(m.sub)+'</small></span></button>'}).join(''));
+  d.onclick=function(e){var b=e.target.closest('button');if(!b)return;model=b.dataset.m;safeSet('nb_model',model);renderModel();closePops()};
+};
+$('plus').onclick=function(){
+  var d=openPop($('plus'),'<button id="pAdd"><span style="font-size:20px">🖼</span><span>'+esc(L.add)+'<small>'+esc(L.addS)+'</small></span></button>','up');
+  d.querySelector('#pAdd').onclick=function(){closePops();$('file').click()};
+};
+$('avatar').onclick=function(){
+  var tail=$('avatar').dataset.tail||'';
+  var d=openPop($('avatar'),'<div style="padding:8px 12px 6px"><b style="font-weight:500">'+esc(L.conn)+'</b><small>'+esc(L.key)+(tail?' …'+esc(tail):'')+'</small></div><hr><button id="pOut"><span>↪</span><span>'+esc(L.logout)+'</span></button>','right');
+  d.querySelector('#pOut').onclick=function(){closePops();NB.logout();newChat();showLogin(J(NB.status()))};
+};
+
+/* ======== drawer / recents ======== */
+function drawer(open){$('drawer').classList.toggle('open',open);
+  var s=$('shade');if(open){s.classList.remove('hidden');s.style.background='rgba(0,0,0,.45)';s.onclick=function(){drawer(false)}}else{s.classList.add('hidden');s.onclick=null}}
+$('menu').onclick=function(){closePops();drawer(!$('drawer').classList.contains('open'))};
+function getRecents(){return J(safeGet('nb_recents')||'[]')||[]}
+function addRecent(p){var a=getRecents().filter(function(x){return x!==p});a.unshift(p);safeSet('nb_recents',JSON.stringify(a.slice(0,15)))}
+function renderRecents(){
+  var a=getRecents();
+  $('recents').innerHTML=a.map(function(p,i){return '<button data-i="'+i+'">'+esc(p)+'</button>'}).join('');
+  $('recents').onclick=function(e){var b=e.target.closest('button');if(!b)return;$('txt').value=getRecents()[+b.dataset.i]||'';autosize();upd();drawer(false);$('txt').focus()};
+}
+$('newchat').onclick=function(){newChat();drawer(false)};
+$('renew').onclick=newChat;
+
+/* ======== attachments ======== */
+var atts=[]; // {mime,data(base64),url}
+function renderAtts(){
+  var a=$('atts');
+  a.classList.toggle('hidden',!atts.length);
+  a.innerHTML=atts.map(function(x,i){return '<div class="a"><img src="'+x.url+'"><button class="x" data-i="'+i+'">✕</button></div>'}).join('');
+  a.onclick=function(e){var b=e.target.closest('.x');if(!b)return;atts.splice(+b.dataset.i,1);renderAtts();upd()};
+  upd();
+}
+function addDataUrl(u){
+  var i=u.indexOf('base64,');
+  atts.push({mime:(u.slice(5,u.indexOf(';'))||'image/jpeg'),data:u.slice(i+7),url:u});
+}
+function shrink(file){
+  return new Promise(function(res,rej){
+    var fr=new FileReader();
+    fr.onerror=function(){rej(new Error('read'))};
+    fr.onload=function(){
+      var im=new Image();
+      im.onerror=function(){rej(new Error('img'))};
+      im.onload=function(){
+        var M=1280,w=im.naturalWidth,h=im.naturalHeight,s=Math.min(1,M/Math.max(w,h));
+        var c=document.createElement('canvas');c.width=Math.max(1,Math.round(w*s));c.height=Math.max(1,Math.round(h*s));
+        var x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
+        res(c.toDataURL('image/jpeg',0.88));
+      };
+      im.src=fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+$('file').onchange=function(){
+  var fs=Array.prototype.slice.call(this.files||[]);this.value='';
+  var p=Promise.resolve();
+  fs.forEach(function(f){p=p.then(function(){
+    if(atts.length>=6){toast(L.maxImgs);return}
+    return shrink(f).then(addDataUrl).catch(function(){});
+  })});
+  p.then(renderAtts);
+};
+function toast(m){
+  var t=document.createElement('div');t.textContent=m;
+  t.style.cssText='position:absolute;left:50%;bottom:110px;transform:translateX(-50%);background:var(--surface3);padding:8px 16px;border-radius:18px;font-size:13px;z-index:50;max-width:90%;text-align:center';
+  $('app').appendChild(t);setTimeout(function(){t.remove()},2200);
+}
+
+/* ======== prompt box ======== */
+function autosize(){var t=$('txt');t.style.height='auto';t.style.height=Math.min(t.scrollHeight,Math.round(innerHeight*.3))+'px'}
+var busy=false;
+function upd(){$('send').disabled=busy||!($('txt').value.trim()||atts.length)}
+$('txt').oninput=function(){autosize();upd()};
+$('txt').onkeydown=function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}};
+$('send').onclick=send;
+$('chips').onclick=function(e){var b=e.target.closest('.chip');if(!b)return;$('txt').value=b.dataset.p;autosize();upd();$('txt').focus()};
+
+/* ======== chat ======== */
+var seq=0, pending={};
+function newChat(){
+  $('msgs').innerHTML='';$('hero').classList.remove('hidden');
+  atts=[];renderAtts();$('txt').value='';autosize();upd();
+}
+function scrollEnd(){var s=$('scroll');s.scrollTop=s.scrollHeight}
+function send(){
+  if(busy)return;
+  var prompt=$('txt').value.trim();
+  if(!prompt&&!atts.length)return;
+  if(!prompt)prompt=PT?'Melhore esta imagem':'Improve this image';
+  $('hero').classList.add('hidden');
+  var sent=atts.slice();
+  var u=document.createElement('div');u.className='u';
+  u.innerHTML=(sent.length?'<div class="th">'+sent.map(function(x){return '<img src="'+x.url+'">'}).join('')+'</div>':'')+esc(prompt);
+  $('msgs').appendChild(u);
+  var id=++seq;
+  var m=document.createElement('div');m.className='m';
+  m.innerHTML='<div class="star grad spin">✦</div><div class="body"><div class="load"><i></i><i></i><i></i><i class="box"></i></div></div>';
+  $('msgs').appendChild(m);pending[id]=m;
+  addRecent(prompt);renderRecents();
+  atts=[];renderAtts();$('txt').value='';autosize();
+  busy=true;upd();scrollEnd();
+  try{NB.generate(id,prompt,JSON.stringify(sent.map(function(x){return {mime:x.mime,data:x.data}})),model)}
+  catch(e){done(id,{ok:false,error:String(e)})}
+}
+function done(id,r){
+  var m=pending[id];if(!m)return;delete pending[id];
+  busy=false;upd();
+  var star=m.querySelector('.star');star.classList.remove('spin');
+  var b=m.querySelector('.body');b.innerHTML='';
+  if(!r.ok){
+    var e=document.createElement('div');e.className='err';e.textContent=r.error||L.fail;b.appendChild(e);scrollEnd();return;
+  }
+  if(r.text){var p=document.createElement('p');p.textContent=r.text;b.appendChild(p)}
+  (r.images||[]).forEach(function(im){
+    var c=document.createElement('div');c.className='imgcard';
+    c.innerHTML='<img src="'+im.url+'"><div class="act"><button data-a="dl">'+esc(L.dl)+'</button><button data-a="ed">'+esc(L.edit)+'</button></div>';
+    c.querySelector('img').onload=scrollEnd;
+    c.querySelector('[data-a=dl]').onclick=function(){try{NB.saveFile(im.name);toast(L.saved)}catch(e){toast(String(e))}};
+    c.querySelector('[data-a=ed]').onclick=function(){
+      if(atts.length>=6){toast(L.maxImgs);return}
+      fetch(im.url).then(function(x){return x.blob()}).then(function(bl){return shrink(bl)}).then(function(u){addDataUrl(u);renderAtts();$('txt').focus()}).catch(function(){});
+    };
+    b.appendChild(c);
+  });
+  if(!(r.images||[]).length&&!r.text){var e2=document.createElement('div');e2.className='err';e2.textContent=L.noimg;b.appendChild(e2)}
+  scrollEnd();
+}
+window.onGen=function(id,json){done(id,J(json)||{ok:false,error:L.fail})};
+
+/* ======== start ======== */
+function start(){
+  var st=null;try{st=J(NB.status())}catch(e){}
+  if(st&&st.logged)showApp(st);else showLogin(st);
+}
+renderAtts();
+start();
+})();
+</script>
+</body>
+</html>

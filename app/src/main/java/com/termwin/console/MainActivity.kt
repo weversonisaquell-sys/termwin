@@ -250,6 +250,7 @@ class MainActivity : Activity() {
   apk//open//nome.apk        procura o APK, abre o app em uma janela e guarda a pasta dele em Files/App data
   skel//caminho/modelo.fbx    copia o modelo + texturas da pasta para Files/Models e abre o editor 3D (ex.: skel//storage/emulated/0/Download/Tobe/modelo.fbx)
   skel//Vazio                abre o editor 3D com o modelo básico, sem importar nada (abre o Y Bot já com o esqueleto dele; em Importar há o modelo de teste)
+  nano//banana//abrir        abre o Nano Banana: janela móvel (estilo Gemini) que cria e edita imagens; entre com a conta Google, anexe fotos com + e descreva o que quer
   shizuku                    mostra o estado do Shizuku e pede a permissão (usado no lugar do root)
   dados                      onde seus arquivos ficam salvos
   erros                      mostra os erros salvos (erros limpar)
@@ -324,6 +325,7 @@ Toque e segure numa aba para renomear.
   apk//open//name.apk        find the APK, open the app in a window and keep its folder in Files/App data
   skel//path/model.fbx       copy the model + its folder textures into Files/Models and open the 3D editor (e.g. skel//storage/emulated/0/Download/Tobe/model.fbx)
   skel//Vazio                open the 3D editor with the basic model, nothing imported (opens Y Bot with its own skeleton; Import has the test model)
+  nano//banana//open         open Nano Banana: a movable Gemini-style window that makes and edits images; sign in with Google, attach photos with + and describe what you want
   shizuku                    show Shizuku status and ask for permission (used instead of root)
   data                       where your files are saved
   errors                     show saved errors (errors clear)
@@ -646,6 +648,7 @@ Long-press a tab to rename it.
             uris?.forEach { savePhotoSent(it) }
             return
         }
+        if (req == 83) { val cb = nbFileCb; nbFileCb = null; cb?.onReceiveValue(android.webkit.WebChromeClient.FileChooserParams.parseResult(res, data)); return }
         if (req == 82) { if (res == RESULT_OK) data?.data?.let { u -> thread { skelImportUri(u) } }; return }
         if (req == 79) { if (res == RESULT_OK) data?.data?.let { showPublish(it) }; return }
         if (req == 80) { if (res == RESULT_OK) data?.data?.let { copyFromTree(it) } else copyTab?.let { append(it, tr("copy cancelled\n", "cópia cancelada\n")) }; return }
@@ -1535,6 +1538,7 @@ Long-press a tab to rename it.
         if (rawLine.isEmpty()) return
         val line = expandAlias(rawLine)
         if (skelCmd(t, line)) { saveSoon(); return }
+        if (bananaCmd(t, line)) { saveSoon(); return }
         if (apkCmd(t, line)) { saveSoon(); return }
         if (!single) {
             val n = chainOps(line)
@@ -3525,6 +3529,7 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
         val ln = expandAlias(seg.trim())
         if (ln.isEmpty()) return false
         val w0 = ln.split(Regex("\\s+"))[0].lowercase()
+        if (NB_RE.matches(ln)) return true
         if (t.tpl.isNotEmpty()) return w0 in TPL_WORDS || SLASH_RE.containsMatchIn(ln)
         if (SLASH_RE.containsMatchIn(ln)) return true
         val w = cmd(w0)
@@ -4917,6 +4922,281 @@ fetch('/_anon/v/@ID@',{headers:{Range:'bytes=0-1'}}).then(function(r){log('HTTP 
             } finally { ui.post { busy(-1) } }
         }
         return true
+    }
+
+    // ---------- nano//banana//abrir : floating "Nano Banana" window (Gemini-style chat that makes/edits images) ----------
+    private val NB_RE = Regex("^nano\\s*//\\s*banana\\s*(?://\\s*(?:abrir|open|ligar))?$", RegexOption.IGNORE_CASE)
+    private var nbWin: Panel? = null
+    private var nbFileCb: android.webkit.ValueCallback<Array<Uri>>? = null
+
+    private fun bananaCmd(t: TabData, line: String): Boolean {
+        if (!NB_RE.matches(line.trim())) return false
+        if (nbWin != null) { append(t, tr("Nano Banana is already open.\n", "O Nano Banana já está aberto.\n")); nbWin?.overlay?.bringToFront(); return true }
+        append(t, tr("Opening Nano Banana…\n", "Abrindo o Nano Banana…\n") +
+            (if (nbKey().isEmpty()) tr("sign in with your Google account in the window to start.\n", "entre com a sua conta Google na janela para começar.\n") else ""))
+        openBananaWindow()
+        return true
+    }
+
+    private fun nbKey(): String = prefs.getString("nb_key", "") ?: ""
+
+    private fun nbHttpGet(url: String, key: String): Pair<Int, String> {
+        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 15000; c.readTimeout = 30000
+        c.setRequestProperty("x-goog-api-key", key)
+        val code = c.responseCode
+        val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+        return code to txt
+    }
+
+    private fun nbErrMsg(txt: String): String {
+        val j = try { JSONObject(txt) } catch (e: Exception) { null }
+        return j?.optJSONObject("error")?.optString("message")?.takeIf { it.isNotEmpty() } ?: txt.take(240)
+    }
+
+    /** Checks the key with Google, then keeps it. [done] runs on the UI thread. */
+    private fun nbSaveKey(raw: String, done: (Boolean, String) -> Unit) {
+        val k = raw.trim().replace(Regex("\\s"), "")
+        if (!k.startsWith("AIza")) { done(false, tr("That key does not look right. It starts with AIza.", "Essa chave não parece certa. Ela começa com AIza.")); return }
+        thread {
+            val (code, txt) = try { nbHttpGet("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1", k) } catch (e: Exception) { 0 to (e.message ?: "") }
+            ui.post {
+                when {
+                    code in 200..299 -> { prefs.edit().putString("nb_key", k).apply(); done(true, "") }
+                    code == 400 || code == 401 || code == 403 -> done(false, tr("Google did not accept this key: ", "O Google não aceitou essa chave: ") + nbErrMsg(txt))
+                    code == 0 -> done(false, tr("Could not reach Google (check your internet): ", "Não consegui falar com o Google (veja a internet): ") + txt)
+                    else -> { prefs.edit().putString("nb_key", k).apply(); done(true, "") } // Google busy (429/5xx): keep the key, errors will show when generating
+                }
+            }
+        }
+    }
+
+    private val NB_FALLBACK = listOf("gemini-2.5-flash-image", "gemini-3.1-flash-image", "gemini-3-pro-image")
+
+    /** Calls Gemini image generation (Nano Banana). Images are saved in cache/nb and served to the page. */
+    private fun nbGenerate(prompt: String, imgs: JSONArray, model0: String): JSONObject {
+        val out = JSONObject()
+        val key = nbKey()
+        if (key.isEmpty()) return out.put("ok", false).put("error", tr("Sign in first.", "Entre primeiro."))
+        val parts = JSONArray().put(JSONObject().put("text", prompt))
+        for (i in 0 until imgs.length()) {
+            val o = imgs.getJSONObject(i)
+            parts.put(JSONObject().put("inlineData", JSONObject().put("mimeType", o.optString("mime", "image/jpeg")).put("data", o.getString("data"))))
+        }
+        val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
+            .put("generationConfig", JSONObject().put("responseModalities", JSONArray().put("TEXT").put("IMAGE"))).toString()
+        // if a model is not found (404) go to the next one in the list
+        val order = NB_FALLBACK.let { l -> val i = l.indexOf(model0); if (i >= 0) l.drop(i) else listOf(model0) + l }
+        var lastCode = 0; var lastMsg = ""
+        for (model in order) {
+            val (code, txt) = try { httpPost("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent", mapOf("x-goog-api-key" to key), body) }
+                catch (e: Exception) { logError("nano-banana", e.toString()); return out.put("ok", false).put("error", tr("Could not reach Google: ${e.message} (check your internet)", "Não consegui falar com o Google: ${e.message} (veja a internet)")) }
+            lastCode = code; lastMsg = nbErrMsg(txt)
+            if (code == 404) { logError("nano-banana", "$model 404: $lastMsg"); continue }
+            if (code !in 200..299) break
+            val j = try { JSONObject(txt) } catch (e: Exception) { null } ?: return out.put("ok", false).put("error", tr("Unexpected answer from Google", "Resposta inesperada do Google"))
+            val block = j.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty()
+            val cand = j.optJSONArray("candidates")?.optJSONObject(0)
+            val ps = cand?.optJSONObject("content")?.optJSONArray("parts")
+            val images = JSONArray(); val sb = StringBuilder()
+            if (ps != null) for (i in 0 until ps.length()) {
+                val p = ps.getJSONObject(i)
+                val inl = p.optJSONObject("inlineData") ?: p.optJSONObject("inline_data")
+                if (inl != null) {
+                    val mime = inl.optString("mimeType", inl.optString("mime_type", "image/png"))
+                    val bytes = android.util.Base64.decode(inl.optString("data"), android.util.Base64.DEFAULT)
+                    val ext = when { mime.contains("jpeg") -> "jpg"; mime.contains("webp") -> "webp"; else -> "png" }
+                    val dir = File(cacheDir, "nb").apply { mkdirs() }
+                    val name = "nano-banana-${System.currentTimeMillis()}-$i.$ext"
+                    File(dir, name).writeBytes(bytes)
+                    images.put(JSONObject().put("name", name).put("url", "https://$SKEL_HOST/nb/$name"))
+                } else if (p.has("text") && !p.optBoolean("thought", false)) sb.append(p.optString("text"))
+            }
+            if (images.length() == 0 && sb.isEmpty()) {
+                val why = block.ifEmpty { cand?.optString("finishReason").orEmpty() }
+                return out.put("ok", false).put("error", tr("Google did not return an image", "O Google não devolveu imagem") + (if (why.isNotEmpty()) " ($why)." else "."))
+            }
+            return out.put("ok", true).put("images", images).put("text", sb.toString().trim()).put("model", model)
+        }
+        logError("nano-banana", "HTTP $lastCode: $lastMsg")
+        val hint = when (lastCode) {
+            400 -> if (lastMsg.contains("API key", true)) tr("The key was rejected. Sign out and sign in again.", "A chave foi recusada. Saia e entre de novo.") else lastMsg
+            401, 403 -> tr("Google refused access ($lastCode): $lastMsg", "O Google recusou o acesso ($lastCode): $lastMsg")
+            404 -> tr("No Nano Banana model was found for this key: $lastMsg", "Nenhum modelo Nano Banana foi encontrado para essa chave: $lastMsg")
+            429 -> tr("Limit reached, or this model is not free for your account. Wait a minute, or pick another model in the top bar. ($lastMsg)", "Limite atingido, ou esse modelo não é grátis na sua conta. Espere 1 minuto ou escolha outro modelo no topo. ($lastMsg)")
+            else -> "[$lastCode] $lastMsg"
+        }
+        return out.put("ok", false).put("error", hint)
+    }
+
+    /** The page's functions (only given to the Nano Banana window). */
+    inner class TwNano(private val web: android.webkit.WebView) {
+        private fun js(code: String) { web.post { try { web.evaluateJavascript(code, null) } catch (e: Exception) { } } }
+        @android.webkit.JavascriptInterface fun status(): String {
+            val k = nbKey(); val g = aiKey()
+            return JSONObject().put("logged", k.isNotEmpty()).put("tail", k.takeLast(4)).put("hasGemini", g.startsWith("AIza")).toString()
+        }
+        @android.webkit.JavascriptInterface fun saveKey(k: String) { runOnUiThread { nbSaveKey(k) { ok, m -> js("if(window.onKey)onKey($ok,${JSONObject.quote(m)})") } } }
+        @android.webkit.JavascriptInterface fun useGeminiKey() { runOnUiThread { nbSaveKey(aiKey()) { ok, m -> js("if(window.onKey)onKey($ok,${JSONObject.quote(m)})") } } }
+        @android.webkit.JavascriptInterface fun logout() { prefs.edit().remove("nb_key").apply() }
+        @android.webkit.JavascriptInterface fun openLogin() {
+            runOnUiThread {
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/apikey"))) }
+                catch (e: Exception) { toast(tr("No browser found", "Nenhum navegador encontrado")) }
+            }
+        }
+        @android.webkit.JavascriptInterface fun paste(): String = try {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString() ?: ""
+        } catch (e: Exception) { "" }
+        @android.webkit.JavascriptInterface fun generate(id: Int, prompt: String, imagesJson: String, model: String) {
+            thread {
+                val r = try { nbGenerate(prompt, JSONArray(imagesJson), model) }
+                    catch (e: Throwable) { logError("nano-banana", e.toString()); JSONObject().put("ok", false).put("error", e.message ?: e.javaClass.simpleName) }
+                js("if(window.onGen)onGen($id,${JSONObject.quote(r.toString())})")
+            }
+        }
+        /** Copies a generated picture into the Downloaded folder (same place as every other download). */
+        @android.webkit.JavascriptInterface fun saveFile(name: String) {
+            thread {
+                try {
+                    val f = File(File(cacheDir, "nb"), name)
+                    if (!Regex("[A-Za-z0-9._-]+").matches(name) || !f.isFile) return@thread
+                    saveBytes(name, f.readBytes())
+                } catch (e: Exception) { logError("nano-banana", "save: $e") }
+            }
+        }
+    }
+
+    private fun nbResponse(req: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse? {
+        val u = req.url
+        if (!SKEL_HOST.equals(u.host, true)) return null
+        val hdr = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store")
+        fun nf() = android.webkit.WebResourceResponse("text/plain", "utf-8", 404, "Not Found", hdr, java.io.ByteArrayInputStream("not found".toByteArray()))
+        return try {
+            val path = u.path ?: "/"
+            when {
+                path == "/" || path == "/nanobanana.html" -> android.webkit.WebResourceResponse("text/html", "utf-8", 200, "OK", hdr, assets.open("nanobanana.html"))
+                path.startsWith("/nb/") -> {
+                    val n = path.removePrefix("/nb/")
+                    val f = File(File(cacheDir, "nb"), n)
+                    if (!Regex("[A-Za-z0-9._-]+").matches(n) || !f.isFile) nf()
+                    else android.webkit.WebResourceResponse(MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "image/png", null, 200, "OK", hdr, f.inputStream())
+                }
+                else -> nf()
+            }
+        } catch (e: Exception) { logError("nano-banana", "http ${u.path}: $e"); nf() }
+    }
+
+    /** Floating window: drag the title bar to move, drag ◢ to resize, ☐ to maximize. The screen behind stays usable. */
+    @android.annotation.SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
+    private fun openBananaWindow() {
+        val dm = resources.displayMetrics
+        val ov = FrameLayout(this)
+        ov.elevation = dp(40).toFloat()
+        ov.outlineProvider = null
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.background = rounded(0xFF131314.toInt(), dp(14), 0xFF3C4043.toInt())
+        card.clipToOutline = true
+        card.elevation = dp(18).toFloat()
+        lateinit var p: Panel
+        val wv = android.webkit.WebView(this)
+
+        val tb = LinearLayout(this)
+        tb.orientation = LinearLayout.HORIZONTAL
+        tb.gravity = Gravity.CENTER_VERTICAL
+        tb.setBackgroundColor(0xFF1E1F20.toInt())
+        val ttl = tv("   ✦  Nano Banana", 13f, Color.WHITE).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER_VERTICAL; setSingleLine(true) }
+        tb.addView(ttl, LinearLayout.LayoutParams(0, dp(40), 1f))
+        var maximized = false
+        var saveW = 0; var saveH = 0; var saveTx = 0f; var saveTy = 0f
+        fun lp() = card.layoutParams as FrameLayout.LayoutParams
+        var dx = 0f; var dy = 0f
+        ttl.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { dx = card.translationX - e.rawX; dy = card.translationY - e.rawY }
+                MotionEvent.ACTION_MOVE -> if (!maximized) {
+                    val baseX = (ov.width - card.width) / 2f; val baseY = (ov.height - card.height) / 2f
+                    val x = (baseX + e.rawX + dx).coerceIn(-(card.width - dp(90)).toFloat(), (ov.width - dp(90)).toFloat())
+                    val y = (baseY + e.rawY + dy).coerceIn(0f, (ov.height - dp(40)).toFloat())
+                    card.translationX = x - baseX; card.translationY = y - baseY
+                }
+            }
+            true
+        }
+        tb.addView(capBtn("⟳", false, 46) { wv.reload() })
+        tb.addView(capBtn("☐", false, 46) {
+            val l = lp()
+            if (!maximized) {
+                saveW = l.width; saveH = l.height; saveTx = card.translationX; saveTy = card.translationY
+                l.width = MATCH; l.height = MATCH; card.translationX = 0f; card.translationY = 0f; maximized = true
+            } else { l.width = saveW; l.height = saveH; card.translationX = saveTx; card.translationY = saveTy; maximized = false }
+            card.layoutParams = l
+        })
+        tb.addView(capBtn("✕", true, 46) { p.close() })
+        card.addView(tb, LinearLayout.LayoutParams(MATCH, dp(40)))
+
+        wv.setBackgroundColor(0xFF131314.toInt())
+        wv.settings.javaScriptEnabled = true
+        wv.settings.domStorageEnabled = true
+        wv.settings.allowFileAccess = false
+        wv.addJavascriptInterface(TwNano(wv), "NB")
+        wv.webViewClient = object : android.webkit.WebViewClient() {
+            override fun shouldInterceptRequest(v: android.webkit.WebView, req: android.webkit.WebResourceRequest) = nbResponse(req)
+            override fun shouldOverrideUrlLoading(v: android.webkit.WebView, req: android.webkit.WebResourceRequest): Boolean {
+                val sc = req.url.scheme?.lowercase()
+                if (SKEL_HOST.equals(req.url.host, true)) return false
+                if (sc == "http" || sc == "https") { try { startActivity(Intent(Intent.ACTION_VIEW, req.url)) } catch (e: Exception) { } }
+                return true
+            }
+        }
+        wv.webChromeClient = object : android.webkit.WebChromeClient() {
+            @Suppress("DEPRECATION")
+            override fun onShowFileChooser(view: android.webkit.WebView, cb: android.webkit.ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                nbFileCb?.onReceiveValue(null)
+                nbFileCb = cb
+                val i = try { params.createIntent() } catch (e: Exception) { Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE) }
+                i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                try { startActivityForResult(i, 83) }
+                catch (e: Exception) { nbFileCb = null; cb.onReceiveValue(null); toast(tr("No file picker found", "Nenhum seletor de arquivos encontrado")) }
+                return true
+            }
+        }
+        val holder = FrameLayout(this)
+        holder.addView(wv, FrameLayout.LayoutParams(MATCH, MATCH))
+        // resize handle (bottom-right corner)
+        val grip = tv("◢", 14f, 0xFF9AA0A6.toInt()).apply { gravity = Gravity.CENTER }
+        var gw = 0; var gh = 0; var gx = 0f; var gy = 0f
+        grip.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { gw = card.width; gh = card.height; gx = e.rawX; gy = e.rawY }
+                MotionEvent.ACTION_MOVE -> if (!maximized) {
+                    val l = lp()
+                    // the window grows from its centre, so keep its top-left corner fixed while resizing
+                    val nw = (gw + (e.rawX - gx)).toInt().coerceIn(dp(300), dm.widthPixels)
+                    val nh = (gh + (e.rawY - gy)).toInt().coerceIn(dp(260), dm.heightPixels)
+                    val oldW = card.width; val oldH = card.height
+                    l.width = nw; l.height = nh
+                    card.translationX += (nw - oldW) / 2f; card.translationY += (nh - oldH) / 2f
+                    card.layoutParams = l
+                }
+            }
+            true
+        }
+        holder.addView(grip, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.BOTTOM or Gravity.END))
+        card.addView(holder, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        ov.addView(card, FrameLayout.LayoutParams((dm.widthPixels * 0.62).toInt().coerceAtLeast(dp(320)).coerceAtMost(dm.widthPixels), (dm.heightPixels * 0.9).toInt(), Gravity.CENTER))
+        root.addView(ov, FrameLayout.LayoutParams(MATCH, MATCH))
+        p = Panel(ov, LinearLayout(this), LinearLayout(this))
+        p.onClose = {
+            nbWin = null
+            nbFileCb?.onReceiveValue(null); nbFileCb = null
+            try { wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() } catch (e: Exception) { }
+        }
+        panels.add(p)
+        nbWin = p
+        wv.loadUrl("https://$SKEL_HOST/nanobanana.html?lang=" + (if (pt) "pt" else "en"))
     }
 
     // ----- editor window <-> app: tiny "website" on https://termwin.local (page, model list, model files) -----
